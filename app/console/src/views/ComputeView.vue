@@ -5,6 +5,7 @@ import ErrorNote from "../components/ErrorNote.vue";
 import RowCard from "../components/RowCard.vue";
 import WorkersQuota from "../components/ver/WorkersQuota.vue";
 import { api, forceFreshWindow, GwError, workerName } from "../lib/api";
+import { useFold } from "../lib/lists";
 import { bytes, dt, rel, shortId } from "../lib/fmt";
 
 const nav = useRouter();
@@ -71,6 +72,8 @@ const pagesErr = ref<GwError | null>(null);
 const pagesLoading = ref(false);
 const openPage = ref("");
 const deps = ref<any[]>([]);
+/** 展开某个 Pages 项目后的部署历史：条数读全局偏好 */
+const visiblePageDeps = useFold(() => deps.value);
 const depErr = ref<GwError | null>(null);
 
 const WHY_WRITE = "回滚要发 POST，网关的非 GET 现在一律 501（WRITE_ENABLED 没开）——缺的是我这边的实现，不是你的令牌权限。";
@@ -192,7 +195,7 @@ onMounted(() => { loadWorkers(); loadPages(); });
           <div v-if="openPage === p.name" style="padding: 8px 0 0">
             <ErrorNote :err="depErr" />
             <div class="list" v-if="deps.length">
-              <div v-for="d in deps.slice(0, 8)" :key="d.id" class="item">
+              <div v-for="d in visiblePageDeps.shown" :key="d.id" class="item">
                 <div style="min-width: 0">
                   <div class="k">{{ shortId(d.id, 6) }}
                     <span class="badge live" v-if="d.latest_deploy">当前版本</span>
@@ -203,6 +206,9 @@ onMounted(() => { loadWorkers(); loadPages(); });
               </div>
             </div>
             <div v-else-if="!depErr" class="empty">{{ pagesLoading ? "加载中" : "没有部署记录" }}</div>
+            <button class="ghost" style="margin-top: 8px" v-if="visiblePageDeps.rest" @click="visiblePageDeps.open = !visiblePageDeps.open">
+              {{ visiblePageDeps.label }}
+            </button>
           </div>
         </div>
       </div>

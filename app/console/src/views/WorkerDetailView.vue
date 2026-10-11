@@ -2,6 +2,8 @@
 import { computed, onMounted, ref, watch, type Ref } from "vue";
 import { useRoute } from "vue-router";
 import ErrorNote from "../components/ErrorNote.vue";
+import FoldNote from "../components/FoldNote.vue";
+import { useFold } from "../lib/lists";
 import { api, forceFreshWindow, GwError } from "../lib/api";
 import { dt, num, rel, shortId } from "../lib/fmt";
 
@@ -27,13 +29,10 @@ const vPage = ref(0);
 const vTotal = ref<number | null>(null);
 const vExhausted = ref(false);
 const vMoreLoading = ref(false);
-/** 版本列表折叠：默认只显示前 10 条，点"展开更多"才全显 */
-const showAllVersions = ref(false);
-const VISIBLE_VERSIONS = 10;
-const visibleVersions = computed(() => {
-  const arr = versions.value.data ?? [];
-  return showAllVersions.value ? arr : arr.slice(0, VISIBLE_VERSIONS);
-});
+/** 版本列表折叠：条数读全局偏好（设置页那条旋钮），点"展开更多"才全显 */
+const visibleVersions = useFold(() => versions.value.data ?? []);
+/** 部署历史同理 —— 以前这里写死 slice(0, 12)，多看几条只能改代码 */
+const visibleDeps = useFold(() => deployments.value.data ?? []);
 
 /** 流量归属：hostname → service（docs/01 §5 的替代方案，因为 Worker 级用量接口全不可用，docs/09 §D4） */
 const traffic = ref<Slot<{ rows: Array<{ host: string; reqs: number; mine: boolean; via: string }>; myHosts: Array<{ host: string; via: string }> }>>(mk());
@@ -374,8 +373,8 @@ const showCmd = ref(false);
     <div class="card" id="c-versions">
       <h3>版本列表（已加载 {{ versions.data?.length || 0 }}<span v-if="vTotal"> / 共 {{ vTotal }} 版</span>）</h3>
       <ErrorNote :err="versions.err" />
-      <div class="list" v-if="visibleVersions.length">
-        <div v-for="v in visibleVersions" :key="v.id" style="background: var(--panel)">
+      <div class="list" v-if="visibleVersions.shown.length">
+        <div v-for="v in visibleVersions.shown" :key="v.id" style="background: var(--panel)">
           <div class="item tap" @click="toggle(v)">
             <div style="min-width: 0">
               <div class="k">#{{ v.number }} <span class="muted">{{ shortId(v.id, 8) }}</span>
@@ -416,10 +415,10 @@ const showCmd = ref(false);
               </dd>
               <dd v-else class="muted">部署历史（只取最近 {{ (deployments.data?.length ?? 0) }} 条）里没找到这个版本对应的部署记录</dd>
             </div>
-            <div class="small muted" v-if="detail.data">
+            <FoldNote v-if="detail.data" label="为什么没有 URL 和源码下载">
               URL 这一格竞品有、我们没有：CF 的版本接口不返回 URL，历史版本的预览域名规则也没实测过，不拼就是"—"（不是漏字段）。
               源码下载同样不在第一版范围内：CF 没有"下载指定历史版本"的公开接口，路径后缀会被回落成父资源（docs/09 §E7）。
-            </div>
+            </FoldNote>
           </div>
         </div>
       </div>
@@ -428,11 +427,9 @@ const showCmd = ref(false);
           {{ vMoreLoading ? "加载中" : "加载更多 25 条" }}
         </button>
         <span class="small muted" v-else>到底了<span v-if="vTotal">（{{ versions.data?.length }} / {{ vTotal }}，{{ vTotal === versions.data?.length ? "已全部加载" : "已加载完可部署版本，其余见 CF 控制台" }}）</span></span>
-        <template v-if="versions.data.length > VISIBLE_VERSIONS">
-          <button class="ghost" @click="showAllVersions = !showAllVersions">
-            {{ showAllVersions ? `收起（只显示前 ${VISIBLE_VERSIONS} 条）` : `展开更多（共 ${versions.data.length} 条）` }}
-          </button>
-        </template>
+        <button class="ghost" v-if="visibleVersions.rest" @click="visibleVersions.open = !visibleVersions.open">
+          {{ visibleVersions.label }}
+        </button>
       </div>
     </div>
 
@@ -440,7 +437,7 @@ const showCmd = ref(false);
       <h3>部署历史</h3>
       <ErrorNote :err="deployments.err" />
       <div class="list" v-if="deployments.data?.length">
-        <div v-for="d in deployments.data.slice(0, 12)" :key="d.id" class="item">
+        <div v-for="d in visibleDeps.shown" :key="d.id" class="item">
           <div style="min-width: 0">
             <div class="k">{{ strategyText(d.strategy) }} · <span class="muted">{{ shortId((d.versions || [])[0]?.version_id, 8) }}</span></div>
             <div class="small muted">{{ dt(d.created_on) }} · {{ sourceText(d.source) }} · {{ triggerText(d.annotations?.["workers/triggered_by"]) }}</div>
@@ -448,6 +445,9 @@ const showCmd = ref(false);
           <div class="v">{{ d.versions?.length > 1 ? d.versions.length + " 个版本" : ((d.versions || [])[0]?.percentage ?? "100") + "%" }}</div>
         </div>
       </div>
+      <button class="ghost" style="margin-top: 8px" v-if="visibleDeps.rest" @click="visibleDeps.open = !visibleDeps.open">
+        {{ visibleDeps.label }}
+      </button>
     </div>
 
     <div class="card" id="c-settings">
@@ -468,11 +468,11 @@ const showCmd = ref(false);
           <span v-else>—</span>
         </dd>
       </div>
-      <div class="small muted" style="margin-top: 6px">
+      <FoldNote label="这些字段各来自哪条路由">
         compat / placement / usage_model / tail_consumers / tags 来自 <code>/settings</code>，
         observability 与 logpush 只来自 <code>/script-settings</code> —— 两条不同路由，实测字段几乎不重叠（docs/08 §6.1）。
         同一个 <code>tags</code> 在 <code>/settings</code> 里是空数组、在 <code>/script-settings</code> 里是 <code>null</code>，所以这里标的是"哪种空"而不是统一写"无"。
-      </div>
+      </FoldNote>
     </div>
 
     <div class="card" id="c-secrets">
@@ -498,10 +498,10 @@ const showCmd = ref(false);
 
     <div class="card" id="c-switch">
       <h3>版本切换（未开放）</h3>
-      <div class="small muted" style="margin-bottom: 8px">
+      <FoldNote label="为什么这里还按不动" hint="网关把写请求挡在 501">
         网关第一版把所有写请求挡在 501。要做"切换/回滚/灰度"，需要你明确放行，并把这条路由逐项加白；
         同时 docs/09 §B2 里的分流语义还没实测过。
-      </div>
+      </FoldNote>
       <button class="ghost" @click="showCmd = !showCmd">{{ showCmd ? "收起命令" : "查看待放行的调用" }}</button>
       <pre v-if="showCmd" style="white-space: pre-wrap; font-size: 11px; color: var(--muted); margin: 10px 0 0">{{ rollbackCmd }}</pre>
       <div class="small muted" v-if="showCmd">注意：这个请求体是按 10210 报错语义反推的，还没真发过有效写请求（docs/09 §B2）。真要上线得先在测试 Worker 上验。</div>

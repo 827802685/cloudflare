@@ -108,5 +108,5 @@ const subHost = () => (props.subdomain ? `*.${props.subdomain}.workers.dev` : ""
 .kind { color: var(--muted); font-size: 12px; text-align: right; flex: none; max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
 .badge.blue { color: var(--pending-ink); border-color: rgb(var(--pending-rgb) / .45); background: rgb(var(--pending-rgb) / .1); }
 .badge.live { color: var(--ok); border-color: rgb(var(--ok-rgb) / .4); }
-code { font-family: ui-monospace, Consolas, monospace; }
+code { font-family: var(--font-num); }
 </style>

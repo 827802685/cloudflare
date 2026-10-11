@@ -21,7 +21,7 @@ on:
           - debug
           - release
       gateway_base:
-        description: "写进包里的网关地址（例：https://cf.zjkl.qzz.io）。留空 = 装机后在设置页手填"
+        description: "写进包里的网关地址（例：https://cf.acct.example.com）。留空 = 装机后在设置页手填"
         required: false
         default: ""
         type: string

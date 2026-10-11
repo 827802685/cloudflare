@@ -84,10 +84,15 @@ const quotaRows = computed<QuotaRow[]>(() => {
   const score = (r: QuotaRow) => (r.usage === null ? -1 : r.usage / r.limit);
   return rows.sort((a, b) => score(b) - score(a));
 });
-/** 默认只显消耗最高的那条，展开才给全量（本机偏好） */
+/** 能测的（Workers 请求 / 事件）与测不出的（KV / D1）分开：前者走"只留最高那条"的极值读数 */
+const okRows = computed(() => quotaRows.value.filter((r) => r.kind !== "na"));
+/** 后者用量根本没有任何接口，摊在读数面上只是四条横线，单独默认折起 */
+const naRows = computed(() => quotaRows.value.filter((r) => r.kind === "na"));
 const VISIBLE_QUOTA = 1;
 const showAllQuota = ref(false);
-const shownQuotas = computed(() => (showAllQuota.value ? quotaRows.value : quotaRows.value.slice(0, VISIBLE_QUOTA)));
+const shownOk = computed(() => (showAllQuota.value ? okRows.value : okRows.value.slice(0, VISIBLE_QUOTA)));
+const naOpen = ref(false);
+const shownQuotas = computed(() => (naOpen.value ? [...shownOk.value, ...naRows.value] : shownOk.value));
 const restBytes = computed(() => (usage.value?.breakdown ?? []).reduce((s, r) => s + (r.eventSize ?? 0), 0));
 
 /** 按 Worker 的事件分布：同样默认只显最多那条 */
@@ -135,7 +140,7 @@ const windowLabel = computed(() => {
     </div>
 
     <AsyncBlock :loading="loading && !usage" :err="err" :has="events !== null" empty-text="这个窗口里没有事件（不是没取到）" can-retry @retry="load">
-      <!-- 每日额度：默认只显消耗最高的那条，展开看全部（Workers 请求/事件能测，KV/D1 只列文档上限） -->
+      <!-- 每日额度：能测的默认只显消耗最高的那条；KV / D1 那几条用量接口不提供，另折一刀，默认不收进读数面 -->
       <div v-for="q in shownQuotas" :key="q.key" class="quota" :class="{ na: q.kind !== 'ok' }">
         <div class="qhead">
           <span class="qname">{{ q.name }}</span>
@@ -149,11 +154,14 @@ const windowLabel = computed(() => {
         <div v-else-if="q.kind === 'na'" class="small muted line">用量接口不提供 · 上限是文档值</div>
         <div v-else class="small muted line"><b>不是 0</b>：这条这次没取到{{ q.extra ? "（" + q.extra + "）" : "" }}</div>
       </div>
-      <button v-if="quotaRows.length > VISIBLE_QUOTA" type="button" class="fold" @click="showAllQuota = !showAllQuota">
-        {{ showAllQuota ? "收起（只看最多那条）" : `展开全部额度（还有 ${quotaRows.length - VISIBLE_QUOTA} 条）` }}
+      <button v-if="okRows.length > VISIBLE_QUOTA" type="button" class="fold" @click="showAllQuota = !showAllQuota">
+        {{ showAllQuota ? "收起（只看最多那条）" : `展开可测额度（还有 ${okRows.length - VISIBLE_QUOTA} 条）` }}
+      </button>
+      <button v-if="naRows.length" type="button" class="fold" @click="naOpen = !naOpen">
+        {{ naOpen ? "收起（KV / D1 那几条）" : `KV / D1 每日额度（${naRows.length} 条）· 用量接口不提供 · 展开` }}
       </button>
 
-      <!-- ③ 按 Worker 的事件分布：长列表默认只显 5 条 -->
+      <!-- ③ 按 Worker 的事件分布：和额度一样默认只显最高那条，不跟「长列表默认显示」这一档走 -->
       <div v-if="rows.length" class="small muted line">按 Worker（事件数）</div>
       <BarList v-if="rows.length" :items="barItems" :format="num" :max="barMax" />
       <button v-if="rows.length > VISIBLE_TOP" type="button" class="fold" @click="showAll = !showAll">
@@ -187,5 +195,5 @@ const windowLabel = computed(() => {
 .fold { align-self: flex-start; margin-top: 6px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; padding: 5px 10px; cursor: pointer;
   box-shadow: inset 3px 3px 5px var(--neu-dark), inset -3px -3px 5px var(--panel), 0 0 0 1px var(--line); transition: color .3s ease, box-shadow .3s ease, border-color .3s ease; }
 .fold:hover { color: var(--accent); box-shadow: inset 2px 2px 4px var(--neu-dark), inset -2px -2px 4px var(--panel), 0 0 0 1px var(--accent); }
-code { font-family: ui-monospace, Consolas, monospace; }
+code { font-family: var(--font-num); }
 </style>

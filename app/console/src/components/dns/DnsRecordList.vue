@@ -11,15 +11,13 @@ export default { name: "DnsRecordList" };
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { PROXIABLE_TYPES } from "../../lib/api";
+import { useFold } from "../../lib/lists";
 
 const props = defineProps<{ records: any[] }>();
 const emit = defineEmits<{ (e: "edit", r: any): void; (e: "del", r: any): void }>();
 
-/** 长列表默认只显前 15 条、可展开（与本机「列表默认折叠前 N 条」的偏好一致） */
-const VISIBLE = 15;
-const showAll = ref(false);
-const shown = computed(() => (showAll.value ? props.records : props.records.slice(0, VISIBLE)));
-const rest = computed(() => Math.max(0, props.records.length - VISIBLE));
+/** 长列表默认收起、可展开：条数读全局偏好（设置页那条旋钮），DNS 只是其中一处 */
+const fold = useFold(() => props.records);
 
 /** 列表里判断「这条能不能开代理」：优先读接口的 proxiable，缺字段才按类型硬判 */
 function canProxy(r: any): boolean {
@@ -42,7 +40,7 @@ function toggle(r: any) {
 
 <template>
   <div class="dl">
-    <div v-for="r in shown" :key="r.id" class="drow" @click="emit('edit', r)">
+    <div v-for="r in fold.shown" :key="r.id" class="drow" @click="emit('edit', r)">
       <div class="lead">
         <div class="name">{{ r.name }}</div>
         <div class="content mono" :class="{ clamp: isLong(r) && !openIds[String(r.id)] }" :title="String(r.content)">{{ r.content }}</div>
@@ -63,9 +61,7 @@ function toggle(r: any) {
       </div>
     </div>
     <div v-if="!records.length" class="empty">这个站点还没有 DNS 记录。</div>
-    <button v-if="rest" type="button" class="fold" @click="showAll = !showAll">
-      {{ showAll ? "收起（只显示前 15 条）" : `展开更多（还有 ${rest} 条）` }}
-    </button>
+    <button v-if="fold.rest" type="button" class="fold" @click="fold.open = !fold.open">{{ fold.label }}</button>
   </div>
 </template>
 
@@ -77,7 +73,7 @@ function toggle(r: any) {
 .content { color: var(--muted); font-size: 12.5px; margin-top: 3px; word-break: break-all; }
 .content.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .unfold { align-self: flex-start; margin-top: 4px; background: none; border: 0; padding: 2px 0; color: var(--accent); font-size: 12px; font-family: inherit; cursor: pointer; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .flags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .badge.prox { color: var(--accent); border-color: rgb(var(--accent-rgb) / .45); }
 .badge.dnsonly { color: var(--muted); }

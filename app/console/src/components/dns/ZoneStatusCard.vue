@@ -31,16 +31,19 @@ const names = computed(() => {
 });
 
 const copied = ref("");
-async function copyNs() {
-  const text = names.value.join("\n");
+async function copyText(text: string, label: string) {
   if (!text) { copied.value = "这个 Zone 没有返回 nameserver（可能是 CNAME 接入的 Secondary）"; return; }
   try {
     await navigator.clipboard.writeText(text);
-    copied.value = "已复制 " + names.value.length + " 个 nameserver";
+    copied.value = "已复制 " + label;
   } catch {
     copied.value = "浏览器不让网页写剪贴板，只能手抄上面的地址";
   }
 }
+/** 两条（或多条）一起复制 */
+function copyNs() { copyText(names.value.join("\n"), names.value.length + " 个 nameserver"); }
+/** 一条单独复制：换绑时要逐条填进注册商，整卡复制反而得多删一行 */
+function copyOne(n: string) { copyText(n, n); }
 </script>
 
 <template>
@@ -54,13 +57,17 @@ async function copyNs() {
       zone id <code>{{ zone?.id || "—" }}</code>
     </div>
 
-    <button type="button" class="ns" :disabled="!names.length" @click="copyNs">
-      <div class="ns-h"><span>Nameserver（整卡点击复制）</span><span class="muted small">{{ names.length ? '点击复制' : '无' }}</span></div>
+    <div class="ns" :class="{ off: !names.length }">
+      <div class="ns-h">
+        <span>Nameserver<span class="muted"> · 点一条复制一条</span></span>
+        <button v-if="names.length" type="button" class="all" @click="copyNs">一起复制（{{ names.length }} 条）</button>
+        <span v-else class="muted small">无</span>
+      </div>
       <div class="ns-list mono">
-        <div v-for="n in names" :key="n">{{ n }}</div>
+        <button v-for="n in names" :key="n" type="button" class="one" @click="copyOne(n)">{{ n }}</button>
         <div v-if="!names.length" class="muted">—</div>
       </div>
-    </button>
+    </div>
     <p v-if="copied" class="copied muted small">{{ copied }}</p>
     <p v-if="zone?.paused" class="warnline">这个 Zone 当前处于 paused：所有代理记录会退回直接解析源站。</p>
   </div>
@@ -71,16 +78,20 @@ async function copyNs() {
 .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .nm { font-size: 15px; font-weight: 600; word-break: break-all; }
 .zid { margin: 0; }
-.zid code { font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+.zid code { font-family: var(--font-num); word-break: break-all; }
 .badge.ok { color: var(--ok); border-color: rgb(var(--ok-rgb) / .4); }
 .badge.warn { color: var(--warn); border-color: rgb(var(--warn-rgb) / .4); }
 .badge.bad { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .badge.muted { color: var(--muted); }
 .badge.plan { color: var(--accent); border-color: rgb(var(--accent-rgb) / .4); }
-.ns { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); cursor: pointer; }
-.ns:disabled { cursor: default; opacity: .7; }
+.ns { padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); }
+.ns.off { opacity: .7; }
 .ns-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 6px; }
+.ns-h .all { flex: none; font: inherit; font-size: 11.5px; padding: 2px 9px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--fg-2); cursor: pointer; }
+.ns-h .all:hover { border-color: rgb(var(--accent-rgb) / .5); color: var(--accent); }
 .ns-list { display: flex; flex-direction: column; gap: 2px; font-size: 13px; word-break: break-all; }
+.ns-list .one { display: block; width: 100%; text-align: left; font: inherit; padding: 3px 6px; margin: 0 -6px; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
+.ns-list .one:hover { background: rgb(var(--accent-rgb) / .1); color: var(--accent); }
 .copied { margin: 0; }
 .warnline { margin: 0; color: var(--warn); font-size: 12px; }
 </style>

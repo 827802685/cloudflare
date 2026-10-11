@@ -10,6 +10,8 @@ import { computed, onMounted, ref, watch } from "vue";
 import AsyncBlock from "../board/AsyncBlock.vue";
 import ErrorNote from "../ErrorNote.vue";
 import RowCard from "../RowCard.vue";
+import FoldNote from "../FoldNote.vue";
+import { useFold } from "../../lib/lists";
 import StoreSplit from "./StoreSplit.vue";
 import { api, forceFreshWindow, GwError, type KvNamespace, type KvKeysResult } from "../../lib/api";
 
@@ -18,6 +20,9 @@ const mk = <T,>(): Slot<T> => ({ data: null, err: null, loading: false });
 
 const nss = ref<Slot<KvNamespace[]>>(mk());
 const selectedId = ref("");
+/** 两个筛选词都只动界面上的数组，不碰取数：命名空间这条接口本来就不接受关键字 */
+const q = ref("");
+const kq = ref("");
 const pane = ref<"list" | "detail">("list");
 const keys = ref<Slot<KvKeysResult>>(mk());
 /** 翻页是"接着这一页往下"，所以只记游标，不清掉已渲染的列表 */
@@ -63,7 +68,20 @@ function pick(ns: KvNamespace) { selectedId.value = ns.id; pane.value = "detail"
 function refresh() { forceFreshWindow(); loadNss(); if (selectedId.value) loadKeys(); }
 
 const selectedNs = computed(() => (nss.value.data ?? []).find((n) => n.id === selectedId.value));
+const shownNs = computed(() => {
+  const arr = nss.value.data ?? [];
+  const s = q.value.trim().toLowerCase();
+  return s ? arr.filter((n) => `${n.title} ${n.id}`.toLowerCase().includes(s)) : arr;
+});
 const rows = computed(() => paged.value.all);
+/** Key 这条只能筛"已经取回来的这几页"：CF 的 keys 接口按 cursor 往下翻页，不支持关键字查询 */
+const shownKeys = computed(() => {
+  const s = kq.value.trim().toLowerCase();
+  return s ? rows.value.filter((k: any) => String(k.name).toLowerCase().includes(s)) : rows.value;
+});
+/** 两条列表的折叠条数都读全局偏好（设置页那条旋钮），筛选先、折叠后 */
+const nsFold = useFold(() => shownNs.value);
+const keyFold = useFold(() => shownKeys.value);
 const listState = computed(() =>
   nss.value.loading && !nss.value.data ? "st-pending"
   : nss.value.err ? "st-error"
@@ -86,25 +104,37 @@ async function copyContent(text: string) {
     list-title="KV 命名空间"
     :detail-title="selectedNs ? `Key（${selectedNs.title}）· 本页 ${rows.length} 条` : '未选择命名空间'"
     :pane="pane" :list-state="listState" :detail-state="detailState"
+    v-model:search="q" search-placeholder="搜索命名空间名或 ID"
     @back="pane = 'list'"
   >
     <template #list-tools>
-      <span class="small muted">{{ nss.data ? nss.data.length + ' 个' : nss.err ? '没取到' : '取数中' }}</span>
+      <span class="small muted">
+        <template v-if="nss.err">没取到</template>
+        <template v-else-if="!nss.data">取数中</template>
+        <template v-else-if="q.trim()">筛出 {{ shownNs.length }} / {{ nss.data.length }} 个</template>
+        <template v-else>{{ nss.data.length }} 个</template>
+      </span>
       <button class="ghost" :disabled="nss.loading" @click="refresh">{{ nss.loading ? "加载中" : "刷新" }}</button>
     </template>
 
     <ErrorNote :err="nss.err" />
     <div class="empty" v-if="nss.loading && !nss.data?.length">取数中…</div>
-    <div class="rows" v-if="nss.data?.length">
+    <div class="rows" v-if="nsFold.shown.length">
       <RowCard
-        v-for="ns in nss.data" :key="ns.id"
+        v-for="ns in nsFold.shown" :key="ns.id"
         :title="ns.title" :meta="ns.id.slice(0, 8) + '…'"
         :badges="[{ text: ns.supports_url_encoding ? 'URL编码' : '—' },
                   ...(ns.id === selectedId ? [{ text: '当前', cls: 'roll' }] : [])]"
         @open="pick(ns)"
       />
     </div>
+    <div v-else-if="nss.data?.length && q.trim()" class="empty">
+      筛完 {{ nss.data.length }} 个里没有匹配的（是筛不到，不是账号里没有）。清空搜索词就全回来了。
+    </div>
     <div v-else-if="!nss.loading && !nss.err" class="empty">这个账号里没有 KV 命名空间（不是没取到）</div>
+    <button class="ghost" style="margin-top: 8px; font-size: 12px" v-if="nsFold.rest" @click="nsFold.open = !nsFold.open">
+      {{ nsFold.label }}
+    </button>
 
     <template #detail>
       <div v-if="!selectedId" class="empty">左边选一个命名空间，这里就出它的 Key。</div>
@@ -115,17 +145,21 @@ async function copyContent(text: string) {
             {{ keys.loading ? "加载中" : hasMore ? "加载下一页" : "到底了" }}
           </button>
         </div>
-        <div class="small muted" style="margin-bottom:6px">
-          走 <code>GET /accounts/{a}/storage/kv/namespaces/{id}/keys?limit=100</code>，所需权限
-          <code>Workers KV Storage Read</code>。每页 100 条；CF 这个接口<strong>不给总数</strong>，所以这里只说本页几条、还有没有下一页。
+        <div class="kfind">
+          <input v-model="kq" type="search" class="field" placeholder="搜索 Key 名" />
+          <span class="small muted" v-if="kq.trim()">筛出 {{ shownKeys.length }} / 已加载 {{ rows.length }} 条</span>
+          <button class="ghost" v-if="kq" @click="kq = ''">清空</button>
         </div>
         <AsyncBlock :loading="keys.loading && !keys.data" :err="keys.err" :has="rows.length > 0"
           :can-retry="!!keys.err" empty-text="这个命名空间里确实没有 Key（不是没取到）" @retry="loadKeys()">
+          <div class="small muted" v-if="kq.trim() && !shownKeys.length" style="margin-bottom:4px">
+            已加载的 {{ rows.length }} 条里没有匹配「{{ kq.trim() }}」的 Key（是筛不到，不是这个命名空间空）。
+          </div>
           <div style="overflow-x:auto">
             <table>
               <thead><tr><th>Key</th><th>过期时间</th><th>操作</th></tr></thead>
               <tbody>
-                <tr v-for="k in rows" :key="k.name">
+                <tr v-for="k in keyFold.shown" :key="k.name">
                   <td style="word-break:break-all;max-width:200px">{{ k.name }}</td>
                   <td style="white-space:nowrap">
                     <span v-if="k.expiration">{{ new Date(k.expiration * 1000).toLocaleString('zh-CN') }}</span>
@@ -138,8 +172,16 @@ async function copyContent(text: string) {
               </tbody>
             </table>
           </div>
+          <button class="ghost" style="margin-top: 6px; font-size: 12px" v-if="keyFold.rest" @click="keyFold.open = !keyFold.open">
+            {{ keyFold.label }}
+          </button>
           <div v-if="hasMore" class="small muted" style="margin-top:4px">还有下一页（已显示 {{ rows.length }} 条，CF 不返回总数）</div>
         </AsyncBlock>
+        <FoldNote label="这一栏是怎么取数的">
+          走 <code>GET /accounts/{a}/storage/kv/namespaces/{id}/keys?limit=100</code>，所需权限
+          <code>Workers KV Storage Read</code>。每页 100 条；CF 这个接口<strong>不给总数、也不接受关键字</strong>，
+          所以上面那个框筛的是<strong>已经加载到这一屏</strong>的 Key，要往后找就点「加载下一页」。
+        </FoldNote>
         <div v-if="copied" class="small" style="margin-top:6px;color:var(--ok)">{{ copied }}</div>
       </div>
     </template>
@@ -147,6 +189,12 @@ async function copyContent(text: string) {
 </template>
 
 <style scoped>
+.kfind { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.kfind input {
+  max-width: 260px; padding: 7px 10px; border-radius: 8px; font-size: 12px;
+  appearance: none; -webkit-appearance: none;
+}
+.kfind input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
 table { width: 100%; font-size: 11px; border-collapse: collapse; }
 table th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
 table td { padding: 4px 8px; border-bottom: 1px solid var(--border-light); }

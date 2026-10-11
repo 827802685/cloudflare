@@ -22,7 +22,8 @@ const argv = process.argv.slice(2);
 const outArgIndex = argv.indexOf("--out");
 const OUT = outArgIndex >= 0 && argv[outArgIndex + 1] ? path.resolve(argv[outArgIndex + 1]) : "F:/work/cf-console-public";
 
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".wrangler", ".tmp", "android", "ios"]);
+// .workbuddy 是本机 Agent/记忆目录，绝不该进任何公开产物 —— 早拦一层。
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".wrangler", ".tmp", "android", "ios", ".workbuddy", ".idea", ".vscode"]);
 // 这些文件**永不**进副本：本地凭据与本地环境变量
 const NEVER_COPY = /(^|[\\/])(\.dev\.vars|\.device-token|\.env|\.env\.local|\.env\..*\.local|service-account.*\.json|.*\.pem|.*\.key)$/;
 const KEEP_EXAMPLE = /\.(example|template)$/;
@@ -53,13 +54,58 @@ const files = [];
 // .gitignore 的意志**不该在副本前失效**。这条是 10-11 补的：脚本原来只按文件系统扫，
 // 于是 docs/evidence/text-responses.json（.gitignore 第 20 行明确写着"含真实绑定名与 Worker
 // 代码片段，公开前先处理"）照样被复制进副本 —— git 挡住了仓库，却挡不住这里。
-// 用 git 自己列 ignored 清单，而不是在这里手抄一遍规则：手抄的表一定会和 .gitignore 分家。
-const ignoredByGit = new Set();
+//
+// ⚠ 10-11 二次修正：原来唯一的手段是 spawn `git ls-files --others --ignored`，但在本机
+// 沙箱里 spawn 直接 EBUSY（连 shell:true 也一样），异常被 catch 吞掉 ⇒ 这道闸**静默失效**，
+// .workbuddy/ 与 text-responses.json 照样被复制，而残留断言只查凭据、仍旧报"零残留"。
+// 所以现在：git 能用就仍走 git（它认得 info/exclude 与全局 ignore），不能用就回落到
+// 自己解析 .gitignore（够覆盖本项目那份：注释 / `dir/` / 前导 `!` 取反 / `*` `**` 通配）。
+function globToRe(pat) {
+  let s = "";
+  for (let i = 0; i < pat.length; i++) {
+    const c = pat[i];
+    if (c === "*") {
+      if (pat[i + 1] === "*") { s += ".*"; i++; }
+      else s += "[^/]*";
+    } else if ("\\^$.|?+()[]{}".includes(c)) s += "\\" + c;
+    else s += c;
+  }
+  return s;
+}
+function parseGitignore(root) {
+  const dirs = [], globs = [], negs = [];
+  const src = path.join(root, ".gitignore");
+  if (!fs.existsSync(src)) return { dirs, globs, negs };
+  for (const raw of fs.readFileSync(src, "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("!")) { negs.push(line.slice(1)); continue; }
+    if (line.endsWith("/")) dirs.push(line.slice(0, -1));
+    else globs.push(line);
+  }
+  return { dirs, globs, negs };
+}
+function matchIgnPat(rel, pat) {
+  const clean = pat.replace(/^\//, "");
+  const body = globToRe(clean);
+  // 含 `/` 的按整条相对路径匹；不含的按"任意层级同名"匹（git 的语义）
+  const re = clean.includes("/") ? new RegExp("^" + body + "$") : new RegExp("(^|/)" + body + "$");
+  return re.test(rel);
+}
+let ignoredByGit = null;
 try {
   const out = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], { cwd: ROOT });
+  ignoredByGit = new Set();
   for (const p of out.toString("utf8").split("\0")) if (p) ignoredByGit.add(p.replace(/\\/g, "/"));
 } catch {
-  /* 不在 git 工作树里跑（比如直接在副本里跑）就不做这层跳过 */
+  ignoredByGit = null; // git 起不来（EBUSY 等）→ 回落自己解析，别让这道闸消失
+}
+const gi = ignoredByGit ? null : parseGitignore(ROOT);
+function isIgnoredPath(rel) {
+  if (ignoredByGit) return ignoredByGit.has(rel);
+  if (gi.negs.some((n) => matchIgnPat(rel, n))) return false;
+  if (gi.dirs.some((d) => rel === d || rel.startsWith(d + "/"))) return true;
+  return gi.globs.some((g) => matchIgnPat(rel, g));
 }
 
 const skipped = [];
@@ -71,7 +117,7 @@ for (const f of files) {
     skipped.push(full);
     continue;
   }
-  if (ignoredByGit.has(full)) {
+  if (isIgnoredPath(full)) {
     skippedByIgnore.push(full);
     continue;
   }
@@ -211,12 +257,23 @@ for (const p of scanned) {
   for (const [h, mapped] of hostMap) if (mapped === h) residue.keptPublic++;
 }
 
+// 第二类残留：**本该被 .gitignore 挡住、却混进副本**的文件。加它的理由就是上面那次事故：
+// 凭据断言全绿，而 .workbuddy/ 与 text-responses.json 明明躺在副本里 ——
+// 凭据干净 ≠ 这份副本能公开，所以这里独立再查一道。
+const OUTsl = OUT.replace(/\\/g, "/");
+const leakedIgnored = [];
+for (const p of scanned) {
+  const rel = p.replace(/\\/g, "/").slice(OUTsl.length + 1);
+  if (isIgnoredPath(rel)) leakedIgnored.push(rel);
+}
+
 const clean =
   residue.account === 0 &&
   residue.token === 0 &&
   residue.tokenShape === 0 &&
   residue.device === 0 &&
-  residue.email === 0;
+  residue.email === 0 &&
+  leakedIgnored.length === 0;
 console.log(`副本目录：${OUT}`);
 console.log(`  复制 ${copied} 个文件到副本，跳过凭据文件 ${skipped.length} 个：${skipped.join(", ") || "无"}`);
 console.log(`  按 .gitignore 跳过 ${skippedByIgnore.length} 个未入库文件：${skippedByIgnore.join(", ") || "无"}`);
@@ -224,6 +281,7 @@ console.log(`  化名化：Account ID ×1 直接屏蔽；32 位 id ${stats.ids} 
 console.log(`  屏蔽：.dev.vars 那把令牌/设备令牌各 1 处 + 仓库内其它硬编码令牌 ${tokenMap.size} 把 → «REMOVED_CF_API_TOKEN_n» 占位`);
 console.log(`  残留断言：Account ID ${residue.account} · CF Token ${residue.token} · 令牌形态 ${residue.tokenShape} · 设备令牌 ${residue.device} · 邮箱 ${residue.email} · 个人主机名 ${residue.realHost}（另有 ${residue.keptPublic} 个 *.workers.dev / *.pages.dev 公共域名按设计保留）`);
 if (tokenResidueFiles.length) console.log(`  ❗ 仍带令牌形态的文件：${[...new Set(tokenResidueFiles)].join(", ")}`);
-console.log(`  ${clean ? "✅ 凭据类零残留" : "❌ 还有凭据残留，别 push"}`);
+if (leakedIgnored.length) console.log(`  ❗ 被 .gitignore 挡住却混进副本的文件：${[...new Set(leakedIgnored)].join(", ")}`);
+console.log(`  ${clean ? "✅ 凭据类零残留 · 无被忽略文件混入" : "❌ 仍有残留（凭据 或 被忽略文件），别 push"}`);
 console.log("  注意：Worker 脚本名（rin-server 等）、队列名、绑定名**没**动，要不要一起抹由你决定。");
 process.exitCode = clean ? 0 : 2;

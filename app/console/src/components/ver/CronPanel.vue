@@ -242,7 +242,7 @@ function dash(v: unknown) {
 .pc { color: var(--muted); font-size: 11px; margin-left: 4px; }
 .gen .field { max-width: 110px; }
 .gen .hh { max-width: 62px; text-align: center; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .errtext { color: var(--bad); }
 button.sm { padding: 4px 10px; font-size: 12px; }
 button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }

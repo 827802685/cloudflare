@@ -38,7 +38,7 @@ function isSecret(v: Record<string, any>): boolean {
 .er { background: var(--panel); padding: 9px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ek { font-size: 13px; font-weight: 600; word-break: break-all; }
 .ev { color: var(--muted); font-size: 12.5px; display: flex; align-items: center; gap: 6px; word-break: break-all; text-align: right; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .mask { letter-spacing: 2px; }
 .badge.lock { color: var(--warn); border-color: rgb(var(--warn-rgb) / .4); }
 </style>

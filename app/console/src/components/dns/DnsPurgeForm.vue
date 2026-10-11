@@ -71,7 +71,7 @@ function submit() {
 <style scoped>
 .pf { display: flex; flex-direction: column; gap: 10px; }
 .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.urls { width: 100%; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; line-height: 1.6; }
+.urls { width: 100%; resize: vertical; font-family: var(--font-num); font-size: 12.5px; line-height: 1.6; }
 .cnt { font-size: 12.5px; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); }
 .cnt.ok { color: var(--ok); border-color: rgb(var(--ok-rgb) / .4); }
 .cnt.bad { color: var(--bad); border-color: rgb(var(--bad-rgb) / .5); background: rgb(var(--bad-rgb) / .1); font-weight: 600; }

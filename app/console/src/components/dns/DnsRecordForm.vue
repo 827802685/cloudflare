@@ -232,7 +232,7 @@ function submit() {
 .fld { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); }
 .fld-narrow { max-width: 200px; }
 .fld span { font-weight: 600; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .ttl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .seg { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 13px; cursor: pointer; }
 .seg.on { border-color: var(--accent); color: var(--accent); background: rgb(var(--accent-rgb) / .12); }

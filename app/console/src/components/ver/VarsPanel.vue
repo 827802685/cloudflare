@@ -305,13 +305,13 @@ function cancelWrite() {
 .vars { display: flex; flex-direction: column; gap: 12px; }
 .block { display: flex; flex-direction: column; gap: 6px; }
 .ttl { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .errtext { color: var(--bad); }
 button.sm { padding: 4px 10px; font-size: 12px; }
 button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .editbox { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); display: flex; flex-direction: column; gap: 8px; }
 .vrow { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
-.ta { font-family: ui-monospace, Consolas, monospace; font-size: 12px; resize: vertical; }
+.ta { font-family: var(--font-num); font-size: 12px; resize: vertical; }
 .gen { flex-wrap: wrap; gap: 6px; }
 .gen .field { max-width: 180px; }
 .log { display: flex; flex-direction: column; gap: 3px; }

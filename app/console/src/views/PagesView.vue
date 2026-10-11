@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
+import FoldNote from "../components/FoldNote.vue";
+import { useFold } from "../lib/lists";
 import RowCard from "../components/RowCard.vue";
 import DeploymentDetail from "../components/pages/DeploymentDetail.vue";
 import { api, forceFreshWindow, GwError } from "../lib/api";
@@ -20,13 +22,8 @@ const loading = ref(false);
 const open = ref("");
 const deps = ref<any[]>([]);
 const depErr = ref<GwError | null>(null);
-/** 部署历史折叠：默认只显示前 8 条 */
-const showAllDeps = ref(false);
-const VISIBLE_DEPS = 8;
-const visibleDeps = computed(() => {
-  const arr = deps.value;
-  return showAllDeps.value ? arr : arr.slice(0, VISIBLE_DEPS);
-});
+/** 部署历史折叠：条数读全局偏好（设置页那条旋钮） */
+const visibleDeps = useFold(() => deps.value);
 /** 部署详情：整行点击展开这一条的 DeploymentDetail（数据靠 props，这里不额外请求） */
 const openDep = ref("");
 
@@ -91,7 +88,9 @@ function onProjectGo(p: any, a: any) {
     <div class="card" v-if="!hasProject && !loading && !err">
       <h3>这个账号里没有 Pages 项目</h3>
       <div class="small muted">
-        已实测：令牌能到 Pages 路由（用假项目名返回 <code>404 8000007</code>，说明鉴权与路由都过了，缺的是数据）。
+        已实测：令牌能到 Pages 路由（假项目名回 <code>404 8000007</code>，鉴权与路由都过了），缺的是数据，不是权限。
+      </div>
+      <FoldNote label="这一块为什么还没做满">
         列表接口的分页也和别处不同——<code>per_page</code> 上限实测是 10，超过就 <code>400 8000024</code>，网关已经按 10 一页翻。
         <br /><br />
         你在后台建一个项目（Git 或 Direct Upload 都行），这一块立刻就有真数据；
@@ -99,7 +98,7 @@ function onProjectGo(p: any, a: any) {
         <br /><br />
         下面的部署详情已经按「构建阶段（分状态配色）/ 环境变量（secret 掩码+加密标签）/ 构建日志 / 域名行（含专属错误文本）」
         搭好三态容器，但那几条读路由网关还没注册、形状也未验证，所以这几块只显示结构与「为什么是空的」，不拼假数据。
-      </div>
+      </FoldNote>
     </div>
 
     <div class="rows" v-if="hasProject">
@@ -115,7 +114,7 @@ function onProjectGo(p: any, a: any) {
         <div v-if="open === p.name" style="padding: 8px 0 0">
           <ErrorNote :err="depErr" />
           <div class="list" v-if="deps.length">
-            <div v-for="d in visibleDeps" :key="d.id" class="depwrap">
+            <div v-for="d in visibleDeps.shown" :key="d.id" class="depwrap">
               <div class="item tap" @click="toggleDep(String(d.id))">
                 <div style="min-width: 0">
                   <div class="k">{{ shortId(d.id, 6) }}
@@ -130,10 +129,8 @@ function onProjectGo(p: any, a: any) {
               </div>
             </div>
           </div>
-          <div class="row" style="margin-top: 8px; gap: 8px; align-items: center" v-if="deps.length > VISIBLE_DEPS">
-            <button class="ghost" @click="showAllDeps = !showAllDeps">
-              {{ showAllDeps ? `收起（只显示前 ${VISIBLE_DEPS} 条）` : `展开更多（共 ${deps.length} 条）` }}
-            </button>
+          <div class="row" style="margin-top: 8px; gap: 8px; align-items: center" v-if="visibleDeps.rest">
+            <button class="ghost" @click="visibleDeps.open = !visibleDeps.open">{{ visibleDeps.label }}</button>
           </div>
           <div v-else-if="!depErr" class="empty">{{ loading ? "加载中" : "没有部署记录" }}</div>
         </div>

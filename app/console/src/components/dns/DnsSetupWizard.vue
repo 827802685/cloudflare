@@ -12,6 +12,7 @@ export default { name: "DnsSetupWizard" };
 </script>
 
 <script setup lang="ts">
+import FoldNote from "../FoldNote.vue";
 import { computed } from "vue";
 import { shortId } from "../../lib/fmt";
 
@@ -50,9 +51,11 @@ function infer(d: any): { zoneId: string; zoneName: string; type: string; name: 
   <div class="wiz">
     <p class="disc">
       <b>这条判断是我们自己按记录名/类型推的，不是 Cloudflare 给的字段。</b>
+    </p>
+    <FoldNote label="为什么不能自动写验证记录">
       实测里 <code>validation.method</code> 这个字段在我们的接口响应中不存在，所以做不了「自动写 TXT/CNAME」，只能把要填的记录列给你。
       正确做法：到 Cloudflare 后台看该域名要求的那条验证记录，再回来照此新增。这里只按形状给个起点（apex → A/AAAA，子域 → CNAME），不替你写。
-    </p>
+    </FoldNote>
 
     <div v-if="!domains.length" class="empty">没有待配置的 Worker 自定义域名。</div>
 
@@ -83,11 +86,11 @@ function infer(d: any): { zoneId: string; zoneName: string; type: string; name: 
 <style scoped>
 .wiz { display: flex; flex-direction: column; gap: 10px; }
 .disc { margin: 0; font-size: 12px; line-height: 1.6; color: var(--warn); background: rgb(var(--warn-rgb) / .08); border-left: 3px solid var(--warn); border-radius: 6px; padding: 8px 10px; }
-.disc code { font-family: ui-monospace, Consolas, monospace; }
+.disc code { font-family: var(--font-num); }
 .row2 { background: var(--panel); padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .lead { min-width: 0; }
 .host { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tiny { font-size: 11px; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .badge.live { color: var(--ok); border-color: rgb(var(--ok-rgb) / .4); }
 </style>

@@ -247,7 +247,7 @@ const noBindings = computed(() => !props.loading && !props.err && (props.binding
 .bind { display: flex; flex-direction: column; gap: 10px; }
 .cat { display: flex; flex-direction: column; gap: 4px; }
 .ttl { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-weight: 600; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .errtext { color: var(--bad); }
 button.sm { padding: 4px 10px; font-size: 12px; }
 button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }

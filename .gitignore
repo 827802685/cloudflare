@@ -19,6 +19,9 @@ dist/
 # 证据文件里含真实绑定名与 Worker 代码片段，公开前先处理（docs/09 §G）
 docs/evidence/text-responses.json
 
+# 本地 Agent / 记忆目录：含本机笔记，不入库、也不该进公开副本
+.workbuddy/
+
 # 编辑器/系统
 .DS_Store
 .idea/

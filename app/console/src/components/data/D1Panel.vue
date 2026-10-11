@@ -16,6 +16,8 @@ import { computed, onMounted, ref, watch } from "vue";
 import AsyncBlock from "../board/AsyncBlock.vue";
 import ErrorNote from "../ErrorNote.vue";
 import RowCard from "../RowCard.vue";
+import FoldNote from "../FoldNote.vue";
+import { useFold } from "../../lib/lists";
 import StoreSplit from "./StoreSplit.vue";
 import { api, forceFreshWindow, GwError, type D1Database, type D1QueryResult } from "../../lib/api";
 import { dt, bytes } from "../../lib/fmt";
@@ -25,6 +27,8 @@ const mk = <T,>(): Slot<T> => ({ data: null, err: null, loading: false });
 
 const dbs = ref<Slot<D1Database[]>>(mk());
 const selectedId = ref("");
+/** 左栏筛选词：只在这一次取回来的数组里筛，不另发请求 */
+const q = ref("");
 /** 窄屏两栏只放得下一栏：点左栏进右栏，右栏顶部返回 */
 const pane = ref<"list" | "detail">("list");
 
@@ -101,6 +105,13 @@ function pick(db: D1Database) {
 function refresh() { forceFreshWindow(); loadDbs(); if (selectedId.value) loadDetail(); }
 
 const selectedDb = computed(() => (dbs.value.data ?? []).find((d) => d.uuid === selectedId.value));
+const shownDbs = computed(() => {
+  const arr = dbs.value.data ?? [];
+  const s = q.value.trim().toLowerCase();
+  return s ? arr.filter((d) => `${d.name} ${d.uuid}`.toLowerCase().includes(s)) : arr;
+});
+/** 左栏折叠条数读全局偏好；筛选先、折叠后 */
+const dbFold = useFold(() => shownDbs.value);
 const listState = computed(() =>
   dbs.value.loading && !dbs.value.data ? "st-pending"
   : dbs.value.err ? "st-error"
@@ -127,18 +138,24 @@ async function copyContent(text: string) {
     list-title="D1 数据库"
     :detail-title="selectedDb ? `数据表（${selectedDb.name}）· ${(tables.data || []).length} 张` : '未选择数据库'"
     :pane="pane" :list-state="listState" :detail-state="detailState"
+    v-model:search="q" search-placeholder="搜索库名或 UUID"
     @back="pane = 'list'"
   >
     <template #list-tools>
-      <span class="small muted">{{ dbs.data ? dbs.data.length + ' 个' : dbs.err ? '没取到' : '取数中' }}</span>
+      <span class="small muted">
+        <template v-if="dbs.err">没取到</template>
+        <template v-else-if="!dbs.data">取数中</template>
+        <template v-else-if="q.trim()">筛出 {{ shownDbs.length }} / {{ dbs.data.length }} 个</template>
+        <template v-else>{{ dbs.data.length }} 个</template>
+      </span>
       <button class="ghost" :disabled="dbs.loading" @click="refresh">{{ dbs.loading ? "加载中" : "刷新" }}</button>
     </template>
 
     <ErrorNote :err="dbs.err" />
     <div class="empty" v-if="dbs.loading && !dbs.data?.length">取数中…</div>
-    <div class="rows" v-if="dbs.data?.length">
+    <div class="rows" v-if="dbFold.shown.length">
       <RowCard
-        v-for="db in dbs.data" :key="db.uuid"
+        v-for="db in dbFold.shown" :key="db.uuid"
         :title="db.name"
         :meta="`${dt(db.created_at, false)} · ${bytes(db.file_size)}`"
         :badges="[...(db.jurisdiction ? [{ text: db.jurisdiction, cls: 'roll' }] : []),
@@ -146,7 +163,13 @@ async function copyContent(text: string) {
         @open="pick(db)"
       />
     </div>
+    <div v-else-if="dbs.data?.length && q.trim()" class="empty">
+      筛完 {{ dbs.data.length }} 个里没有匹配的（是筛不到，不是账号里没有）。清空搜索词就全回来了。
+    </div>
     <div v-else-if="!dbs.loading && !dbs.err" class="empty">这个账号里没有 D1 数据库（不是没取到）</div>
+    <button class="ghost" style="margin-top: 8px; font-size: 12px" v-if="dbFold.rest" @click="dbFold.open = !dbFold.open">
+      {{ dbFold.label }}
+    </button>
 
     <template #detail>
       <div v-if="!selectedId" class="empty">左边选一个库，这里就出它的表。</div>
@@ -155,11 +178,11 @@ async function copyContent(text: string) {
         <!-- 表清单：一条 sqlite_master 查询真数出来的，不用 CF 那个谎报 0 的 num_tables -->
         <div class="card">
           <h3>数据表 · {{ (tables.data || []).length }} 张</h3>
-          <div class="small muted" style="margin-bottom:6px">
+          <FoldNote label="表数为什么和 CF 列表给的不一样">
             表数是真查 <code>sqlite_master</code> 得到的。CF 列表接口那个 <code>num_tables</code> 字段
             在这个账号 5 个库上<strong>全部返回 0</strong>（实际 2/14/14/31/13 张），所以这里不采用它。
             字段数要点表名才查：D1 不允许 <code>pragma_table_info(列引用)</code>，一次查不齐所有表。
-          </div>
+          </FoldNote>
           <AsyncBlock :loading="tables.loading && !tables.data" :err="tables.err" :has="!!(tables.data || []).length"
             :can-retry="!!tables.err" empty-text="这个库里确实没有表（不是没取到）" @retry="loadDetail">
             <div class="tbls">
@@ -202,12 +225,8 @@ async function copyContent(text: string) {
         <!-- SQL 查询：结果表宽，所以放在表清单下面而不是弹层 -->
         <div class="card" style="margin-top:8px">
           <h3>SQL 查询</h3>
-          <div class="small muted" style="margin-bottom:6px">
-            走网关 <code>GET /v1/d1/{id}/query?sql=…</code>，网关再按 CF 规格 <code>POST …/d1/database/{id}/query</code> 出网，
-            所需权限 <code>D1 Read</code>（当前令牌已含）。SQL 长度上限 2000 字符；结果缓存 5 分钟。
-          </div>
           <textarea v-model="querySql" class="field" rows="3"
-            style="font-family:monospace;font-size:12px;resize:vertical;margin-bottom:6px"
+            style="font-family:var(--font-num);font-size:12px;resize:vertical;margin-bottom:6px"
             placeholder="SELECT * FROM ... LIMIT 20"
           ></textarea>
           <div class="row" style="gap:6px;align-items:center">
@@ -235,6 +254,10 @@ async function copyContent(text: string) {
           <!-- 四态分开说（docs/09 §E16）：还没跑 / 跑完确实 0 行，不能共用一句 -->
           <div v-else-if="queryResult.data" class="empty" style="margin-top:6px">查询跑完了，返回 0 行（不是没取到）</div>
           <div v-else-if="!queryResult.err && !queryResult.loading" class="empty" style="margin-top:6px">点「执行」跑查询</div>
+          <FoldNote label="这条 SQL 走的是什么">
+            走网关 <code>GET /v1/d1/{id}/query?sql=…</code>，网关再按 CF 规格 <code>POST …/d1/database/{id}/query</code> 出网，
+            所需权限 <code>D1 Read</code>（当前令牌已含）。SQL 长度上限 2000 字符；结果缓存 5 分钟。
+          </FoldNote>
         </div>
       </template>
     </template>
@@ -245,7 +268,7 @@ async function copyContent(text: string) {
 textarea.field {
   width: 100%; box-sizing: border-box;
   border: 1px solid var(--border); border-radius: 6px; padding: 8px;
-  background: var(--input-bg); color: var(--text); font-family: monospace;
+  background: var(--input-bg); color: var(--text); font-family: var(--font-num);
 }
 table { width: 100%; font-size: 11px; border-collapse: collapse; }
 table th { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border); background: var(--panel-2); }

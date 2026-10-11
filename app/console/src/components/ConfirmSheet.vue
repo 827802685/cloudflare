@@ -111,7 +111,7 @@ const consequence = computed(() => {
 .sheet-fields dt { color: var(--fg-dim, #3d3d3d); }
 .sheet-fields dd { margin: 0; word-break: break-all; }
 .sheet-fields dd.wrap { font-size: 11.5px; white-space: normal; }
-.mono { font-family: var(--mono, ui-monospace, Consolas, monospace); }
+.mono { font-family: var(--font-num); }
 .sheet-warn { margin: 0; font-size: 12.5px; color: var(--warn, #8a6100); line-height: 1.6; }
 .sheet-type { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--fg-dim, #3d3d3d); }
 .sheet-type input {

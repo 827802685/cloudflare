@@ -5,6 +5,8 @@ import UnavailableNote from "../components/board/UnavailableNote.vue";
 import { api, gwHealth, gwMeta, GwError, setWritesOptIn, writesOptIn, type Account } from "../lib/api";
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
+import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
+import FoldNote from "../components/FoldNote.vue";
 import { dt } from "../lib/fmt";
 import { useGatewayStore } from "../stores/gateway";
 
@@ -228,11 +230,29 @@ const budgetRunning = computed(() => gw.budget.running);
           ><i class="dot" :data-a="opt.value" />{{ opt.label }}</button>
         </div>
       </div>
-      <div class="small muted">
+      <div class="opt">
+        <div class="opt-h">长列表默认显示</div>
+        <div class="row">
+          <button
+            v-for="p in LIST_PRESETS"
+            :key="p.v"
+            class="chip"
+            :class="{ on: listCount === p.v }"
+            @click="setListCount(p.v)"
+          >{{ p.label }}</button>
+        </div>
+      </div>
+      <FoldNote label="这几项是怎么回事">
         深浅两档都是正式设计过的（语义色按各自底色重挑过对比度）。选「跟随系统」时跟着系统的深浅走；显式选浅/深会钉住。
         强调色只换按钮、标签、焦点环这一族控件色；<b>卡片左沿那条读数轨不受它影响，仍是「橙 = 有真数 / 蓝 = 取数中」</b>，
-        所以换色不会把四态编码混掉。这两项都是本机偏好，存在 <code>cfconsole.theme.v1</code> 与 <code>cfconsole.accent.v1</code>。
-      </div>
+        所以换色不会把四态编码混掉。字体不点名具体字体（只给通用族），本机换字体界面跟着换。
+        「长列表默认显示」这一档管的是<b>「一行一个东西」的列表</b>：Worker 版本列表与部署历史、Pages 部署历史、DNS 记录、
+        D1 库 / KV 命名空间 / R2 桶的左栏、KV 的 Key 表 —— 超出这个条数就出「展开更多」，选「全部」则不折。
+        <b>不跟这一档走的是计算页顶部的「每日额度」和「按 Worker 事件分布」</b>：那两块默认只留消耗/数量最高的那条，
+        是刻意的极值读数而不是分页，展开按钮照旧。
+        三项都存在本机（<code>cfconsole.theme.v1</code>、<code>cfconsole.accent.v1</code>、<code>cfconsole.listCount.v1</code>），
+        不上云、不影响取数请求数。
+      </FoldNote>
     </div>
 
     <!-- ============ 账号 ============ -->

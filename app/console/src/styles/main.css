@@ -99,8 +99,10 @@
   --t-md: 16px;
   --t-lg: 20px;
   --t-xl: 27px;
-  --font-ui: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-num: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  /* 字体：不点名任何一款（以前写死了苹方 / 微软雅黑 / Consolas，装了别的中文字体也不肯跟着走）。
+     只给通用族，浏览器按本机的界面字体和「网页字体」设置去解析 —— 本机换字体，界面就跟着换。 */
+  --font-ui: system-ui, sans-serif;
+  --font-num: ui-monospace, monospace;
 
   /* ---------- 间距标尺（§4.1，4 的倍数） ---------- */
   --s-1: 4px;

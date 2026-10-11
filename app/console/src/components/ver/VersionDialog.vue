@@ -341,7 +341,7 @@ button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .log { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
 .log .ok { color: var(--ok); font-size: 12px; }
 .log .no { color: var(--bad); font-size: 12px; word-break: break-all; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .cmd { font-size: 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); word-break: break-all; }
 .body { font-size: 11.5px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; color: var(--muted); }
 .rb { margin-top: 8px; }

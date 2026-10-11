@@ -130,7 +130,7 @@ const hasDomainRoute = computed(() => Array.isArray(props.domains));
 .dd { display: flex; flex-direction: column; gap: 12px; }
 .hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .id { font-size: 14px; font-weight: 600; }
-.mono { font-family: ui-monospace, Consolas, monospace; }
+.mono { font-family: var(--font-num); }
 .sec { display: flex; flex-direction: column; gap: 6px; }
 .sec-h { font-size: 12px; color: var(--muted); font-weight: 600; }
 .stages { display: flex; flex-direction: column; gap: 1px; background: var(--line); border-radius: 10px; overflow: hidden; }
@@ -145,7 +145,7 @@ const hasDomainRoute = computed(() => Array.isArray(props.domains));
 .badge.bad { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .badge.live { color: var(--ok); border-color: rgb(var(--ok-rgb) / .4); }
 .pend { font-size: 12px; line-height: 1.6; color: var(--warn); background: rgb(var(--warn-rgb) / .08); border-left: 3px solid var(--warn); border-radius: 6px; padding: 8px 10px; }
-.pend code { font-family: ui-monospace, Consolas, monospace; color: var(--fg); }
+.pend code { font-family: var(--font-num); color: var(--fg); }
 .logbox { white-space: pre-wrap; word-break: break-all; font-size: 11.5px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; max-height: 240px; overflow: auto; }
 .note { margin: 0; }
 .tiny { font-size: 11px; }

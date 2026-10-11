@@ -26,11 +26,16 @@ const props = withDefaults(
     /** 两栏各自的读数轨状态（沿用 main.css 的 st-* 口径，不另发明一套） */
     listState?: "st-pending" | "st-data" | "st-empty" | "st-error" | "st-partial";
     detailState?: "st-pending" | "st-data" | "st-empty" | "st-error" | "st-partial";
+    /** 给了这个文案，左栏顶部就出搜索框；搜索词由父级用 v-model:search 拿（筛什么、怎么筛是父级的事） */
+    searchPlaceholder?: string;
   }>(),
-  { pane: "list", listState: "st-pending", detailState: "st-pending" },
+  { pane: "list", listState: "st-pending", detailState: "st-pending", searchPlaceholder: "" },
 );
 
 const emit = defineEmits<{ (e: "back"): void }>();
+
+/** 只在界面上过滤已经取回来的那一份，不另发请求 —— 免费档的配额口径不变 */
+const search = defineModel<string>("search", { default: "" });
 </script>
 
 <template>
@@ -40,7 +45,16 @@ const emit = defineEmits<{ (e: "back"): void }>();
         <span class="h-t">{{ props.listTitle }}</span>
         <slot name="list-tools" />
       </header>
-      <div class="pane-b"><slot /></div>
+      <div class="pane-b">
+        <div class="find" v-if="props.searchPlaceholder">
+          <input
+            v-model="search" type="search" autocomplete="off" spellcheck="false"
+            :placeholder="props.searchPlaceholder" :aria-label="props.searchPlaceholder"
+          />
+          <button class="clr" v-if="search" @click="search = ''">清空</button>
+        </div>
+        <slot />
+      </div>
     </section>
 
     <section class="pane pane-d" :class="detailState">
@@ -85,6 +99,28 @@ const emit = defineEmits<{ (e: "back"): void }>();
 .ell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane-h .pane-tools, .pane-h > :last-child { margin-left: auto; }
 .pane-b { padding: 10px 11px 12px 14px; }
+
+/* 搜索行走 sticky：长列表滚起来时筛选框不跟着跑掉。左边只让开 2px，别盖住那道读数轨 */
+.find {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; gap: 6px;
+  margin: -10px -11px -8px -12px; padding: 9px 11px 8px 14px;
+  background: var(--panel); border-bottom: 1px solid var(--line-soft);
+}
+.find input {
+  flex: 1; min-width: 0; background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
+  font-family: inherit; font-size: 12px; outline: none; appearance: none; -webkit-appearance: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.find input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / .18); }
+/* 自带的那个 × 藏掉：清空走下面这颗字明确定的按钮，一个框里不留两套清除 */
+.find input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.find .clr {
+  flex: none; background: none; border: 0; color: var(--muted); font-family: inherit;
+  font-size: 11px; padding: 3px 2px; cursor: pointer;
+}
+.find .clr:hover { color: var(--accent); }
 
 .back {
   display: none; background: none; border: 0; color: var(--accent); font-family: inherit;

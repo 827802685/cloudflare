@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
+import FoldNote from "../components/FoldNote.vue";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
 import DnsRecordList from "../components/dns/DnsRecordList.vue";
 import DnsRecordForm from "../components/dns/DnsRecordForm.vue";
@@ -230,10 +231,10 @@ async function confirmSheet() {
       <div v-else-if="!records.err && !records.loading" class="empty">没有记录</div>
       <div v-else-if="records.loading" class="empty">加载中…</div>
       <div class="whyline" v-if="doneMsg">{{ doneMsg }}</div>
-      <div class="small muted" style="margin-top: 8px">
+      <FoldNote label="点行会发生什么" hint="删除要手打记录名">
         整行点击 = 编辑；删除会弹确认抽屉并要求手打记录名。写请求经 preview→ConfirmSheet→网关，
         <strong>这台开发网关写动词一律 501</strong>（缺的是网关侧 <code>WRITE_ENABLED</code> + 逐条加白，不是你的令牌权限），拒绝原因会如实显示。
-      </div>
+      </FoldNote>
     </div>
 
     <!-- 按 URL 清理缓存 -->
