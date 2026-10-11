@@ -7,13 +7,22 @@
 #
 # 位置：必须在**仓库根**的 .github/workflows/，GitHub 只认这一个位置。
 # 触发方式刻意只做手动：不要 push 就自动跑，避免误触发包。
+#
+# variant 口径：
+#   debug   —— Android 调试密钥自动签名，能直接装机自测，但不能长期对外分发。
+#   release —— 用 GitHub secrets 里的仓库密钥签名，可长期分发/覆盖升级。
+#              密钥材料存在 secrets（ANDROID_KEYSTORE_BASE64 等），**不进仓库**；
+#              密钥本机备份在仓库外，不入库。
+#
+# 2026-10-11 修复：JDK 17 → 21。Capacitor 7 的 capacitor-android 模块 sourceCompatibility
+# 是 21，JDK 17 上编译报 "invalid source release: 21"（run #38118785061 的失败根因）。
 name: cf-console-build
 
 on:
   workflow_dispatch:
     inputs:
       build_type:
-        description: "debug = 直接能装的调试包；release = 需要签名密钥（本仓库目前没配，选它会明确失败）"
+        description: "debug = 调试密钥直接能装；release = 仓库密钥正式签名可分发"
         required: false
         default: debug
         type: choice
@@ -115,12 +124,18 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # debug 与 release 走同一套步骤，只有"签名从哪来"不同 —— 用 matrix 承载 variant，
+  # 避免两份 40 行的重复块将来各自漂移。
   apk:
-    name: 调试用 APK
+    name: APK ${{ matrix.variant }}
     needs: [checks, web]
-    if: github.event.inputs.build_apk == 'true' && github.event.inputs.build_type == 'debug'
+    if: github.event.inputs.build_apk == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', github.event.inputs.build_type)) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -128,21 +143,26 @@ jobs:
         with:
           node-version: "22"
 
-      - name: JDK 17（Capacitor 7 / AGP 8 的要求；本机只有 JDK 8，所以这一步只能在 CI 做）
+      # Capacitor 7 的 capacitor-android 目标字节码是 Java 21，JDK 17 会报
+      # "invalid source release: 21"。这条是 run #38118785061 红掉的直接原因，别再降回去。
+      - name: JDK 21（Capacitor 7 / capacitor-android 的 source release 21 要求）
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      - name: Android SDK
+      - name: Android SDK 命令行工具
         uses: android-actions/setup-android@v4
         with:
-          api-level: 34
-          ndk-version: r27c
           cmdline-tools-version: latest
 
-      - name: 接受 Android SDK 许可证
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+      # 不用 setup-android 的 api-level（那个输入名不是官方支持的，会被静默忽略）；
+      # 直接 sdkmanager 装，失败就是失败，不会假装成功。
+      - name: 装 SDK 平台与构建工具
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
       # 这里刻意**不复用** web job 的 dist artifact：upload-artifact v4 会把目录层级原样存进 artifact，
       # 下载时指定 path 就会出现 app/console/dist/app/console/dist 的嵌套，构建会静默拿到空 webDir。
@@ -155,53 +175,120 @@ jobs:
 
       - name: 生成 Android 工程并构建 APK
         working-directory: app/console
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          variant="${{ matrix.variant }}"
+
           # 版本必须钉住：写 @latest 的话，Capacitor 某次大版本发布会让这条流水线在没人改代码的情况下自己坏掉。
-          # 钉 7.x 与 capacitor.config.ts + JDK 17 的口径一致。
+          # 钉 7.x 与 capacitor.config.ts + JDK 21 的口径一致。
           npm install --no-audit --no-fund --save-dev "@capacitor/core@7" "@capacitor/cli@7" "@capacitor/android@7"
           # 不加 || true：cap add 失败必须让整条流水线红掉，否则下一步 cd android 报的是"目录不存在"，
           # 看日志的人会先怀疑 Gradle，而不是怀疑壳没生成。
           npx cap add android 2>&1
           test -d android || { echo "cap add 声称成功但没有 android/ 目录"; exit 1; }
           npx cap sync android 2>&1
+
+          if [ "$variant" = "release" ]; then
+            : "${ANDROID_KEYSTORE_BASE64:?缺少 secrets.ANDROID_KEYSTORE_BASE64 —— release 包没有密钥就没法签名，宁愿红也别出个未签名的包}"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            test -s "$RUNNER_TEMP/release.jks" || { echo "keystore 解码后是空文件"; exit 1; }
+            export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+            # Gradle 允许对同一个 android extension 多次配置，所以末尾再开一个 android {} 块
+            # 就能挂上 signingConfigs，不用去解析/改写 Capacitor 生成的 build.gradle 结构。
+            cat >> android/app/build.gradle <<'GRADLE_EOF'
+
+          // ---- CI 注入：release 签名。密钥来自 GitHub secrets，只落在 runner 临时目录，不进仓库。----
+          if (System.getenv("ANDROID_KEYSTORE_PATH")) {
+              android {
+                  signingConfigs {
+                      release {
+                          storeFile file(System.getenv("ANDROID_KEYSTORE_PATH"))
+                          storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                          keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                          keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+                      }
+                  }
+                  buildTypes {
+                      release {
+                          signingConfig signingConfigs.release
+                      }
+                  }
+              }
+          }
+          GRADLE_EOF
+            echo "已注入 release signingConfig（alias=$ANDROID_KEY_ALIAS）"
+          fi
+
           cd android
           chmod +x ./gradlew
-          # 打印 gradle 版本与 AGP 版本，便于排查
           ./gradlew --version
-          ./gradlew assembleDebug --no-daemon --stacktrace --info 2>&1 | tail -200
 
-      - name: 校验 APK 真的产出了
+          if [ "$variant" = "release" ]; then TASK=assembleRelease; else TASK=assembleDebug; fi
+          # 不加 --info：上次红掉时 200 行 tail 被 info 日志冲掉，真正的 "invalid source release: 21"
+          # 反而被埋了。日志全量落盘，失败时只挑关键行打出来。
+          if ! ./gradlew "$TASK" --no-daemon --stacktrace --console=plain > "$RUNNER_TEMP/gradle.log" 2>&1; then
+            echo "---- Gradle 失败，关键行 ----"
+            grep -nE "FAILURE|What went wrong|error:|Execution failed|Caused by|FAILED" "$RUNNER_TEMP/gradle.log" | head -60
+            echo "---- 最后 80 行 ----"
+            tail -80 "$RUNNER_TEMP/gradle.log"
+            exit 1
+          fi
+          tail -20 "$RUNNER_TEMP/gradle.log"
+
+      - name: 校验、按包名重命名 APK
         working-directory: app/console
         run: |
           set -euo pipefail
-          apk=$(find android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
+          variant="${{ matrix.variant }}"
+          apk=$(find "android/app/build/outputs/apk/$variant" -name "*.apk" -type f | head -1)
           test -n "$apk" || { echo "没有 APK 产物"; exit 1; }
-          ls -l "$apk"
+
+          pkg=$(sed -n 's/.*appId:[[:space:]]*"\([^"]*\)".*/\1/p' capacitor.config.ts | head -1)
+          test -n "$pkg" || { echo "从 capacitor.config.ts 取不到 appId"; exit 1; }
+          ver=$(node -p "require('./package.json').version")
+          sha=$(git rev-parse --short=7 HEAD)
+          out="cf-console-${variant}-${ver}-${sha}.apk"
+          cp "$apk" "android/app/build/outputs/apk/$variant/$out"
+          ls -l "android/app/build/outputs/apk/$variant/$out"
+
+          {
+            echo "### APK 产出：$variant"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 文件 | \`$out\` |"
+            echo "| 包名 applicationId | \`$pkg\` |"
+            echo "| 版本 | \`$ver\` |"
+            echo "| 提交 | \`$sha\` |"
+            echo "| 签名 | $([ "$variant" = "release" ] && echo '仓库 release 密钥（可长期分发/覆盖升级）' || echo 'Android 调试密钥（仅自测）') |"
+            echo ""
+            echo "分发口径：**同一个包名 + 同一把签名密钥**才能覆盖升级；换密钥必须先卸载旧包。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 验证 release 签名
+        if: matrix.variant == 'release'
+        working-directory: app/console
+        run: |
+          set -euo pipefail
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | head -1)
+          apk=$(ls android/app/build/outputs/apk/release/cf-console-release-*.apk | head -1)
+          "$apksigner" verify --verbose --print-certs "$apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cf-console-debug-apk
-          path: app/console/android/app/build/outputs/apk/debug/*.apk
+          name: cf-console-${{ matrix.variant }}-apk
+          path: app/console/android/app/build/outputs/apk/${{ matrix.variant }}/cf-console-${{ matrix.variant }}-*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - name: 取包说明
         run: |
           echo "APK 在 Actions run 页面底部的 artifacts 里；下载需要 GitHub 登录。"
           echo "如果直连下载不稳：把这个 artifact 页面临时开一个新标签用浏览器登录态下，或者干脆装 PWA（更省事）。"
-          echo "debug 包可以直接装机（签名是 Android debug key），但手机要允许「安装未知来源应用」。"
-
-  # release 不静默跳过：选错输入项时，"什么都没发生"和"成功但没产物"是最难查的两种结果。
-  release-guard:
-    name: release 分支（未配置签名）
-    needs: [checks, web]
-    if: always() && github.event.inputs.build_type == 'release'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: 明确失败并说明原因
-        run: |
-          echo "本仓库没有配置 release 签名密钥（keystore / SIGNING_* secrets），所以不出 release 包。"
-          echo "要 debug 包就把 build_type 改回 debug；真要 release 再补签名材料并加 signingConfigs。"
-          exit 1
+          echo "debug 包可直接装机（Android 调试密钥），手机要允许「安装未知来源应用」。"
+          echo "release 包用仓库密钥签名，换机/升级都能覆盖安装；密钥备份在本机仓库外的 android-signing 目录。"
