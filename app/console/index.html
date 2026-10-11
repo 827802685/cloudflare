@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0e0f11" media="(prefers-color-scheme: dark)" />
+    <!-- 外观档在打包 JS 之前就落好，避免深色下白闪一屏。判定和 src/lib/theme.ts 严格一致：
+         只有显式选了浅/深才写 data-theme，跟随系统时留空交给 CSS 媒体查询接管。 -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("cfconsole.theme.v1");
+          if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+        } catch (e) { /* localStorage 不可用就默认跟随系统 */ }
+      })();
+    </script>
+    <!-- iOS 的"添加到主屏幕"不看 manifest 的 display，只看这三个 meta；
+         缺了它们加完主屏还是带 Safari 工具条，等于没做成"像 App"。Android/Chrome 走 manifest。 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- 白底 App 必须配 default：black-translucent 会让 iOS 压一层深色蒙版，状态栏图标变白，在白页面上等于看不见 -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="CF 控制台" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <title>CF 控制台</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,32 @@
+name = "cf-console-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-01-20"
+compatibility_flags = ["nodejs_compat"]
+
+# 注意：wrangler 4.x 的 send_metrics 只接受布尔值，写 "off" 会让配置解析失败
+send_metrics = false
+
+# workers.dev 那个公开地址（cf-console-gateway.<子域>.workers.dev）在他这个网络访问不到、
+# 也用不上，就不要再白开一个公开面（最小侵入面）。访问入口只有一个：绑好的 cf.acct.example.com。
+# ⚠ 这行必须留在所有 [表] 之前 —— 写到 [dev] 段下面会被当成 dev 段的字段，
+#   wrangler 只报一句 "Unexpected fields found in dev field: workers_dev" 就当没看见。
+workers_dev = false
+
+# 部署阶段刻意留空：routes 会动 DNS，必须等明确放行。域名走的是
+# PUT /accounts/{a}/workers/domains（Workers 自定义域名），不在这里重复写一遍，
+# 免得看不清楚到底哪一份配置生效。
+# routes = [{ pattern = "gw.example.com", zone_name = "example.com" }]
+
+[dev]
+port = 8788
+
+# 静态界面和 API 同一个域名：cf.acct.example.com/ 出界面，/v1/* 与 /health 与 /api/* 才进 Worker。
+# 为什么不用 Pages —— 那是另一类资源（4.5），而且 *.pages.dev 在本机同样不可达。
+[assets]
+directory = "../console/dist"
+binding = "ASSETS"
+# 深链（/workers/rin-server 这种）在 assets 里没实体文件，回 index.html 交给 vue-router
+not_found_handling = "single-page-application"
+# 关键：这三类路径绝不能被 SPA 兜底吞掉，必须先进 Worker
+# （/api/* 是前端"同源相对路径"那种配法，网关里会剥掉前缀再走路由表）
+run_worker_first = ["/v1/*", "/health", "/api/*"]

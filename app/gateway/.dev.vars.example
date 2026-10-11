@@ -1,0 +1,15 @@
+# 复制成 .dev.vars 后填空。这个文件里的值一个都不要提交。
+#
+# CF_API_TOKEN     ：Cloudflare 后台 My Profile → API Tokens 生成的 Token Read 类令牌
+#                    （写权限需要另外补，见 docs/05-令牌权限边界.md）
+# CF_ACCOUNT_ID    ：后台右侧账号摘要里的 32 位 ID
+# DEVICE_TOKENS    ：网关自己的准入令牌，逗号分隔，可以给每台设备发一个。
+#                    手机 App 只持有它，永远拿不到 CF_API_TOKEN。
+#                    删掉其中一项 = 立即吊销那台设备（改完要 wrangler secret put 或重启 dev）
+# WRITE_ENABLED    ：预留开关，本版本没有注册任何写路由，设成 true 也不会放行
+# CF_BASE          ：只在调试错误码时改，默认 https://api.cloudflare.com/client/v4
+
+CF_API_TOKEN=
+CF_ACCOUNT_ID=
+DEVICE_TOKENS=
+WRITE_ENABLED=false

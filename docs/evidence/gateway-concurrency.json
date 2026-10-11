@@ -1,0 +1,120 @@
+{
+  "generated_at": "2026-10-10T09:09:19.922Z",
+  "base": "https://cf.acct.example.com",
+  "device_token_length": 48,
+  "operator_notes": [],
+  "tests": [
+    {
+      "label": "health（parallel ×8）",
+      "wall_ms": 792,
+      "per_request_ms": [
+        742,
+        643,
+        581,
+        629,
+        626,
+        594,
+        568,
+        606
+      ],
+      "sum_ms": 4989,
+      "max_ms": 742,
+      "statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "client_timeouts": 0,
+      "kinds": [],
+      "serialization_ratio": 1.07,
+      "verdict": "concurrent"
+    },
+    {
+      "label": "health（serial ×4）",
+      "wall_ms": 857,
+      "per_request_ms": [
+        221,
+        192,
+        234,
+        210
+      ],
+      "sum_ms": 857,
+      "max_ms": 234,
+      "statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "client_timeouts": 0,
+      "kinds": []
+    },
+    {
+      "label": "traffic/top（碰 CF SQL）（parallel ×3）",
+      "wall_ms": 664,
+      "per_request_ms": [
+        664,
+        415,
+        393
+      ],
+      "sum_ms": 1472,
+      "max_ms": 664,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "client_timeouts": 0,
+      "kinds": [],
+      "serialization_ratio": 1,
+      "verdict": "concurrent"
+    },
+    {
+      "label": "traffic/top（碰 CF SQL）（serial ×2）",
+      "wall_ms": 809,
+      "per_request_ms": [
+        391,
+        418
+      ],
+      "sum_ms": 809,
+      "max_ms": 418,
+      "statuses": [
+        200,
+        200
+      ],
+      "client_timeouts": 0,
+      "kinds": []
+    },
+    {
+      "label": "overview（碰 CF 多次）（parallel ×3）",
+      "wall_ms": 2363,
+      "per_request_ms": [
+        2355,
+        1362,
+        2362
+      ],
+      "sum_ms": 6079,
+      "max_ms": 2362,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "client_timeouts": 0,
+      "kinds": [],
+      "serialization_ratio": 1,
+      "verdict": "concurrent"
+    }
+  ],
+  "conclusion": {
+    "serialization": "并发总耗时≈单条最大值 ⇒ 网关没有把请求串行化（health 与碰 CF 的路由都成立）",
+    "health_parallel_verdict": "concurrent",
+    "client_timeouts": "本轮没有请求撞到 30 秒上限",
+    "causal_claim": "无。本脚本只判并发/串行；卡顿的成因（CF 上游、wrangler dev 本地运行时、机器负载）要靠 operator_notes 与多轮复测，不要从单轮数字外推。"
+  }
+}

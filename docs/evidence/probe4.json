@@ -1,0 +1,188 @@
+{
+  "gql:sum.visits": {
+    "msg": "OK {\"viewer\":{\"zones\":[{\"x\":[{\"sum\":{\"visits\":4805}}]}]}}",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{visits}}}}}",
+    "raw": "{\"data\":{\"viewer\":{\"zones\":[{\"x\":[{\"sum\":{\"visits\":4805}}]}]}},\"errors\":null}"
+  },
+  "gql:sum.byte": {
+    "msg": "ERR unknown field \"byte\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{byte}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"byte\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:48.718004935Z\",\"ray_id\":\"a47caef6d90eb16a-LAX\"}}]}"
+  },
+  "gql:sum.requests": {
+    "msg": "ERR unknown field \"requests\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{requests}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"requests\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:49.006230097Z\",\"ray_id\":\"a47caef90b10b16a-SEA\"}}]}"
+  },
+  "gql:sum.cached": {
+    "msg": "ERR unknown field \"cached\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{cached}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"cached\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:49.31354309Z\",\"ray_id\":\"a47caefaec92b16a-SEA\"}}]}"
+  },
+  "gql:sum.originErrors": {
+    "msg": "ERR unknown field \"originErrors\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{originErrors}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"originErrors\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:49.765464359Z\",\"ray_id\":\"a47caefd2edfb16a-SEA\"}}]}"
+  },
+  "gql:sum.threats": {
+    "msg": "ERR unknown field \"threats\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{threats}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"threats\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:50.15791134Z\",\"ray_id\":\"a47caf003980b16a-SEA\"}}]}"
+  },
+  "gql:sum.savedBytes": {
+    "msg": "ERR unknown field \"savedBytes\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{savedBytes}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"savedBytes\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:50.460326258Z\",\"ray_id\":\"a47caf020b24b16a-SEA\"}}]}"
+  },
+  "gql:sum.indexedBytes": {
+    "msg": "ERR unknown field \"indexedBytes\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{indexedBytes}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"indexedBytes\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:50.77231489Z\",\"ray_id\":\"a47caf03fd00b16a-SEA\"}}]}"
+  },
+  "gql:sum.egressBytes": {
+    "msg": "ERR unknown field \"egressBytes\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{egressBytes}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"egressBytes\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:51.113466035Z\",\"ray_id\":\"a47caf05fea1b16a-LAX\"}}]}"
+  },
+  "gql:sum.uniques": {
+    "msg": "ERR unknown field \"uniques\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){sum{uniques}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"uniques\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:51.414484171Z\",\"ray_id\":\"a47caf0818a1b16a-SEA\"}}]}"
+  },
+  "gql:dim.clientRequestURIPath": {
+    "msg": "ERR unknown field \"clientRequestURIPath\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{clientRequestURIPath}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"clientRequestURIPath\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:51.747803186Z\",\"ray_id\":\"a47caf09eab5b16a-SEA\"}}]}"
+  },
+  "gql:dim.clientRequestURIRaw": {
+    "msg": "ERR unknown field \"clientRequestURIRaw\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{clientRequestURIRaw}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"clientRequestURIRaw\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:52.06718782Z\",\"ray_id\":\"a47caf0c2e36b16a-SEA\"}}]}"
+  },
+  "gql:dim.clientRequestReferer": {
+    "msg": "ERR zone '50c463774e5fc1009c434c996d13353d' does not have access to the field 'clientrequestre",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{clientRequestReferer}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"zone '50c463774e5fc1009c434c996d13353d' does not have access to the field 'clientrequestreferer' from the path\",\"path\":[\"viewer\",\"zones\",\"0\",\"x\"],\"extensions\":{\"code\":\"authz\",\"timestamp\":\"2026-10-09T10:25:52.4597554Z\",\"ray_id\":\"a47caf0e08bdb16a-SEA\"}}]}"
+  },
+  "gql:dim.clientRequestQuery": {
+    "msg": "ERR zone '50c463774e5fc1009c434c996d13353d' does not have access to the field 'clientrequestqu",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{clientRequestQuery}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"zone '50c463774e5fc1009c434c996d13353d' does not have access to the field 'clientrequestquery' from the path\",\"path\":[\"viewer\",\"zones\",\"0\",\"x\"],\"extensions\":{\"code\":\"authz\",\"timestamp\":\"2026-10-09T10:25:52.771267057Z\",\"ray_id\":\"a47caf107bebb16a-SEA\"}}]}"
+  },
+  "gql:dim.edgeCacheStatus": {
+    "msg": "ERR unknown field \"edgeCacheStatus\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{edgeCacheStatus}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"edgeCacheStatus\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:53.070114723Z\",\"ray_id\":\"a47caf126e90b16a-SEA\"}}]}"
+  },
+  "gql:dim.cdnCacheStatus": {
+    "msg": "ERR unknown field \"cdnCacheStatus\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{cdnCacheStatus}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"cdnCacheStatus\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:53.370537635Z\",\"ray_id\":\"a47caf144983b16a-SEA\"}}]}"
+  },
+  "gql:dim.clientRequestHTTPMethodName": {
+    "msg": "OK {\"viewer\":{\"zones\":[{\"x\":[{\"count\":507,\"dimensions\":{\"clientRequestHTTPMethodName\":\"POST\"}},{\"count\":1,\"dimens",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{clientRequestHTTPMethodName}}}}}",
+    "raw": "{\"data\":{\"viewer\":{\"zones\":[{\"x\":[{\"count\":507,\"dimensions\":{\"clientRequestHTTPMethodName\":\"POST\"}},{\"count\":1,\"dimensions\":{\"clientRequestHTTPMethodName\":\"PUT\"}}]}]}},\"errors\":null}"
+  },
+  "gql:dim.clientIP": {
+    "msg": "OK {\"viewer\":{\"zones\":[{\"x\":[{\"count\":212,\"dimensions\":{\"clientIP\":\"43.175.104.143\"}},{\"count\":4,\"dimensions\":{\"c",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{clientIP}}}}}",
+    "raw": "{\"data\":{\"viewer\":{\"zones\":[{\"x\":[{\"count\":212,\"dimensions\":{\"clientIP\":\"43.175.104.143\"}},{\"count\":4,\"dimensions\":{\"clientIP\":\"23.27.145.31\"}}]}]}},\"errors\":null}"
+  },
+  "gql:dim.clientCountryIsoCode": {
+    "msg": "ERR unknown field \"clientCountryIsoCode\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{clientCountryIsoCode}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"clientCountryIsoCode\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:55.179576876Z\",\"ray_id\":\"a47caf1f9f01b16a-SEA\"}}]}"
+  },
+  "gql:dim.COUNTRY": {
+    "msg": "ERR Syntax Error GraphQL (1:171) Unexpected character \".\".\n\n1: {viewer{zones(filter:{zoneTag:\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{raw.COUNTRY}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"Syntax Error GraphQL (1:171) Unexpected character \\\".\\\".\\n\\n1: {viewer{zones(filter:{zoneTag:\\\"50c463774e5fc1009c434c996d13353d\\\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\\\"2026-10-02T00:00:00Z\\\"}){count dimensions{raw.COUNTRY}}}}}\\n                                                                                                                                                                             ^\\n\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:55.507192564Z\",\"ray_id\":\"a47caf21b8e0b16a-SEA\"}}]}"
+  },
+  "gql:dim.workloadRunStatus": {
+    "msg": "ERR unknown field \"workloadRunStatus\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequestsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{workloadRunStatus}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"workloadRunStatus\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:55.811251316Z\",\"ray_id\":\"a47caf237a8eb16a-SEA\"}}]}"
+  },
+  "gql:1d 全套": {
+    "msg": "ERR unknown field \"byte\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequests1dGroups(limit:2,filter:{date_geq:\"2026-10-02\",date_lt:\"2026-10-10\"}){sum{requests byte visits cached originErrors} dimensions{day}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"byte\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:56.141687447Z\",\"ray_id\":\"a47caf259c83b16a-SEA\"}}]}"
+  },
+  "gql:1d dimensions{date}": {
+    "msg": "OK {\"viewer\":{\"zones\":[{\"x\":[{\"dimensions\":{\"date\":\"2026-10-05\"}},{\"dimensions\":{\"date\":\"2026-10-02\"}}]}]}}",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequests1dGroups(limit:2,filter:{date_geq:\"2026-10-02\"}){dimensions{date}}}}}",
+    "raw": "{\"data\":{\"viewer\":{\"zones\":[{\"x\":[{\"dimensions\":{\"date\":\"2026-10-05\"}},{\"dimensions\":{\"date\":\"2026-10-02\"}}]}]}},\"errors\":null}"
+  },
+  "gql:1m 无 filter": {
+    "msg": "ERR zone '50c463774e5fc1009c434c996d13353d' does not have access to the path. Refer to this pa",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:httpRequests1mGroups(limit:2,filter:{datetime_geq:\"2026-10-08T00:00:00Z\",datetime_lt:\"2026-10-09T23:59:59Z\"}){sum{requests} dimensions{datetime}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"zone '50c463774e5fc1009c434c996d13353d' does not have access to the path. Refer to this page for more details about access controls: https://developers.cloudflare.com/analytics/graphql-api/errors/\",\"path\":[\"viewer\",\"zones\",\"0\",\"x\"],\"extensions\":{\"code\":\"authz\",\"timestamp\":\"2026-10-09T10:25:56.816945379Z\",\"ray_id\":\"a47caf298809b16a-SEA\"}}]}"
+  },
+  "gql:visitorTimeseries": {
+    "msg": "ERR unknown field \"visitorTimeseriesByRequests1dGroups\"",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:visitorTimeseriesByRequests1dGroups(limit:2,filter:{date_geq:\"2026-10-02\"}){sum{visits uniques} dimensions{date}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"visitorTimeseriesByRequests1dGroups\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:25:57.131185266Z\",\"ray_id\":\"a47caf2bba47b16a-SEA\"}}]}"
+  },
+  "gql:firewallEventsAdaptive": {
+    "msg": "ERR zone '50c463774e5fc1009c434c996d13353d' does not have access to the path. Refer to this pa",
+    "query": "{viewer{zones(filter:{zoneTag:\"50c463774e5fc1009c434c996d13353d\"}){x:firewallEventsAdaptiveGroups(limit:2,filter:{datetime_geq:\"2026-10-02T00:00:00Z\"}){count dimensions{action}}}}}",
+    "raw": "{\"data\":null,\"errors\":[{\"message\":\"zone '50c463774e5fc1009c434c996d13353d' does not have access to the path. Refer to this page for more details about access controls: https://developers.cloudflare.com/analytics/graphql-api/errors/\",\"path\":[\"viewer\",\"zones\",\"0\",\"x\"],\"extensions\":{\"code\":\"authz\",\"timestamp\":\"2026-10-09T10:25:57.550555273Z\",\"ray_id\":\"a47caf2dcc52b16a-LAX\"}}]}"
+  },
+  "api:d1/{uuid} 详情": {
+    "status": 200,
+    "body": "{\"result\":{\"uuid\":\"84f4174e-c620-481a-bd3a-e1312dfbddee\",\"name\":\"rin\",\"created_at\":\"2025-08-25T09:10:26.038Z\",\"version\":\"production\",\"num_tables\":12,\"file_size\":135168,\"running_in_region\":\"WNAM\",\"read_replication\":{\"mode\":\"disabled\"},\"jurisdiction\":null},\"errors\":[],\"messages\":[],\"success\":true}"
+  },
+  "api:d1 query 只读": {
+    "status": 200,
+    "body": "{\"result\":[{\"results\":[{\"n\":8}],\"success\":true,\"meta\":{\"served_by\":\"v3-prod\",\"served_by_region\":\"WNAM\",\"served_by_colo\":\"DFW\",\"served_by_primary\":true,\"timings\":{\"sql_duration_ms\":0.1363},\"duration\":0.1363,\"changes\":0,\"last_row_id\":0,\"changed_db\":false,\"size_after\":135168,\"rows_read\":8,\"rows_written\":0,\"total_attempts\":1}}],\"errors\":[],\"messages\":[],\"success\":true}"
+  },
+  "api:d1/{uuid}/time_travel/info": {
+    "status": 404,
+    "body": "{\"success\":false,\"errors\":[\"Route not found\"]}"
+  },
+  "api:zones/{z}/routes": {
+    "status": 400,
+    "body": "{\"success\":false,\"errors\":[{\"code\":7003,\"message\":\"Could not route to \\/zones\\/50c463774e5fc1009c434c996d13353d\\/routes, perhaps your object identifier is invalid?\"},{\"code\":7000,\"message\":\"No route for that URI\"}],\"messages\":[],\"result\":null}"
+  },
+  "api:zones/{z}/purge_cache 权限": {
+    "status": 401,
+    "body": "{\"result\":null,\"success\":false,\"errors\":[{\"code\":10000,\"message\":\"Authentication error\"}],\"messages\":[]}"
+  },
+  "api:workers/tails 列表": {
+    "status": 405,
+    "body": "{\"success\":false,\"errors\":[{\"code\":10405,\"message\":\"Method not allowed for this authentication scheme\"}],\"messages\":[],\"result\":null}\n"
+  },
+  "api:workers/tail 读取(需WS?)": {
+    "status": 405,
+    "body": "{\"success\":false,\"errors\":[{\"code\":10405,\"message\":\"Method not allowed for this authentication scheme\"}],\"messages\":[],\"result\":null}\n"
+  },
+  "api:scripts/{s}/settings 真名": {
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"placement\": {\n      \"mode\": \"smart\"\n    },\n    \"compatibility_date\": \"2026-01-20\",\n    \"compatibility_flags\": [],\n    \"usage_model\": \"standard\",\n    \"tags\": [],\n    \"tail_consumers\": [],\n    \"logpush\": false,\n    \"annotations\": {\n      \"workers/triggered_by\": \"upload\"\n    },\n    \"bindings\": [\n      {\n        \"name\": \"ADMIN_PASSWORD\",\n        \"type\": \"secret_text\"\n      },\n      {\n        \"name\": \"ADMIN_USERNAME\",\n        \"type\": \"secret_text\"\n      },\n      {\n        \"name\": \"AI\",\n        \"project\": \"\\u003ccatalog\\u003e\",\n        \"type\": \"ai\"\n      },\n      {\n        \"name\": \"ASSETS\",\n        \"type\": \"assets\"\n      },\n      {\n        \"name\": \"AVATAR\",\n        \"text\": \"\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"CACHE_STORAGE_MODE\",\n        \"text\": \"database\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"database_id\": \"84f4174e-c620-481a-bd3a-e1312dfbddee\",\n        \"id\": \"84f4174e-c620-481a-bd3a-e1312dfbddee\",\n        \"name\": \"DB\",\n        \"type\": \"d1\"\n      },\n      {\n        \"name\": \"DESCRIPTION\",\n        \"text\": \"A lightweight personal blogging system\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"JWT_SECRET\",\n        \"type\": \"secret_text\"\n      },\n      {\n        \"name\": \"NAME\",\n        \"text\": \"Rin\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"PAGE_SIZE\",\n        \"text\": \"5\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"RIN_GITHUB_CLIENT_ID\",\n        \"type\": \"secret_text\"\n      },\n      {\n        \"name\": \"RIN_GITHUB_CLIENT_SECRET\",\n        \"type\": \"secret_text\"\n      },\n      {\n        \"name\": \"RSS_DESCRIPTION\",\n        \"text\": \"\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"RSS_ENABLE\",\n        \"text\": \"false\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"RSS_TITLE\",\n        \"text\": \"\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_ACCESS_HOST\",\n        \"text\": \"\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_ACCESS_KEY_ID\",\n        \"type\": \"secret_text\"\n      },\n      {\n        \"name\": \"S3_BUCKET\",\n        \"text\": \"blog\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_CACHE_FOLDER\",\n        \"text\": \"cache/\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_ENDPOINT\",\n        \"text\": \"https://clist.acct.example.org/s3\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_FOLDER\",\n        \"text\": \"images/\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_FORCE_PATH_STYLE\",\n        \"text\": \"true\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_REGION\",\n        \"text\": \"auto\",\n        \"type\": \"plain_text\"\n      },\n      {\n        \"name\": \"S3_SECRET_ACCESS_KEY\",\n        \"type\": \"secret_text\"\n      },\n      {\n        \"name\": \"TASK_QUEUE\",\n        \"queue_name\": \"rin-server-tasks\",\n        \"type\": \"queue\"\n      },\n      {\n        \"name\": \"WEBHOOK_URL\",\n        \"text\": \"\",\n        \"type\": \"plain_text\"\n      }\n    ]\n  },\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "api:scripts 列表含 tags": {
+    "status": 200,
+    "body": "{\n  \"result\": [\n    {\n      \"created_on\": \"2026-10-07T04:20:32.331084Z\",\n      \"modified_on\": \"2026-10-07T13:03:07.417991Z\",\n      \"id\": \"1\",\n      \"tag\": \"d3c462918a7ee4df17750c0f6e947281\",\n      \"tags\": [],\n      \"deployment_id\": \"\",\n      \"tail_consumers\": null,\n      \"logpush\": false,\n      \"has_assets\": false,\n      \"has_modules\": true,\n      \"etag\": \"28579459fa8bc173cd3d34b92e79da236e85895f423cffe58c8fb9eeda38c55b\",\n      \"handlers\": [\n        \"fetch\"\n      ],\n      \"last_deployed_from\": \"wrangler\",\n      \"compatibility_date\": \"2026-10-01\",\n      \"usage_model\": \"standard\",\n      \"routes\": null\n    },\n    {\n      \"created_on\": \"2026-08-17T05:16:19.765925Z\",\n      \"modified_on\": \"2026-09-07T11:31:19.826214Z\",\n      \"id\": \"hot-news\",\n      \"tag\": \"6c346f617a0b518a6eb172302390a34e\",\n      \"tags\": [],\n      \"deployment_id\": \"\",\n      \"tail_consumers\": null,\n      \"logpush\": false,\n      \"observability\": {\n        \"enabled\": true,\n        \"head_sampling_rate\": 1,\n        \"redact_query_string\": false,\n        \"logs\": {\n          \"enabled\": true,\n          \"head_sampling_rate\": 1,\n          \"persist\": true,\n          \"invocation_logs\": true\n        },\n        \"traces\": {\n          \"enabled\": false,\n          \"persist\": true,\n          \"head_sampling_rate\": 1\n        }\n      },\n      \"has_assets\": true,\n      \"has_modules\": true,\n      \"etag\": \"cc79b9390fe2f702958586f4e711486dadcd5f1bd470833e05cfb7b36409865d\",\n      \"handlers\": [\n        \"fetch\",\n        \"scheduled\"\n      ],\n      \"last_deployed_from\": \"wrangler\",\n      \"compatibility_date\": \"2024-10-03\",\n      \"compatibility_flags\": [\n        \"nodejs_compat\"\n      ],\n      \"usage_model\": \"standard\",\n      \"routes\": null\n    },\n    {\n      \"created_on\": \"2026-08-14T10:18:12.50464Z\",\n      \"modified_on\": \"2026-08-18T00:45:53.164419Z\",\n      \"id\": \"mail\",\n      \"tag\": \"7e2504564738e405523980a8d869c36f\",\n      \"tags\": [],\n      \"deployment_id\": \"\",\n      \"tail_consumers\": null,\n      \"logpush\": false,\n      \"observability\": {\n        \"enabled\": true,\n        \"head_sampling_rate\": 1,\n        \"redact_query_string\": false,\n        \"logs\": {\n          \"enabled\": true,\n          \"head_sampling_rate\": 1,\n          \"persist\": true,\n          \"invocation_logs\": true\n        },\n        \"traces\": {\n          \"enabled\": false,\n          \"persist\": true,\n          \"head_sampling_rate\": 1\n        }\n      },\n      \"has_assets\": true,\n      \"has_modules\": true,\n      \"etag\": \"a55c233a3922e344aabab168845411627b521c041602521996ebbca832475c72\",\n      \"handlers\": [\n        \"fetch\",\n        \"email\",\n        \"scheduled\"\n      ],\n      \"last_deployed_from\": \"wrangler\",\n      \"compatibility_date\": \"2025-06-04\",\n      \"usage_model\": \"standard\",\n      \"routes\": null\n    },\n    {\n      \"created_on\": \"2025-08-25T12:09:23.273243Z\",\n      \"modified_on\": \"2026-10-09T03:35:30.449022Z\",\n      \"id\": \"rin-server\",\n      \"tag\": \"766ab0cf9d186a58c336ee77f88bd1e0\",\n      \"tags\": [],\n      \"deployment_id\": \"\",\n      \"tail_consumers\": null,\n      \"logpush\": false,\n      \"has_assets\": true,\n      \"has_modules\": true,\n      \"etag\": \"03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc\",\n      \"handlers\": [\n        \"fetch\",\n        \"scheduled\",\n        \"queue\"\n      ],\n      \"placement_mode\": \"smart\",\n      \"placement_status\": \"SUCCESS\",\n      \"placement\": {\n        \"mode\": \"smart\",\n        \"status\": \"SUCCESS\",\n        \"last_analyzed_at\": \"2026-10-09T03:35:58.860873Z\"\n      },\n      \"last_deployed_from\": \"wrangler\",\n      \"compatibility_date\": \"2026-01-20\",\n      \"usage_model\": \"standard\",\n      \"routes\": [\n        {\n          \"id\": \"48caaea6c5f647c4734968e1b9c15546\",\n          \"pattern\": \"*blog.acct.example.com/*\",\n          \"script\": \"rin-server\",\n          \"request_limit_fail_open\": false\n        }\n      ]\n    },\n    {\n      \"created_on\": \"2026-08-01T03:35:14.745669Z\",\n      \"modified_on\": \"2026-08-25T09:29:49.032308Z\",\n      \"id\": \"rssworker\",\n      \"tag\": \"ab8e44a155e384cdde87bd5b82d0e37c\",\n      \"tags\": [],\n   "
+  },
+  "api:pages/{fake}/deployments": {
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 8000007,\n      \"message\": \"Project not found. The specified project name does not match any of your existing projects.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "api:rate_limits(zone)": {
+    "status": 410,
+    "body": "{\"message\":\"This API has been deprecated. Please use the Rulesets API instead.\"}"
+  },
+  "api:waf/rulesets": {
+    "status": 200,
+    "body": "{\"result\":{\"id\":\"security_level\",\"value\":\"medium\",\"modified_on\":null,\"editable\":true},\"success\":true,\"errors\":[],\"messages\":[]}"
+  },
+  "api:user/tokens/verify": {
+    "status": 401,
+    "body": "{\"success\":false,\"errors\":[{\"code\":1000,\"message\":\"Invalid API Token\"}],\"messages\":[],\"result\":null}"
+  },
+  "api:tokens(列表)": {
+    "status": 200,
+    "body": "{\"result\":[{\"id\":\"e18fba761923af88f63319ad1e1dd26b\",\"name\":\"dark-lake-83f6\",\"status\":\"active\",\"issued_on\":\"2026-07-31T13:46:59Z\",\"modified_on\":\"2026-08-15T17:45:42Z\",\"last_used_on\":\"2026-10-09T10:25:55Z\",\"policies\":[{\"id\":\"7f4d2b5ebb08fb51beda119cb4d747a4\",\"effect\":\"allow\",\"resources\":{\"com.cloudflare.api.account.«ACCOUNT_ID»\":\"*\"},\"permission_groups\":[{\"id\":\"641bb66a8d1182e082cd1702f1b2c273\",\"name\":\"Realtime Read\"},{\"id\":\"47c75fbeb0779341e5fff89041580ba0\",\"name\":\"Messaging Read\"},{\"id\":\"4c6c077deda9951529712b4fd2ed1d44\",\"name\":\"Websearch Write\"},{\"id\":\"cd8c7c567cd83723256da5e9b0c0eec5\",\"name\":\"Websearch Read\"},{\"id\":\"7bab76b1948c9dba547517802e92495e\",\"name\":\"Field Extractors Write\"},{\"id\":\"7179f97196c4fbcf70783777d1295d25\",\"name\":\"Field Extractors Read\"},{\"id\":\"eabf3b103911b777b90d0fef3aec2d26\",\"name\":\"Email Routing Account Rules Read\"},{\"id\":\"af4bf8d4dc12a2ce2148d46ff277671d\",\"name\":\"Registrar Sandbox Domains Read\"},{\"id\":\"0aec6bc58edd18208d76a19b25299abb\",\"name\":\"Registrar Sandbox Domains Admin\"},{\"id\":\"5a5e0783cd37f1ee085886d32c77a59e\",\"name\":\"Fraud Feedback Write\"},{\"id\":\"bd1212eeb6587bd767c44f40d4a69bb3\",\"name\":\"Fraud Feedback Read\"},{\"id\":\"5e177652005b7156b20074b57204eac1\",\"name\":\"Account Abuse Protection PII Read\"},{\"id\":\"c08c22925c3fd71fe5454987f19b6d1f\",\"name\":\"OAuth Client Write\"},{\"id\":\"7b9afa43e203411acadc9c573803bf50\",\"name\":\"OAuth Client Read\"},{\"id\":\"6bd85eb6f156aaacd61f96d0a45842b3\",\"name\":\"Websearch Run\"},{\"id\":\"8e4e210041299daefe9540cdea21b592\",\"name\":\"Fraud Events Write\"},{\"id\":\"8d9c7a39fde09641429b1448cb0d9421\",\"name\":\"Access: SAML Certificates Write\"},{\"id\":\"40b44d7c483ad8914f5da88d397f3f46\",\"name\":\"Access: SAML Certificates Read\"},{\"id\":\"979c508fc6d54c694c03137f4054e690\",\"name\":\"MoQ Write\"},{\"id\":\"1cf13d0913da0098f1c4241a7bb99f93\",\"name\":\"MoQ Read\"},{\"id\":\"35d30ac4384fe62d6ce9cd9d91723201\",\"name\":\"DLS: Write\"},{\"id\":\"c257316ddc1e833c13ea9224e76fd567\",\"name\":\"DLS: Read\"},{\"id\":\"017c1797cd3c739fc40d0b27c5fcc46e\",\"name\":\"Registrar Domains Admin\"},{\"id\":\"5d38244be7706e1427484508afca8120\",\"name\":\"Artifacts Write\"},{\"id\":\"ad7049cb5d901cc4fbc77c2f9af27073\",\"name\":\"Artifacts Read\"},{\"id\":\"9babb62299ff5e752a002d82beeccbb6\",\"name\":\"Agent Memory Write\"},{\"id\":\"ed55c381a8959f201b091865c66cb085\",\"name\":\"Resource Sharing Read\"},{\"id\":\"3fad058887ee70bcb70df8d6731a9943\",\"name\":\"Account Custom Error Rules Write\"},{\"id\":\"0380b697559872058fa198c39fddb263\",\"name\":\"Account Custom Error Rules Read\"},{\"id\":\"163d54c32000553508c3efad54cb0cb6\",\"name\":\"Account Custom Asset Write\"},{\"id\":\"693c41081ac41c02238ee7885413f337\",\"name\":\"Account Custom Asset Read\"},{\"id\":\"39ddb88721cfc33d733af70660649c8d\",\"name\":\"Email Routing Suppressions Write\"},{\"id\":\"3f7543d68439f63c6f3e6db3ccb389eb\",\"name\":\"Email Routing Suppressions Read\"},{\"id\":\"34b96c820a3d8738a8800f553b76e012\",\"name\":\"Flagship Evaluate\"},{\"id\":\"226c01f0253115ee48a2498be6a4ea54\",\"name\":\"Flagship Write\"},{\"id\":\"284c390995192a4e2ed19f24c8ce5c11\",\"name\":\"Flagship Read\"},{\"id\":\"19c3e2d90e64a2562f193c819eb1dcdb\",\"name\":\"Resource Library Write\"},{\"id\":\"d021ab090860a2e33c9424fa8bf7d296\",\"name\":\"Resource Library Read\"},{\"id\":\"6a2a2a907b50d939d0aafc036bc4c104\",\"name\":\"Tag Write\"},{\"id\":\"b70376c8a5bcac3526a01f1b1dc664b2\",\"name\":\"Tag Read\"},{\"id\":\"a2aaf67b5fcc7b6cba5a3c18d6ace744\",\"name\":\"Access: Users Write\"},{\"id\":\"96504f469e255f95c2fe77a46af26fb7\",\"name\":\"Access: Users Read\"},{\"id\":\"fd12ce91294304db88c3b4f3d185ff47\",\"name\":\"Access: Tags Write\"},{\"id\":\"29b6b859d916b266bb417d9146d38d85\",\"name\":\"Access: Tags Read\"},{\"id\":\"b9c7e88c954281b7987a87d1f7db4650\",\"name\":\"Access: Policies Write\"},{\"id\":\"88f0dce0bdc32d78b799148dba7f92d2\",\"name\":\"Access: Policies Read\"},{\"id\":\"faca44424a131794e7b37bd0138dfc7a\",\"name\":\"Access: Organizations Write\"},{\"id\":\"a39d028d6e1a00efdebe2d688a4f5ded\",\"name\":\"Access: Organizations Revoke\"},{\"id\":\"bf81820252651cb05413a0aebc3c7d8e\",\"name\":\"Access: Organizations Read\"},{\"id\":\"ebdd13aeea3fcd2f8b2d8354cc2a7ccd\",\"name\":\"Access: Keys Write\"},{\"id\":\"0974a"
+  }
+}

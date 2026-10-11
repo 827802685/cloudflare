@@ -1,0 +1,112 @@
+{
+  "zones/{z}/workers/routes": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/workers/routes",
+    "status": 200,
+    "body": "{\n  \"result\": [\n    {\n      \"id\": \"48caaea6c5f647c4734968e1b9c15546\",\n      \"pattern\": \"*blog.acct.example.com/*\",\n      \"script\": \"rin-server\",\n      \"request_limit_fail_open\": false\n    }\n  ],\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "accounts/{a}/workers/routes": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/routes",
+    "status": 400,
+    "body": "{\"success\":false,\"errors\":[{\"code\":7003,\"message\":\"Could not route to \\/accounts\\/«ACCOUNT_ID»\\/workers\\/routes, perhaps your object identifier is invalid?\"},{\"code\":7000,\"message\":\"No route for that URI\"}],\"messages\":[],\"result\":null}"
+  },
+  "accounts/{a}/workers/routes?zone_id": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/routes?zone_id=50c463774e5fc1009c434c996d13353d",
+    "status": 400,
+    "body": "{\"success\":false,\"errors\":[{\"code\":7003,\"message\":\"Could not route to \\/accounts\\/«ACCOUNT_ID»\\/workers\\/routes, perhaps your object identifier is invalid?\"},{\"code\":7000,\"message\":\"No route for that URI\"}],\"messages\":[],\"result\":null}"
+  },
+  "analytics/workers_usage/sum": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics/workers_usage/sum?since=2026-10-08T00:00:00Z&until=2026-10-09T23:59:59Z",
+    "status": 500,
+    "body": ""
+  },
+  "analytics/engine_usage/sum": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics/engine_usage/sum?since=2026-10-08T00:00:00Z&until=2026-10-09T23:59:59Z",
+    "status": 500,
+    "body": ""
+  },
+  "workers/analysis/overview": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/analysis/overview",
+    "status": 400,
+    "body": "{\"success\":false,\"errors\":[{\"code\":7003,\"message\":\"Could not route to \\/accounts\\/«ACCOUNT_ID»\\/workers\\/analysis\\/overview, perhaps your object identifier is invalid?\"},{\"code\":7000,\"message\":\"No route for that URI\"}],\"messages\":[],\"result\":null}"
+  },
+  "workers/scripts/{s}/analytics": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/analytics",
+    "status": 200,
+    "body": "--75c9abf46de383902ed217706d125ee989203439904c89d2a1f8135ab4a1\r\nContent-Disposition: form-data; name=\"_worker.js\"\r\n\r\nvar __defProp = Object.defineProperty;\nvar __name = (target, value) => __defProp(target, \"name\", { value, configurable: true });\nvar __require = /* @__PURE__ */ ((x2) => typeof require !== \"undefined\" ? require : typeof Proxy !== \"undefined\" ? new Proxy(x2, {\n  get: (a2, b2) => (typeof require !== \"undefined\" ? require : a2)[b2]\n}) : x2)(function(x2) {\n  if (typeof require !== \"undefined\") return require.apply(this, arguments);\n  throw Error('Dynamic require of \"' + x2 + '\" is not supported');\n});\n\n// dist/server/_worker.js\nvar __create = Object.create;\nvar __defProp2 = Object.defineProperty;\nvar __getOwnPropDesc = Object.getOwnPropertyDescriptor;\nvar __getOwnPropNames = Object.getOwnPropertyNames;\nvar __getProtoOf = Object.getPrototypeOf;\nvar __hasOwnProp = Object.prototype.hasOwnProperty;\nvar __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, \"name\", { value, configurable: true }), \"__name\");\nvar __require2 = /* @__PURE__ */ ((x2) => typeof __require !== \"undefined\" ? __require : typeof Proxy !== \"undefined\" ? new Proxy(x2, {\n  get: /* @__PURE__ */ __name((a2, b2) => (typeof __require !== \"undefined\" ? __require : a2)[b2], \"get\")\n}) : x2)(function(x2) {\n  if (typeof __require !== \"undefined\") return __require.apply(this, arguments);\n  throw Error('Dynamic require of \"' + x2 + '\" is not supported');\n});\nvar __esm = /* @__PURE__ */ __name((fn, res) => /* @__PURE__ */ __name(function __init() {\n  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;\n}, \"__init\"), \"__esm\");\nvar __commonJS = /* @__PURE__ */ __name((cb2, mod) => /* @__PURE__ */ __name(function __require22() {\n  return mod || (0, cb2[__getOwnPropNames(cb2)[0]])((mod = { exports: {} }).exports, mod), mod.exports;\n}, \"__require2\"), \"__commonJS\");\nvar __export = /* @__PURE__ */ __name((target, all4) => {\n  for (var name in all4)\n    __defProp2(target, name, { get: all4[name], enumerable: true });\n}, \"__export\");\nvar __copyProps = /* @__PURE__ */ __name((to, from, except2, desc2) => {\n  if (from && typeof from === \"object\" || typeof from === \"function\") {\n    for (let key2 of __getOwnPropNames(from))\n      if (!__hasOwnProp.call(to, key2) && key2 !== except2)\n        __defProp2(to, key2, { get: /* @__PURE__ */ __name(() => from[key2], \"get\"), enumerable: !(desc2 = __getOwnPropDesc(from, key2)) || desc2.enumerable });\n  }\n  return to;\n}, \"__copyProps\");\nvar __toESM = /* @__PURE__ */ __name((mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(\n  // If the importer is in node compatibility mode or this is not an ESM\n  // file that has been converted to a CommonJS file using a Babel-\n  // compatible transform (i.e. \"__esModule\" has not been set), then set\n  // \"default\" to the CommonJS \"module.exports\" for node compatibility.\n  isNodeMode || !mod || !mod.__esModule ? __defProp2(target, \"default\", {"
+  },
+  "GQL acct workersAnalyticsAdaptiveGroups": {
+    "path": "/graphql",
+    "status": 200,
+    "body": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"workersAnalyticsAdaptiveGroups\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:42:30.414158503Z\",\"ray_id\":\"a47cc76bcceeccd3-SEA\"}}]}"
+  },
+  "GQL acct workersRequestsAdaptiveGroups": {
+    "path": "/graphql",
+    "status": 200,
+    "body": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"workersRequestsAdaptiveGroups\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:42:30.730893713Z\",\"ray_id\":\"a47cc76dce059a6b-SEA\"}}]}"
+  },
+  "GQL zone httpRequests1dGroups 仅 requests": {
+    "path": "/graphql",
+    "status": 200,
+    "body": "{\"data\":{\"viewer\":{\"zones\":[{\"x\":[{\"dimensions\":{\"date\":\"2026-10-08\"},\"sum\":{\"requests\":1567}},{\"dimensions\":{\"date\":\"2026-10-07\"},\"sum\":{\"requests\":3890}},{\"dimensions\":{\"date\":\"2026-10-06\"},\"sum\":{\"requests\":1322}}]}]}},\"errors\":null}"
+  },
+  "GQL zone 1d sum{visits cached originErrors}": {
+    "path": "/graphql",
+    "status": 200,
+    "body": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"visits\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:42:31.939637825Z\",\"ray_id\":\"a47cc7754df09a6b-SEA\"}}]}"
+  },
+  "GQL zone adaptive sum{count via _id}": {
+    "path": "/graphql",
+    "status": 200,
+    "body": "{\"data\":null,\"errors\":[{\"message\":\"unknown field \\\"max\\\"\",\"path\":null,\"extensions\":{\"timestamp\":\"2026-10-09T10:42:32.235448697Z\",\"ray_id\":\"a47cc7774f9e9a6b-SEA\"}}]}"
+  },
+  "analytics_engine/datasets v2": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics_engine/v2/datasets",
+    "status": 500,
+    "body": ""
+  },
+  "analytics_engine/datasets?dataplane": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics_engine/datasets?dataplane=core&limit=10",
+    "status": 500,
+    "body": ""
+  },
+  "ae 列 definitions": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics_engine/column/definitions",
+    "status": 500,
+    "body": ""
+  },
+  "SQL AE 默认数据集名": {
+    "path": "/analytics/sql",
+    "status": 422,
+    "body": "Input was invalid: query must specify an account; provide scope.accountTag"
+  },
+  "d1 time_travel 候选": {
+    "path": "/accounts/«ACCOUNT_ID»/d1/database/84f4174e-c620-481a-bd3a-e1312dfbddee/time_travel",
+    "status": 404,
+    "body": "{\"success\":false,\"errors\":[\"Route not found\"]}"
+  },
+  "zones/{z}/dns_records?type=A": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/dns_records?type=A&per_page=10",
+    "status": 200,
+    "body": "{\"result\":[],\"success\":true,\"errors\":[],\"messages\":[],\"result_info\":{\"page\":1,\"per_page\":10,\"count\":0,\"total_count\":0,\"total_pages\":1}}"
+  },
+  "zones/{z}/dns_records/{id}": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/dns_records/f2c7ec45a750517b4b8257f2a1b4dc47",
+    "status": 200,
+    "body": "{\"result\":{\"id\":\"f2c7ec45a750517b4b8257f2a1b4dc47\",\"name\":\"blog.acct.example.com\",\"type\":\"CNAME\",\"content\":\"blog.acct.example.com.eo.dnse5.com\",\"proxiable\":true,\"proxied\":false,\"ttl\":1,\"settings\":{\"flatten_cname\":false},\"meta\":{},\"comment\":null,\"tags\":[],\"created_on\":\"2026-08-19T04:33:04.069929Z\",\"modified_on\":\"2026-08-19T04:33:04.069929Z\"},\"success\":true,\"errors\":[],\"messages\":[]}"
+  },
+  "pages/{fake} 项目详情": {
+    "path": "/accounts/«ACCOUNT_ID»/pages/projects/__none__",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 8000007,\n      \"message\": \"Project not found. The specified project name does not match any of your existing projects.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "accounts/{a}/workers/services/environment": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/services/rin-server/environments/production/scripts",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"environment\": \"production\",\n    \"script_tag\": \"766ab0cf9d186a58c336ee77f88bd1e0\",\n    \"created_on\": \"2025-08-25T12:09:23.273243Z\",\n    \"modified_on\": \"2026-10-09T03:35:30.449022Z\",\n    \"script\": {\n      \"created_on\": \"2025-08-25T12:09:23.273243Z\",\n      \"modified_on\": \"2026-10-09T03:35:30.449022Z\",\n      \"id\": \"rin-server\",\n      \"tag\": \"766ab0cf9d186a58c336ee77f88bd1e0\",\n      \"tags\": [],\n      \"deployment_id\": \"\",\n      \"tail_consumers\": null,\n      \"logpush\": false,\n      \"has_assets\": true,\n      \"has_modules\": true,\n      \"etag\": \"03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc\",\n      \"handlers\": [\n        \"fetch\",\n        \"scheduled\",\n        \"queue\"\n      ],\n      \"placement_mode\": \"smart\",\n      \"placement_status\": \"SUCCESS\",\n      \"placement\": {\n        \"mode\": \"smart\",\n        \"status\": \"SUCCESS\",\n        \"last_analyzed_at\": \"2026-10-09T03:35:58.860873Z\"\n      },\n      \"last_deployed_from\": \"wrangler\",\n      \"compatibility_date\": \"2026-01-20\",\n      \"usage_model\": \"standard\"\n    }\n  },\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "versions/{v}/secrets": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/versions/e0b67a07-8532-4843-b2ff-f27029fc135b/secrets",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"id\": \"e0b67a07-8532-4843-b2ff-f27029fc135b\",\n    \"number\": 148,\n    \"metadata\": {\n      \"created_on\": \"2026-10-09T03:35:30.449022Z\",\n      \"source\": \"wrangler\",\n      \"author_id\": \"e18fba761923af88f63319ad1e1dd26b\",\n      \"author_email\": \"\",\n      \"has_preview\": true\n    },\n    \"annotations\": {\n      \"workers/triggered_by\": \"upload\"\n    },\n    \"resources\": {\n      \"script\": {\n        \"etag\": \"03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc\",\n        \"handlers\": [\n          \"fetch\",\n          \"scheduled\",\n          \"queue\"\n        ],\n        \"placement_mode\": \"smart\",\n        \"placement\": {\n          \"mode\": \"smart\"\n        },\n        \"last_deployed_from\": \"wrangler\"\n      },\n      \"script_runtime\": {\n        \"assets\": {\n          \"serve_directly\": true,\n          \"raw_run_worker_first\": false,\n          \"base_path\": \"/\"\n        },\n        \"compatibility_date\": \"2026-01-20\",\n        \"usage_model\": \"standard\"\n      },\n      \"bindings\": [\n        {\n          \"name\": \"ADMIN_PASSWORD\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"ADMIN_USERNAME\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"AI\",\n          \"project\": \"\\u003ccatalog\\u003e\",\n          \"type\": \"ai\"\n        },\n        {\n          \"name\": \"ASSETS\",\n          \"type\": \"assets\"\n        },\n        {\n          \"name\": \"AVATAR\",\n          \"text\": \"\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"CACHE_STORAGE_MODE\",\n          \"text\": \"database\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"database_id\": \"84f4174e-c620-481a-bd3a-e1312dfbddee\",\n          \"id\": \"84f4174e-c620-481a-bd3a-e1312dfbddee\",\n          \"name\": \"DB\",\n          \"type\": \"d1\"\n        },\n        {\n          \"name\": \"DESCRIPTION\",\n          \"text\": \"A lightweight personal blogging system\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"JWT_SECRET\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"NAME\",\n          \"text\": \"Rin\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"PAGE_SIZE\",\n          \"text\": \"5\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"RIN_GITHUB_CLIENT_ID\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"RIN_GITHUB_CLIENT_SECRET\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"RSS_DESCRIPTION\",\n          \"text\": \"\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"RSS_ENABLE\",\n          \"text\": \"false\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"RSS_TITLE\",\n          \"text\": \"\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"S3_ACCESS_HOST\",\n          \"text\": \"\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"S3_ACCESS_KEY_ID\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"S3_BUCKET\",\n          \"text\": \"blog\",\n     "
+  }
+}

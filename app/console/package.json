@@ -1,0 +1,27 @@
+{
+  "name": "cf-console",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "predev": "node ../../tools/dev-port-guard.mjs --require-free ui",
+    "dev": "vite",
+    "doctor": "node ../../tools/dev-port-guard.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "vue-tsc --noEmit",
+    "check:pwa": "node ../../tools/check-pwa-assets.mjs",
+    "check:routes": "node ../../tools/check-route-parity.mjs --selftest"
+  },
+  "dependencies": {
+    "pinia": "^4.0.3",
+    "vue": "^3.5.43",
+    "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.9",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vue-tsc": "^3.3.12"
+  }
+}

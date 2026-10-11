@@ -1,0 +1,261 @@
+{
+  "verifiedAt": "2026-10-09T10:48:13.170Z",
+  "zoneTag": "50c463774e5fc1009c434c996d13353d",
+  "sets": {
+    "httpRequestsAdaptiveGroups.sum": {
+      "ok": [
+        {
+          "field": "visits",
+          "sample": 2492
+        },
+        {
+          "field": "edgeResponseBytes",
+          "sample": 618509176
+        }
+      ],
+      "denied": [],
+      "unknown": [
+        {
+          "field": "requests",
+          "why": "unknown field \"requests\""
+        },
+        {
+          "field": "indexedBytes",
+          "why": "unknown field \"indexedBytes\""
+        },
+        {
+          "field": "savedBytes",
+          "why": "unknown field \"savedBytes\""
+        },
+        {
+          "field": "originErrorRequests",
+          "why": "unknown field \"originErrorRequests\""
+        },
+        {
+          "field": "encryptedRequestCount",
+          "why": "unknown field \"encryptedRequestCount\""
+        },
+        {
+          "field": "uniques",
+          "why": "unknown field \"uniques\""
+        }
+      ]
+    },
+    "httpRequestsAdaptiveGroups.count": {
+      "ok": [],
+      "denied": [],
+      "unknown": [
+        {
+          "field": "count",
+          "why": "scalar field must have no selections"
+        }
+      ]
+    },
+    "httpRequestsAdaptiveGroups.dimensions": {
+      "ok": [
+        {
+          "field": "clientCountryName",
+          "sample": "NL"
+        },
+        {
+          "field": "clientRequestHTTPHost",
+          "sample": "1.acct.example.com:2052"
+        },
+        {
+          "field": "clientRequestHTTPProtocol",
+          "sample": "HTTP/1.1"
+        },
+        {
+          "field": "clientRequestHTTPMethodName",
+          "sample": "POST"
+        },
+        {
+          "field": "edgeResponseStatus",
+          "sample": 500
+        },
+        {
+          "field": "clientIP",
+          "sample": "43.175.104.143"
+        },
+        {
+          "field": "cacheStatus",
+          "sample": "none"
+        },
+        {
+          "field": "clientDeviceType",
+          "sample": "tablet"
+        },
+        {
+          "field": "originResponseStatus",
+          "sample": 204
+        }
+      ],
+      "denied": [
+        {
+          "field": "clientASNDescription",
+          "why": "zone '50c463774e5fc1009c434c996d13353d' does not have access to the fi"
+        },
+        {
+          "field": "clientRequestQuery",
+          "why": "zone '50c463774e5fc1009c434c996d13353d' does not have access to the fi"
+        },
+        {
+          "field": "clientRequestReferer",
+          "why": "zone '50c463774e5fc1009c434c996d13353d' does not have access to the fi"
+        },
+        {
+          "field": "clientRequestScheme",
+          "why": "zone '50c463774e5fc1009c434c996d13353d' does not have access to the fi"
+        }
+      ],
+      "unknown": [
+        {
+          "field": "clientASN",
+          "why": "unknown field \"clientASN\""
+        },
+        {
+          "field": "edgeCacheStatus",
+          "why": "unknown field \"edgeCacheStatus\""
+        },
+        {
+          "field": "clientRequestURIPath",
+          "why": "unknown field \"clientRequestURIPath\""
+        },
+        {
+          "field": "clientRequestURIRaw",
+          "why": "unknown field \"clientRequestURIRaw\""
+        },
+        {
+          "field": "clientBrowserFamily",
+          "why": "unknown field \"clientBrowserFamily\""
+        },
+        {
+          "field": "clientOSFamily",
+          "why": "unknown field \"clientOSFamily\""
+        },
+        {
+          "field": "contentType",
+          "why": "unknown field \"contentType\""
+        },
+        {
+          "field": "workerVersion",
+          "why": "unknown field \"workerVersion\""
+        },
+        {
+          "field": "workloadRunStatus",
+          "why": "unknown field \"workloadRunStatus\""
+        },
+        {
+          "field": "jobRunStatus",
+          "why": "unknown field \"jobRunStatus\""
+        },
+        {
+          "field": "jobName",
+          "why": "unknown field \"jobName\""
+        },
+        {
+          "field": "jobID",
+          "why": "unknown field \"jobID\""
+        },
+        {
+          "field": "datasetName",
+          "why": "unknown field \"datasetName\""
+        },
+        {
+          "field": "accountName",
+          "why": "unknown field \"accountName\""
+        },
+        {
+          "field": "clientRequestHTTPVersion",
+          "why": "unknown field \"clientRequestHTTPVersion\""
+        },
+        {
+          "field": "ipVersion",
+          "why": "unknown field \"ipVersion\""
+        },
+        {
+          "field": "visitorUUID",
+          "why": "unknown field \"visitorUUID\""
+        }
+      ]
+    },
+    "httpRequests1dGroups.sum": {
+      "ok": [
+        {
+          "field": "requests",
+          "sample": 10427
+        },
+        {
+          "field": "bytes",
+          "sample": 651519273
+        },
+        {
+          "field": "pageViews",
+          "sample": 5786
+        },
+        {
+          "field": "threats",
+          "sample": 321
+        },
+        {
+          "field": "encryptedRequests",
+          "sample": 8659
+        }
+      ],
+      "denied": [],
+      "unknown": [
+        {
+          "field": "visits",
+          "why": "unknown field \"visits\""
+        },
+        {
+          "field": "uniques",
+          "why": "unknown field \"uniques\""
+        },
+        {
+          "field": "cached",
+          "why": "unknown field \"cached\""
+        },
+        {
+          "field": "originErrors",
+          "why": "unknown field \"originErrors\""
+        },
+        {
+          "field": "savedBytes",
+          "why": "unknown field \"savedBytes\""
+        },
+        {
+          "field": "indexedBytes",
+          "why": "unknown field \"indexedBytes\""
+        },
+        {
+          "field": "botRequests",
+          "why": "unknown field \"botRequests\""
+        },
+        {
+          "field": "totalEncryptedRequests",
+          "why": "unknown field \"totalEncryptedRequests\""
+        }
+      ]
+    },
+    "httpRequests1dGroups.dimensions": {
+      "ok": [
+        {
+          "field": "date",
+          "sample": "2026-10-05"
+        }
+      ],
+      "denied": [],
+      "unknown": [
+        {
+          "field": "day",
+          "why": "unknown field \"day\""
+        },
+        {
+          "field": "datetimeDay",
+          "why": "unknown field \"datetimeDay\""
+        }
+      ]
+    }
+  }
+}

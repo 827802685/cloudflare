@@ -1,0 +1,74 @@
+{
+  "verifiedAt": "2026-10-09T13:16:04.152Z",
+  "accountTag": "«ACCOUNT_ID»",
+  "zoneTag": "50c463774e5fc1009c434c996d13353d",
+  "results": {
+    "pagesProjects": {
+      "maxOkPerPage": 10,
+      "notes": [
+        "per_page=20 → 400 8000024 Invalid list options provided. Review the `page` or `per_page` parameter.",
+        "per_page=25 → 400 8000024 Invalid list options provided. Review the `page` or `per_page` parameter.",
+        "per_page=50 → 400 8000024 Invalid list options provided. Review the `page` or `per_page` parameter.",
+        "per_page=100 → 400 8000024 Invalid list options provided. Review the `page` or `per_page` parameter."
+      ],
+      "sampleTotal": 0
+    },
+    "pagesDeployments": {
+      "maxOkPerPage": null,
+      "notes": [
+        "per_page=5 → 404 8000007 Project not found. The specified project name does not match any of your existing projects.",
+        "per_page=10 → 404 8000007 Project not found. The specified project name does not match any of your existing projects.",
+        "per_page=20 → 404 8000007 Project not found. The specified project name does not match any of your existing projects.",
+        "per_page=25 → 404 8000007 Project not found. The specified project name does not match any of your existing projects.",
+        "per_page=50 → 400 8000024 Invalid list options provided. Review the `page` or `per_page` parameter.",
+        "per_page=100 → 400 8000024 Invalid list options provided. Review the `page` or `per_page` parameter."
+      ],
+      "sampleTotal": null
+    },
+    "zones": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 1
+    },
+    "workersScripts": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 7
+    },
+    "workerVersions": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 148
+    },
+    "workerDeployments": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 148
+    },
+    "dnsRecords": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 14
+    },
+    "zoneSettings": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 56
+    },
+    "workerDomains": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 6
+    },
+    "kvNamespaces": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 8
+    },
+    "d1Databases": {
+      "maxOkPerPage": 100,
+      "notes": [],
+      "sampleTotal": 5
+    }
+  }
+}

@@ -1,0 +1,15 @@
+world-map.json
+==============
+来源：@svg-maps/world v2.0.0  https://github.com/VictorCazanave/svg-maps
+许可：CC-BY-4.0（署名：Victor Cazanave / svg-maps，底图 Natural Earth 公有领域数据）
+
+本仓库内的加工（一次性脚本做的，之后手工维护）：
+1. 路径坐标四舍五入到 1 位小数（viewBox 1010x666，1 位仍是亚像素），并压掉多余分隔符
+   —— 1204KB → 777KB，gzip 386KB → 143KB；
+2. 删掉每个区域的英文名 `name`，只留 `i`（小写 ISO 3166-1 alpha-2）与 `p`（path d）
+   —— 中文标签统一由 src/lib/country.ts 那张表出，不在几何文件里存第二份；
+3. id 统一小写，与网关 `/v1/overview` 里 countries 卡的 `dimensions.clientCountryName`
+   （实测就是两位国家码）直接对齐。
+
+256 个区域。加载方式：src/components/board/WorldMap.vue 里用动态 import 切成独立 chunk，
+只有看板切到「来源国家」这张图才会下载。

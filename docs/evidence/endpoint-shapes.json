@@ -1,0 +1,2972 @@
+{
+  "versions/{v}": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/versions/e0b67a07-8532-4843-b2ff-f27029fc135b",
+    "method": "GET",
+    "status": 200,
+    "len": 4029,
+    "resultKeys": "id,number,metadata,annotations,resources",
+    "body": {
+      "id": "e0b67a07-8532-4843-b2ff-f27029fc135b",
+      "number": 148,
+      "metadata": {
+        "created_on": "2026-10-09T03:35:30.449022Z",
+        "source": "wrangler",
+        "author_id": "e18fba761923af88f63319ad1e1dd26b",
+        "author_email": "",
+        "has_preview": true
+      },
+      "annotations": {
+        "workers/triggered_by": "upload"
+      },
+      "resources": {
+        "script": {
+          "etag": "03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc",
+          "handlers": [
+            "fetch",
+            "scheduled",
+            "queue"
+          ],
+          "placement_mode": "smart",
+          "placement": {
+            "mode": "smart"
+          },
+          "last_deployed_from": "wrangler"
+        },
+        "script_runtime": {
+          "assets": {
+            "serve_directly": true,
+            "raw_run_worker_first": false,
+            "base_path": "/"
+          },
+          "compatibility_date": "2026-01-20",
+          "usage_model": "standard"
+        },
+        "bindings": [
+          {
+            "name": "ADMIN_PASSWORD",
+            "type": "secret_text"
+          },
+          {
+            "name": "ADMIN_USERNAME",
+            "type": "secret_text"
+          },
+          {
+            "name": "AI",
+            "project": "<catalog>",
+            "type": "ai"
+          },
+          {
+            "name": "ASSETS",
+            "type": "assets"
+          },
+          {
+            "name": "AVATAR",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "CACHE_STORAGE_MODE",
+            "text": "database",
+            "type": "plain_text"
+          },
+          {
+            "database_id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "name": "DB",
+            "type": "d1"
+          },
+          {
+            "name": "DESCRIPTION",
+            "text": "A lightweight personal blogging system",
+            "type": "plain_text"
+          },
+          {
+            "name": "JWT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "NAME",
+            "text": "Rin",
+            "type": "plain_text"
+          },
+          {
+            "name": "PAGE_SIZE",
+            "text": "5",
+            "type": "plain_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "RSS_DESCRIPTION",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_ENABLE",
+            "text": "false",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_TITLE",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_HOST",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_KEY_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "S3_BUCKET",
+            "text": "blog",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_CACHE_FOLDER",
+            "text": "cache/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ENDPOINT",
+            "text": "https://clist.acct.example.org/s3",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FOLDER",
+            "text": "images/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FORCE_PATH_STYLE",
+            "text": "true",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_REGION",
+            "text": "auto",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_SECRET_ACCESS_KEY",
+            "type": "secret_text"
+          },
+          {
+            "name": "TASK_QUEUE",
+            "queue_name": "rin-server-tasks",
+            "type": "queue"
+          },
+          {
+            "name": "WEBHOOK_URL",
+            "text": "",
+            "type": "plain_text"
+          }
+        ]
+      }
+    }
+  },
+  "versions/{v}/bogus后缀": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/versions/e0b67a07-8532-4843-b2ff-f27029fc135b/totallybogus",
+    "method": "GET",
+    "status": 200,
+    "len": 4029,
+    "resultKeys": "id,number,metadata,annotations,resources",
+    "body": {
+      "id": "e0b67a07-8532-4843-b2ff-f27029fc135b",
+      "number": 148,
+      "metadata": {
+        "created_on": "2026-10-09T03:35:30.449022Z",
+        "source": "wrangler",
+        "author_id": "e18fba761923af88f63319ad1e1dd26b",
+        "author_email": "",
+        "has_preview": true
+      },
+      "annotations": {
+        "workers/triggered_by": "upload"
+      },
+      "resources": {
+        "script": {
+          "etag": "03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc",
+          "handlers": [
+            "fetch",
+            "scheduled",
+            "queue"
+          ],
+          "placement_mode": "smart",
+          "placement": {
+            "mode": "smart"
+          },
+          "last_deployed_from": "wrangler"
+        },
+        "script_runtime": {
+          "assets": {
+            "serve_directly": true,
+            "raw_run_worker_first": false,
+            "base_path": "/"
+          },
+          "compatibility_date": "2026-01-20",
+          "usage_model": "standard"
+        },
+        "bindings": [
+          {
+            "name": "ADMIN_PASSWORD",
+            "type": "secret_text"
+          },
+          {
+            "name": "ADMIN_USERNAME",
+            "type": "secret_text"
+          },
+          {
+            "name": "AI",
+            "project": "<catalog>",
+            "type": "ai"
+          },
+          {
+            "name": "ASSETS",
+            "type": "assets"
+          },
+          {
+            "name": "AVATAR",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "CACHE_STORAGE_MODE",
+            "text": "database",
+            "type": "plain_text"
+          },
+          {
+            "database_id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "name": "DB",
+            "type": "d1"
+          },
+          {
+            "name": "DESCRIPTION",
+            "text": "A lightweight personal blogging system",
+            "type": "plain_text"
+          },
+          {
+            "name": "JWT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "NAME",
+            "text": "Rin",
+            "type": "plain_text"
+          },
+          {
+            "name": "PAGE_SIZE",
+            "text": "5",
+            "type": "plain_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "RSS_DESCRIPTION",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_ENABLE",
+            "text": "false",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_TITLE",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_HOST",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_KEY_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "S3_BUCKET",
+            "text": "blog",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_CACHE_FOLDER",
+            "text": "cache/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ENDPOINT",
+            "text": "https://clist.acct.example.org/s3",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FOLDER",
+            "text": "images/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FORCE_PATH_STYLE",
+            "text": "true",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_REGION",
+            "text": "auto",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_SECRET_ACCESS_KEY",
+            "type": "secret_text"
+          },
+          {
+            "name": "TASK_QUEUE",
+            "queue_name": "rin-server-tasks",
+            "type": "queue"
+          },
+          {
+            "name": "WEBHOOK_URL",
+            "text": "",
+            "type": "plain_text"
+          }
+        ]
+      }
+    }
+  },
+  "versions/{v}/content": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/versions/e0b67a07-8532-4843-b2ff-f27029fc135b/content",
+    "method": "GET",
+    "status": 200,
+    "len": 4029,
+    "resultKeys": "id,number,metadata,annotations,resources",
+    "body": {
+      "id": "e0b67a07-8532-4843-b2ff-f27029fc135b",
+      "number": 148,
+      "metadata": {
+        "created_on": "2026-10-09T03:35:30.449022Z",
+        "source": "wrangler",
+        "author_id": "e18fba761923af88f63319ad1e1dd26b",
+        "author_email": "",
+        "has_preview": true
+      },
+      "annotations": {
+        "workers/triggered_by": "upload"
+      },
+      "resources": {
+        "script": {
+          "etag": "03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc",
+          "handlers": [
+            "fetch",
+            "scheduled",
+            "queue"
+          ],
+          "placement_mode": "smart",
+          "placement": {
+            "mode": "smart"
+          },
+          "last_deployed_from": "wrangler"
+        },
+        "script_runtime": {
+          "assets": {
+            "serve_directly": true,
+            "raw_run_worker_first": false,
+            "base_path": "/"
+          },
+          "compatibility_date": "2026-01-20",
+          "usage_model": "standard"
+        },
+        "bindings": [
+          {
+            "name": "ADMIN_PASSWORD",
+            "type": "secret_text"
+          },
+          {
+            "name": "ADMIN_USERNAME",
+            "type": "secret_text"
+          },
+          {
+            "name": "AI",
+            "project": "<catalog>",
+            "type": "ai"
+          },
+          {
+            "name": "ASSETS",
+            "type": "assets"
+          },
+          {
+            "name": "AVATAR",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "CACHE_STORAGE_MODE",
+            "text": "database",
+            "type": "plain_text"
+          },
+          {
+            "database_id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "name": "DB",
+            "type": "d1"
+          },
+          {
+            "name": "DESCRIPTION",
+            "text": "A lightweight personal blogging system",
+            "type": "plain_text"
+          },
+          {
+            "name": "JWT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "NAME",
+            "text": "Rin",
+            "type": "plain_text"
+          },
+          {
+            "name": "PAGE_SIZE",
+            "text": "5",
+            "type": "plain_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "RSS_DESCRIPTION",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_ENABLE",
+            "text": "false",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_TITLE",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_HOST",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_KEY_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "S3_BUCKET",
+            "text": "blog",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_CACHE_FOLDER",
+            "text": "cache/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ENDPOINT",
+            "text": "https://clist.acct.example.org/s3",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FOLDER",
+            "text": "images/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FORCE_PATH_STYLE",
+            "text": "true",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_REGION",
+            "text": "auto",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_SECRET_ACCESS_KEY",
+            "type": "secret_text"
+          },
+          {
+            "name": "TASK_QUEUE",
+            "queue_name": "rin-server-tasks",
+            "type": "queue"
+          },
+          {
+            "name": "WEBHOOK_URL",
+            "text": "",
+            "type": "plain_text"
+          }
+        ]
+      }
+    }
+  },
+  "legacy scripts/{s}": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server",
+    "method": "GET",
+    "status": 200,
+    "len": 2558574,
+    "text": "--e05be806b4311ac72ed4af00d8eb6e24fb084e50ce0294fcbbc37e465eff\r\nContent-Disposition: form-data; name=\"_worker.js\"\r\n\r\nvar __defProp = Object.defineProperty;\nvar __name = (target, value) => __defProp(target, \"name\", { value, configurable: true });\nvar __require = /* @__PURE__ */ ((x2) => typeof require !== \"undefined\" ? require : typeof Proxy !== \"undefined\" ? new Proxy(x2, {\n  get: (a2, b2) => (typeof require !== \"undefined\" ? require : a2)[b2]\n}) : x2)(function(x2) {\n  if (typeof require !== \"undefined\") return require.apply(this, arguments);\n  throw Error('Dynamic require of \"' + x2 + '\" is not supported');\n});\n\n// dist/server/_worker.js\nvar __create = Object.create;\nvar __defProp2 = Object.defineProperty;\nvar __getOwnPropDesc = Object.getOwnPropertyDescriptor;\nvar __getOwnPropNames = Object.getOwnPropertyNames;\nvar __getProtoOf = Object.getPrototypeOf;\nvar __hasOwnProp = Object.prototype.hasOwnProperty;\nvar __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, \"name\", { value, configurable: true }), \"__name\");\nvar __require2 = /* @__PURE__ */ ((x2) => typeof __require !== \"undefined\" ? __require : typeof Proxy !== \"undefined\" ? new Proxy(x2, {\n  get: /* @__PURE__ */ __name((a2, b2) => (typeof __require !== \"undefined\" ? __require : a2)[b2], \"get\")\n}) : x2)(function(x2) {\n  if (typeof __require !== \"undefined\") return __require.apply(this, arguments);\n  throw Error('Dynamic require of \"' + x2 + '\" is not supported');\n});\nvar __esm = /* @__PURE__ */ __name((fn, res) => /* @__PURE__ */ __name(function __init() {\n  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;\n}, \"__init\"), \"__esm\");\nvar __commonJS = /* @__PURE__ */ __name((cb2, mod) => /* @__PURE__ */ __name(function __require22() {\n  return mod || (0, cb2[__getOwnPropNames(cb2)[0]])((mod = { exports: {} }).exports, mod), mod.exports;\n}, \"__require2\"), \"__commonJS\");\nvar __export = /* @__PURE__ */ __name((target, all4) => {\n  for (var name in all4)\n    __defProp2(target, name, "
+  },
+  "scripts/{s}/settings": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/settings",
+    "method": "GET",
+    "status": 200,
+    "len": 3092,
+    "resultKeys": "placement,compatibility_date,compatibility_flags,usage_model,tags,tail_consumers,logpush,annotations,bindings",
+    "body": {
+      "placement": {
+        "mode": "smart"
+      },
+      "compatibility_date": "2026-01-20",
+      "compatibility_flags": [],
+      "usage_model": "standard",
+      "tags": [],
+      "tail_consumers": [],
+      "logpush": false,
+      "annotations": {
+        "workers/triggered_by": "upload"
+      },
+      "bindings": [
+        {
+          "name": "ADMIN_PASSWORD",
+          "type": "secret_text"
+        },
+        {
+          "name": "ADMIN_USERNAME",
+          "type": "secret_text"
+        },
+        {
+          "name": "AI",
+          "project": "<catalog>",
+          "type": "ai"
+        },
+        {
+          "name": "ASSETS",
+          "type": "assets"
+        },
+        {
+          "name": "AVATAR",
+          "text": "",
+          "type": "plain_text"
+        },
+        {
+          "name": "CACHE_STORAGE_MODE",
+          "text": "database",
+          "type": "plain_text"
+        },
+        {
+          "database_id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+          "id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+          "name": "DB",
+          "type": "d1"
+        },
+        {
+          "name": "DESCRIPTION",
+          "text": "A lightweight personal blogging system",
+          "type": "plain_text"
+        },
+        {
+          "name": "JWT_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "NAME",
+          "text": "Rin",
+          "type": "plain_text"
+        },
+        {
+          "name": "PAGE_SIZE",
+          "text": "5",
+          "type": "plain_text"
+        },
+        {
+          "name": "RIN_GITHUB_CLIENT_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "RIN_GITHUB_CLIENT_SECRET",
+          "type": "secret_text"
+        },
+        {
+          "name": "RSS_DESCRIPTION",
+          "text": "",
+          "type": "plain_text"
+        },
+        {
+          "name": "RSS_ENABLE",
+          "text": "false",
+          "type": "plain_text"
+        },
+        {
+          "name": "RSS_TITLE",
+          "text": "",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_ACCESS_HOST",
+          "text": "",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_ACCESS_KEY_ID",
+          "type": "secret_text"
+        },
+        {
+          "name": "S3_BUCKET",
+          "text": "blog",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_CACHE_FOLDER",
+          "text": "cache/",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_ENDPOINT",
+          "text": "https://clist.acct.example.org/s3",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_FOLDER",
+          "text": "images/",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_FORCE_PATH_STYLE",
+          "text": "true",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_REGION",
+          "text": "auto",
+          "type": "plain_text"
+        },
+        {
+          "name": "S3_SECRET_ACCESS_KEY",
+          "type": "secret_text"
+        },
+        {
+          "name": "TASK_QUEUE",
+          "queue_name": "rin-server-tasks",
+          "type": "queue"
+        },
+        {
+          "name": "WEBHOOK_URL",
+          "text": "",
+          "type": "plain_text"
+        }
+      ]
+    }
+  },
+  "scripts/{s}/secrets": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/secrets",
+    "method": "GET",
+    "status": 200,
+    "len": 605,
+    "resultKeys": "array[7]",
+    "body": [
+      {
+        "name": "ADMIN_PASSWORD",
+        "type": "secret_text"
+      },
+      {
+        "name": "ADMIN_USERNAME",
+        "type": "secret_text"
+      },
+      {
+        "name": "JWT_SECRET",
+        "type": "secret_text"
+      },
+      {
+        "name": "RIN_GITHUB_CLIENT_ID",
+        "type": "secret_text"
+      },
+      {
+        "name": "RIN_GITHUB_CLIENT_SECRET",
+        "type": "secret_text"
+      },
+      {
+        "name": "S3_ACCESS_KEY_ID",
+        "type": "secret_text"
+      },
+      {
+        "name": "S3_SECRET_ACCESS_KEY",
+        "type": "secret_text"
+      }
+    ]
+  },
+  "scripts/{s}/schedules(cron)": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/schedules",
+    "method": "GET",
+    "status": 200,
+    "len": 254,
+    "resultKeys": "schedules",
+    "body": {
+      "schedules": [
+        {
+          "cron": "*/20 * * * *",
+          "created_on": "2025-08-25T12:09:34.566885Z",
+          "modified_on": "2026-10-09T03:35:24.017273Z"
+        }
+      ]
+    }
+  },
+  "tail-sessions": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/tail-sessions",
+    "method": "GET",
+    "status": 200,
+    "len": 2558574,
+    "text": "--22087014f018475e345325dee67c42ed9e053541a9478be05ba4e28bd544\r\nContent-Disposition: form-data; name=\"_worker.js\"\r\n\r\nvar __defProp = Object.defineProperty;\nvar __name = (target, value) => __defProp(target, \"name\", { value, configurable: true });\nvar __require = /* @__PURE__ */ ((x2) => typeof require !== \"undefined\" ? require : typeof Proxy !== \"undefined\" ? new Proxy(x2, {\n  get: (a2, b2) => (typeof require !== \"undefined\" ? require : a2)[b2]\n}) : x2)(function(x2) {\n  if (typeof require !== \"undefined\") return require.apply(this, arguments);\n  throw Error('Dynamic require of \"' + x2 + '\" is not supported');\n});\n\n// dist/server/_worker.js\nvar __create = Object.create;\nvar __defProp2 = Object.defineProperty;\nvar __getOwnPropDesc = Object.getOwnPropertyDescriptor;\nvar __getOwnPropNames = Object.getOwnPropertyNames;\nvar __getProtoOf = Object.getPrototypeOf;\nvar __hasOwnProp = Object.prototype.hasOwnProperty;\nvar __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, \"name\", { value, configurable: true }), \"__name\");\nvar __require2 = /* @__PURE__ */ ((x2) => typeof __require !== \"undefined\" ? __require : typeof Proxy !== \"undefined\" ? new Proxy(x2, {\n  get: /* @__PURE__ */ __name((a2, b2) => (typeof __require !== \"undefined\" ? __require : a2)[b2], \"get\")\n}) : x2)(function(x2) {\n  if (typeof __require !== \"undefined\") return __require.apply(this, arguments);\n  throw Error('Dynamic require of \"' + x2 + '\" is not supported');\n});\nvar __esm = /* @__PURE__ */ __name((fn, res) => /* @__PURE__ */ __name(function __init() {\n  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;\n}, \"__init\"), \"__esm\");\nvar __commonJS = /* @__PURE__ */ __name((cb2, mod) => /* @__PURE__ */ __name(function __require22() {\n  return mod || (0, cb2[__getOwnPropNames(cb2)[0]])((mod = { exports: {} }).exports, mod), mod.exports;\n}, \"__require2\"), \"__commonJS\");\nvar __export = /* @__PURE__ */ __name((target, all4) => {\n  for (var name in all4)\n    __defProp2(target, name, "
+  },
+  "deployments?environment": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/deployments?environment=production&per_page=100",
+    "method": "GET",
+    "status": 200,
+    "len": 45460,
+    "resultKeys": "deployments",
+    "body": {
+      "deployments": [
+        {
+          "id": "7f9ad0a6-2aa5-4168-bad4-e080011df277",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "e0b67a07-8532-4843-b2ff-f27029fc135b",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-09T03:35:30.449022Z"
+        },
+        {
+          "id": "7980fbe4-dd05-4fed-8ea8-3fe88b267b3e",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "ff03e70e-77fa-4eec-9c3c-d757a70cdc87",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-09T03:35:20.817664Z"
+        },
+        {
+          "id": "d32db2cb-83d0-4fdd-b701-6c9020f8c5b2",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "82691ae9-b007-48fb-81a1-5cb5d5c1b2fb",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-06T09:17:41.644273Z"
+        },
+        {
+          "id": "c2fd6ba8-d4b6-4403-9dbe-eb09f090d26f",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "043cddbe-b987-44f1-b1a3-00f502cc2c6c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-06T09:17:38.172547Z"
+        },
+        {
+          "id": "8dc4d186-91e4-4be8-83ea-42f00db32987",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "66ecf761-dd8a-449b-823a-8c37a1ebba96",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-04T04:49:40.110682Z"
+        },
+        {
+          "id": "b39973ce-c0e7-479c-9892-426074c1b601",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "1287e21f-ae53-471e-a655-eba3592ef182",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-04T04:49:35.173514Z"
+        },
+        {
+          "id": "c921e1b4-cd07-49c9-bf87-dddcbc68e29b",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "262906d0-fa7e-45c0-90bb-458956cd4894",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-04T03:55:36.681041Z"
+        },
+        {
+          "id": "7dee1252-ff52-4795-ac10-c1eb6e05924c",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "46469a47-f861-4494-a1b9-5e7ab2005203",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-10-04T03:55:33.439966Z"
+        },
+        {
+          "id": "df1c19ed-4e2e-45b8-afb1-f5a4104deb6e",
+          "source": "api",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "secret"
+          },
+          "versions": [
+            {
+              "version_id": "5a11ec68-98af-4161-b6ac-8082a76b6472",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-22T13:46:42.803025Z"
+        },
+        {
+          "id": "133c7604-2b71-4060-beb2-0638b1c8fc68",
+          "source": "api",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "secret"
+          },
+          "versions": [
+            {
+              "version_id": "5663a80f-a082-4c12-9037-09430a66380c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-22T13:46:41.432177Z"
+        },
+        {
+          "id": "99275752-4e3e-477a-a08d-1a39650b4d87",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "849aef35-694f-41c4-bc1b-787674947cad",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-22T05:11:36.100737Z"
+        },
+        {
+          "id": "bcd36d0e-98c4-4137-890d-74b27ae4cad4",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "d28b40e2-9132-4941-b04d-2846b05462f3",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-22T05:11:30.030073Z"
+        },
+        {
+          "id": "f75d8075-c5eb-4e13-9d04-fe115d238455",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "6f40e0b7-941a-49eb-8179-11da20aa96b6",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-22T04:52:54.748248Z"
+        },
+        {
+          "id": "1a2ae32e-f198-45e9-89a3-5b552b6494ad",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "85a46ae8-4fad-4976-9cde-b194709d640d",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-22T04:52:48.989299Z"
+        },
+        {
+          "id": "dcd9cda5-fb57-46a0-8da6-08db7d1010bc",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "c8833efe-2d37-4c58-aebb-18fb9dc856f4",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T15:42:34.45856Z"
+        },
+        {
+          "id": "b9bbadb5-ca79-4ce7-9153-4d99f97a2319",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "8496e9da-66b8-484b-8328-5bdd838a3d9c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T15:42:29.035887Z"
+        },
+        {
+          "id": "12166710-24a8-46da-a54d-8e5ccbe6a6b1",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "3228e977-d262-400c-8a78-2590fbd3b2f4",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T13:23:55.440587Z"
+        },
+        {
+          "id": "949c879e-7561-4040-92b7-f8048d80ffe3",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "72be453b-17c3-4a44-b0bc-9442c9a0e71d",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T13:23:48.600618Z"
+        },
+        {
+          "id": "8a21948a-c641-48fb-91ad-9dd56a5dcc63",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "50b65625-73f7-4542-86e2-4bd3dff53475",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T10:55:32.803365Z"
+        },
+        {
+          "id": "47635e35-534b-426f-9f9b-e475d6b9a751",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "ba9cc924-569a-4e8c-bc6e-145c7c00ffec",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T10:55:27.503275Z"
+        },
+        {
+          "id": "38b680eb-16c5-411b-807d-bbe5b593a53c",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "a025f003-cc69-490e-ab66-3edc12af082e",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T05:30:23.984799Z"
+        },
+        {
+          "id": "f3ac95dc-4879-4a54-97ae-30097bbbed21",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "0906609f-e8ed-4210-bf10-9d0875de6ed2",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T05:30:18.312823Z"
+        },
+        {
+          "id": "f82ef27d-66c3-492e-bd2d-dc5cc199f278",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "08b6ccac-3449-4f75-b4fa-fd8d07d525c7",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T04:53:47.07208Z"
+        },
+        {
+          "id": "d43e3642-e456-4509-bc4e-d79dcd4ef9f8",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "44758dc3-745b-4532-b6fe-46a0c717b6b2",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-21T04:53:42.196087Z"
+        },
+        {
+          "id": "5bbf8b8e-313f-421a-95f3-155c34f8e171",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "6ecfce81-b9af-4be5-8efc-7cf32e30a503",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-20T23:59:07.313734Z"
+        },
+        {
+          "id": "db5037f1-fbc8-48a6-8288-27c0475f6574",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "35a011ef-0c30-4ff8-9643-92d8e376b20d",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-20T23:59:01.765081Z"
+        },
+        {
+          "id": "c63eaa0e-ae02-4e88-bab0-fd06b4a56f18",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "fbcd9536-e947-4ff3-b3b8-96f239802274",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-20T15:56:15.673231Z"
+        },
+        {
+          "id": "e60eae98-bd71-43c8-a12d-cd9d3f6a7a7f",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "0813d394-4f9c-4745-9713-2037b6dbab1e",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-20T15:56:09.626171Z"
+        },
+        {
+          "id": "20ab65b5-67a7-4fdb-96d8-8a7dc44e0dd0",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "4801c7c3-e3fb-4a77-8cbd-78de537b493c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-20T14:52:44.260414Z"
+        },
+        {
+          "id": "304ced70-9001-4caa-b2f7-7dc8bb56bb49",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "34fc6f9a-039d-4c78-ae67-790545213c68",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-20T14:52:37.615705Z"
+        },
+        {
+          "id": "15bdef05-8a31-4adc-9c72-7dda7b93b9f7",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "3bd93f48-8013-4c97-85d4-4ddfd2b6bad9",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:56:07.870503Z"
+        },
+        {
+          "id": "3ea5f5ce-ff2b-4290-9e7f-ddbd32d3d9bb",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "f7391f12-ed8c-4938-9dae-137c26d9b8f2",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:56:02.392831Z"
+        },
+        {
+          "id": "7032a10f-8c03-4cca-bab3-053fb88bee63",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "1ace5dbc-691f-4837-871a-f93ebb3ded06",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:46:28.566053Z"
+        },
+        {
+          "id": "7129343b-2868-4136-982a-c2e071597920",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "aac72141-5256-4a71-b876-d0d5049510a2",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:46:23.386602Z"
+        },
+        {
+          "id": "29dd85f3-b034-4f66-ba40-772bdd760f40",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "5b4496a4-010c-462c-943e-f32a248916dd",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:35:48.449748Z"
+        },
+        {
+          "id": "c0ed9b1c-89c8-44dd-9206-72da549e2f17",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "b95cde77-9359-4c3c-982b-9166c487cd6a",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:35:43.34973Z"
+        },
+        {
+          "id": "b109a8a1-aba0-4ca1-ab16-e7c19986fdd1",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "ac2b03a6-e188-4329-b92a-0d061c658314",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:27:36.827173Z"
+        },
+        {
+          "id": "373464cd-f4be-4c81-8b5e-4fc39ab75632",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "446116ca-ceaa-4748-a278-87a4384208d5",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:27:31.728164Z"
+        },
+        {
+          "id": "6ca9b8cc-8f8b-4709-a179-640bd3820b40",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "53bf7383-3c4f-4057-9cd3-d1bb1cb92ae1",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:10:00.106023Z"
+        },
+        {
+          "id": "c9e081c6-8169-4736-9b07-7a218c684693",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "3bc98554-83e5-43e5-b416-3feacb76122e",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T09:09:54.468296Z"
+        },
+        {
+          "id": "bcb95b4a-ce72-4912-b421-aefdcbf85793",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "6a13fde8-5a09-426d-b959-d085aad104f8",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T01:11:57.960438Z"
+        },
+        {
+          "id": "c826565d-8694-4a23-a257-7d064aab1099",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "051b8498-ec72-4f88-82eb-bc2bf7cffb2b",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-19T01:11:52.047803Z"
+        },
+        {
+          "id": "4185c75d-40e7-4889-a073-2c35ae1cbb42",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "0fb13349-8034-4566-8cdd-a0dd07f06158",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T20:13:22.06866Z"
+        },
+        {
+          "id": "6b0717c6-ca37-4b50-81a5-277245fae6d5",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "45b28767-dfb1-4e37-b331-73909489dfa7",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T20:13:16.99003Z"
+        },
+        {
+          "id": "f901e25d-250b-4728-b663-fc08de39e592",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "bbb2e045-7827-4194-bc58-97928d793213",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T19:43:00.107166Z"
+        },
+        {
+          "id": "a2925512-8564-4cc9-98d1-029bcdb292f4",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "ef6325bc-8f73-4e84-a96f-dab546313f98",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T19:42:54.490502Z"
+        },
+        {
+          "id": "90ef0df0-ebb0-42c5-893f-4370c83b5a91",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "1d63c75c-2fa6-4433-9de6-f3dd0f18940e",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T19:34:26.000894Z"
+        },
+        {
+          "id": "718422b1-feae-4f1c-ac0d-96676110413f",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "7bca8d80-f872-4e96-9d4c-0f41fb117d60",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T19:34:20.969707Z"
+        },
+        {
+          "id": "b7c54bed-b0c6-4c2d-b464-a8cde27253a3",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "25ff80ee-1f2f-49b1-821f-557afd18ac89",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T19:17:50.505196Z"
+        },
+        {
+          "id": "8e963637-a2b7-42ec-ab1c-f16caa0e7ce7",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "6e4d62b4-3c39-4368-8922-f35a3a6cbb60",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T19:17:45.496403Z"
+        },
+        {
+          "id": "b1998778-2442-42d5-8290-2000d5932264",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "c70897c0-95c5-4385-867b-d33c6948936c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T18:22:15.103423Z"
+        },
+        {
+          "id": "65047496-4eb9-4e80-90c3-0cf520e3b0d8",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "68bd8e15-1f58-4e26-9570-91dbcd9a30b4",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T18:22:09.346864Z"
+        },
+        {
+          "id": "f0d22fa5-99fd-4610-904d-5eaf438dd72e",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "ea6ddd43-ec4e-40e0-821c-563db89ecdc7",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T16:56:45.1348Z"
+        },
+        {
+          "id": "60325798-9c15-49e7-b85f-d8a513326e49",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "c708edc8-3ce0-489c-a18f-b4316f8cd491",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T16:56:40.179958Z"
+        },
+        {
+          "id": "a59bc522-c2c6-46e8-875c-4adeec520255",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "f2dfc934-29f8-4bf7-a84a-082d27940c9b",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T14:59:36.319648Z"
+        },
+        {
+          "id": "f43947d8-fb45-4e97-8556-25af036337b5",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "7b401194-7b9e-4b61-bbf2-29a2012ed5db",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T14:59:31.17111Z"
+        },
+        {
+          "id": "5a42c067-7e0c-48e5-a506-11fc7dff1b90",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "6d08886a-3b56-45cd-b68f-a63188f1503e",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T14:39:19.732577Z"
+        },
+        {
+          "id": "188b3867-70e2-49ed-a9a2-7d61a5ceaffb",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "dd91a9d4-f9d2-4f4c-a385-f8600e9128ca",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T14:39:13.831728Z"
+        },
+        {
+          "id": "054e7879-2c1b-4e07-ae80-2962e4c03df4",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "83279f19-2abe-408a-9e8b-b3711b004936",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T13:01:29.572019Z"
+        },
+        {
+          "id": "74af0a33-ac19-4849-9409-cd2cdeafbf0e",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "fd3a9dde-fcbb-4be9-a913-a8e8d35fef81",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T13:01:24.311123Z"
+        },
+        {
+          "id": "0622a113-a5ed-47fc-857a-f203d662cd0f",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "5a4264bb-dfae-4911-8979-2c18c5ba9650",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T12:17:36.026074Z"
+        },
+        {
+          "id": "672251f0-1e4e-4d43-bbcb-736a4921c443",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "916c1ee7-5381-4dd6-a184-1110809e1268",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T12:17:30.845516Z"
+        },
+        {
+          "id": "c6bc1282-f970-477b-9c4a-acb21365f83f",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "5855fc1f-9bda-4f92-9c3b-d93e8e6ccff0",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T12:03:40.798002Z"
+        },
+        {
+          "id": "5d48d63e-6dcb-4f23-82c8-3b076ea00ede",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "ca290f82-7a60-4b35-be8d-a3e6a4ac973e",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T12:03:35.872583Z"
+        },
+        {
+          "id": "75b590ce-4e41-4bf5-afcc-886c1d2b752f",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "7126ac82-c863-423f-8b7e-1024479fe6de",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T11:25:39.232891Z"
+        },
+        {
+          "id": "cf4d8061-a87d-4b0f-85ca-b5a0796444d1",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "a97d9f80-e987-4676-b378-0f8d8ddab825",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T11:25:34.222858Z"
+        },
+        {
+          "id": "44dbb2ab-5d5d-4136-8672-156133bbf16a",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "a14b5453-f82b-488e-980c-af4af1062dbd",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T11:22:10.280359Z"
+        },
+        {
+          "id": "8565a2a7-bf8a-4f70-bb5c-4168b519957a",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "5ef780ab-938f-4c63-9fc6-3504b858261f",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T11:22:05.415729Z"
+        },
+        {
+          "id": "e0aa47f7-5f30-4dc2-b930-e1e24c8ca03c",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "7df2e7ac-8d01-4e71-aaae-40f21ba3e45c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T11:00:49.567874Z"
+        },
+        {
+          "id": "50e69916-1bdb-403e-a898-ffffe5969752",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "7506ab03-e056-4254-97a5-7c979569d3b4",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T11:00:44.882871Z"
+        },
+        {
+          "id": "99447169-6ade-40f5-aa78-20cbd267536e",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "27aaf2c0-472a-451d-bd09-67abc4056fb8",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T10:51:26.410602Z"
+        },
+        {
+          "id": "8e26ea53-6b80-43d9-bdd4-d35ed6dd7343",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "6e4829f1-76d2-41d1-afb7-573da84d0b79",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T10:51:21.512868Z"
+        },
+        {
+          "id": "b7bb3f18-0661-424a-8d76-4f779144ae60",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "5a7d56a0-8428-4056-8a66-7eb85981cb1c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T10:15:17.114138Z"
+        },
+        {
+          "id": "ad80caf6-60b5-4b3e-8f2f-c74ebdbe602c",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "196cd24b-75f8-4805-8f2d-40a1f00eec78",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T10:15:12.070391Z"
+        },
+        {
+          "id": "3e127d91-5107-4298-9347-0c2f7c0779c7",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "80d900a9-e54f-4de7-8472-a598aeefb274",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T09:36:23.464088Z"
+        },
+        {
+          "id": "a22aa433-caef-484d-a79f-06c725a39cb0",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "971c3382-65db-4b3f-9917-68b926f18a27",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T09:36:18.828392Z"
+        },
+        {
+          "id": "de600244-7df6-4043-a136-61765aa34306",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "4a8e4511-1109-4b11-8f23-842fca2632c7",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T04:17:46.157432Z"
+        },
+        {
+          "id": "0bef26ea-2625-43e5-beaa-3fab8e41fd4a",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "497c3bd5-1caa-4bfd-9d4a-79e98f07a831",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T04:17:40.994018Z"
+        },
+        {
+          "id": "c7927c2f-90b3-41e8-9f07-ed5f4bfdfe0c",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "db2fda36-7ace-4c7d-aae9-b4a52495b8b5",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T03:20:27.458036Z"
+        },
+        {
+          "id": "b0f32b86-c5ba-4039-9d07-9bed96cda4e0",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "32da9635-8562-487e-aaee-1ad342ea958f",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T03:20:20.946574Z"
+        },
+        {
+          "id": "b98deab9-cdac-4a87-b93a-60c69e5cb802",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "4dc7c718-7113-4682-9563-64c4d413ab4f",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T03:16:49.486977Z"
+        },
+        {
+          "id": "ba4f2a60-0636-4a34-a48e-01527302e356",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "261dea17-5d15-4fed-afe0-a424e69ef22d",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T03:16:45.314287Z"
+        },
+        {
+          "id": "872b21de-f45f-4a62-89e3-d56ea4103eb3",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "cf4b42ca-9111-4384-b6d4-b6d9b0de4f5c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T02:21:13.207324Z"
+        },
+        {
+          "id": "2f923ed7-8694-4c8f-b128-9834ee51f933",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "fe99532a-7e35-4ca8-8e4d-6e3deada137a",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T02:21:08.801318Z"
+        },
+        {
+          "id": "d2fb73a1-8298-4058-8a13-0b989fa54ddb",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "87f94e16-5a2b-4f01-8ff5-3f3f2be198f9",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T01:37:57.244518Z"
+        },
+        {
+          "id": "c05063cd-5767-4d1d-92fd-4a9dbd677029",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "b33db45e-da18-4546-bf1e-098e4f70d520",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T01:37:52.088753Z"
+        },
+        {
+          "id": "5ceb54fa-1c72-4b40-b4ac-ad500f524978",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "secret"
+          },
+          "versions": [
+            {
+              "version_id": "64a6c6c2-5b04-4795-84dd-205df9302a7b",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T00:59:58.299935Z"
+        },
+        {
+          "id": "82f9e564-2faa-45e5-9503-e377855f8459",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "secret"
+          },
+          "versions": [
+            {
+              "version_id": "b3b89ab4-8787-4c0f-9805-aaa8f6ebd92f",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T00:59:48.777503Z"
+        },
+        {
+          "id": "e0f22ece-953d-4102-8409-e7e41bc5a76a",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "5ab1547f-5a6f-4655-9c4f-55add578e8ef",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T00:43:13.803462Z"
+        },
+        {
+          "id": "5f745909-d273-4727-9a7e-892cb4efd5a8",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "989edb93-6e6a-4ae0-8986-9417efce5c9d",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-18T00:43:09.219809Z"
+        },
+        {
+          "id": "600dc1e7-ed79-4a25-b8ab-c700fb935107",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "a3278d46-6311-4430-9e75-b2b23da69fe8",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T17:35:31.885505Z"
+        },
+        {
+          "id": "a2f01140-7bdc-4cda-9245-8f3308906e17",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "539f605e-4561-47ff-8327-a12def0014cc",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T17:35:26.528201Z"
+        },
+        {
+          "id": "2c0e5917-3f02-48e8-a42b-d596502f7f77",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "3275491d-ada3-4039-969a-6520c6f7f540",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T16:57:49.159825Z"
+        },
+        {
+          "id": "897c7361-e6ab-4c36-90bd-fcc70d62939e",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "78033680-6b91-4e1d-ba55-1747d753ae36",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T16:00:52.359756Z"
+        },
+        {
+          "id": "17fe6b1a-c27a-4735-a392-929ffc81294e",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "6bb90aae-05e3-4071-9bb2-9894ff2b9e4a",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T16:00:46.52805Z"
+        },
+        {
+          "id": "26ee5aed-e512-47fc-aaea-fc10e36bcb86",
+          "source": "dash",
+          "strategy": "percentage",
+          "author_email": "acct0501@outlook.com",
+          "annotations": {
+            "workers/message": "已部署版本 a338c79a",
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "a338c79a-ee76-4cd9-ab87-86d4c946549c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T14:41:09.335653Z"
+        },
+        {
+          "id": "ec8f611a-0128-441b-9839-7ca4cde496e4",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "8c22abf0-46d9-4c1c-b3af-3e15a010b348",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T12:42:30.895131Z"
+        },
+        {
+          "id": "41291d58-6f60-4f2d-919d-db3445a042bc",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "0b2cbb31-9f2e-4e04-8209-e462274fd0fa",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T12:42:25.975479Z"
+        },
+        {
+          "id": "d22e9f23-21a5-4c85-96a4-63932899e8af",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "55bff27f-dd43-4be6-963e-5b66c7da223c",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T12:36:51.191479Z"
+        },
+        {
+          "id": "26367c4e-d474-456b-9dbe-8d792d60c2fa",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "annotations": {
+            "workers/triggered_by": "deployment"
+          },
+          "versions": [
+            {
+              "version_id": "07397f03-6c62-4f9b-9cb1-f5e2b9f0035d",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-08-17T12:36:45.830019Z"
+        }
+      ]
+    }
+  },
+  "versions/{v}/deployments": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/versions/e0b67a07-8532-4843-b2ff-f27029fc135b/deployments",
+    "method": "GET",
+    "status": 200,
+    "len": 4029,
+    "resultKeys": "id,number,metadata,annotations,resources",
+    "body": {
+      "id": "e0b67a07-8532-4843-b2ff-f27029fc135b",
+      "number": 148,
+      "metadata": {
+        "created_on": "2026-10-09T03:35:30.449022Z",
+        "source": "wrangler",
+        "author_id": "e18fba761923af88f63319ad1e1dd26b",
+        "author_email": "",
+        "has_preview": true
+      },
+      "annotations": {
+        "workers/triggered_by": "upload"
+      },
+      "resources": {
+        "script": {
+          "etag": "03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc",
+          "handlers": [
+            "fetch",
+            "scheduled",
+            "queue"
+          ],
+          "placement_mode": "smart",
+          "placement": {
+            "mode": "smart"
+          },
+          "last_deployed_from": "wrangler"
+        },
+        "script_runtime": {
+          "assets": {
+            "serve_directly": true,
+            "raw_run_worker_first": false,
+            "base_path": "/"
+          },
+          "compatibility_date": "2026-01-20",
+          "usage_model": "standard"
+        },
+        "bindings": [
+          {
+            "name": "ADMIN_PASSWORD",
+            "type": "secret_text"
+          },
+          {
+            "name": "ADMIN_USERNAME",
+            "type": "secret_text"
+          },
+          {
+            "name": "AI",
+            "project": "<catalog>",
+            "type": "ai"
+          },
+          {
+            "name": "ASSETS",
+            "type": "assets"
+          },
+          {
+            "name": "AVATAR",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "CACHE_STORAGE_MODE",
+            "text": "database",
+            "type": "plain_text"
+          },
+          {
+            "database_id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "id": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+            "name": "DB",
+            "type": "d1"
+          },
+          {
+            "name": "DESCRIPTION",
+            "text": "A lightweight personal blogging system",
+            "type": "plain_text"
+          },
+          {
+            "name": "JWT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "NAME",
+            "text": "Rin",
+            "type": "plain_text"
+          },
+          {
+            "name": "PAGE_SIZE",
+            "text": "5",
+            "type": "plain_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "RIN_GITHUB_CLIENT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "RSS_DESCRIPTION",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_ENABLE",
+            "text": "false",
+            "type": "plain_text"
+          },
+          {
+            "name": "RSS_TITLE",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_HOST",
+            "text": "",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ACCESS_KEY_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "S3_BUCKET",
+            "text": "blog",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_CACHE_FOLDER",
+            "text": "cache/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_ENDPOINT",
+            "text": "https://clist.acct.example.org/s3",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FOLDER",
+            "text": "images/",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_FORCE_PATH_STYLE",
+            "text": "true",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_REGION",
+            "text": "auto",
+            "type": "plain_text"
+          },
+          {
+            "name": "S3_SECRET_ACCESS_KEY",
+            "type": "secret_text"
+          },
+          {
+            "name": "TASK_QUEUE",
+            "queue_name": "rin-server-tasks",
+            "type": "queue"
+          },
+          {
+            "name": "WEBHOOK_URL",
+            "text": "",
+            "type": "plain_text"
+          }
+        ]
+      }
+    }
+  },
+  "GQL workerAnalyticsAdaptiveGroups": {
+    "path": "/graphql",
+    "method": "POST",
+    "status": 200,
+    "len": 190,
+    "errMsg": "unknown field \"workerAnalyticsAdaptiveGroups\"",
+    "body": {
+      "data": null,
+      "errors": [
+        {
+          "message": "unknown field \"workerAnalyticsAdaptiveGroups\"",
+          "path": null,
+          "extensions": {
+            "timestamp": "2026-10-09T10:21:33.282321531Z",
+            "ray_id": "a47ca8baacfc5f7f-SEA"
+          }
+        }
+      ]
+    }
+  },
+  "GQL workersAnalyticsAdaptiveGroups": {
+    "path": "/graphql",
+    "method": "POST",
+    "status": 200,
+    "len": 191,
+    "errMsg": "unknown field \"workersAnalyticsAdaptiveGroups\"",
+    "body": {
+      "data": null,
+      "errors": [
+        {
+          "message": "unknown field \"workersAnalyticsAdaptiveGroups\"",
+          "path": null,
+          "extensions": {
+            "timestamp": "2026-10-09T10:21:33.600823787Z",
+            "ray_id": "a47ca8bcbe7f5f7f-SEA"
+          }
+        }
+      ]
+    }
+  },
+  "GQL workerVersionsAdaptiveGroups": {
+    "path": "/graphql",
+    "method": "POST",
+    "status": 200,
+    "len": 189,
+    "errMsg": "unknown field \"workerVersionsAdaptiveGroups\"",
+    "body": {
+      "data": null,
+      "errors": [
+        {
+          "message": "unknown field \"workerVersionsAdaptiveGroups\"",
+          "path": null,
+          "extensions": {
+            "timestamp": "2026-10-09T10:21:33.957971137Z",
+            "ray_id": "a47ca8beafed5f7f-SEA"
+          }
+        }
+      ]
+    }
+  },
+  "GQL engineUsageAdaptiveGroups": {
+    "path": "/graphql",
+    "method": "POST",
+    "status": 200,
+    "len": 186,
+    "errMsg": "unknown field \"engineUsageAdaptiveGroups\"",
+    "body": {
+      "data": null,
+      "errors": [
+        {
+          "message": "unknown field \"engineUsageAdaptiveGroups\"",
+          "path": null,
+          "extensions": {
+            "timestamp": "2026-10-09T10:21:34.253498453Z",
+            "ray_id": "a47ca8c0d9935f7f-SEA"
+          }
+        }
+      ]
+    }
+  },
+  "GQL zone httpRequestsAdaptiveGroups": {
+    "path": "/graphql",
+    "method": "POST",
+    "status": 200,
+    "len": 168,
+    "errMsg": "unknown field \"country\"",
+    "body": {
+      "data": null,
+      "errors": [
+        {
+          "message": "unknown field \"country\"",
+          "path": null,
+          "extensions": {
+            "timestamp": "2026-10-09T10:21:34.545585295Z",
+            "ray_id": "a47ca8c29b135f7f-SEA"
+          }
+        }
+      ]
+    }
+  },
+  "GQL zone httpRequests1dGroups": {
+    "path": "/graphql",
+    "method": "POST",
+    "status": 200,
+    "len": 224,
+    "errMsg": "error parsing args for \"httpRequests1dGroups\": filter: unknown arg datetime_geq",
+    "body": {
+      "data": null,
+      "errors": [
+        {
+          "message": "error parsing args for \"httpRequests1dGroups\": filter: unknown arg datetime_geq",
+          "path": null,
+          "extensions": {
+            "timestamp": "2026-10-09T10:21:34.832834975Z",
+            "ray_id": "a47ca8c47c755f7f-SEA"
+          }
+        }
+      ]
+    }
+  },
+  "GQL zone cachesAdaptiveGroups": {
+    "path": "/graphql",
+    "method": "POST",
+    "status": 200,
+    "len": 181,
+    "errMsg": "unknown field \"cachesAdaptiveGroups\"",
+    "body": {
+      "data": null,
+      "errors": [
+        {
+          "message": "unknown field \"cachesAdaptiveGroups\"",
+          "path": null,
+          "extensions": {
+            "timestamp": "2026-10-09T10:21:35.120960028Z",
+            "ray_id": "a47ca8c64de85f7f-SEA"
+          }
+        }
+      ]
+    }
+  },
+  "SQL schema events.httpRequests": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 1122,
+    "text": "Input was invalid: Schema error: No field named __bogus__. Valid fields are events.\"httpRequests\".\"accountTag\", events.\"httpRequests\".\"botScore\", events.\"httpRequests\".\"clientAsn\", events.\"httpRequests\".\"clientRefererHost\", events.\"httpRequests\".\"clientRequestHttpHost\", events.\"httpRequests\".\"clientRequestPath\", events.\"httpRequests\".\"clientRequestQuery\", events.\"httpRequests\".\"edgeResponseBytes\", events.\"httpRequests\".\"edgeResponseStatus\", events.\"httpRequests\".\"edgeTimeToFirstByteMs\", events.\"httpRequests\".ja4, events.\"httpRequests\".\"originAsn\", events.\"httpRequests\".\"originResponseDurationMs\", events.\"httpRequests\".\"originResponseStatus\", events.\"httpRequests\".\"rayId\", events.\"httpRequests\".\"sampleInterval\", events.\"httpRequests\".timestamp, events.\"httpRequests\".\"userAgent\", events.\"httpRequests\".\"verifiedBotCategory\", events.\"httpRequests\".\"wafAttackScore\", events.\"httpRequests\".\"wafRceAttackScore\", events.\"httpRequests\".\"wafSqliAttackScore\", events.\"httpRequests\".\"wafXssAttackScore\", events.\"httpRequests\".\"webAssetsOperationId\", events.\"httpRequests\".\"xRequestedWith\", events.\"httpRequests\".\"zoneTag\"."
+  },
+  "SQL schema events.firewallEvents": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 81,
+    "text": "Input was invalid: Error during planning: table `events.firewallEvents` not found"
+  },
+  "SQL schema events.dnsQueries": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 77,
+    "text": "Input was invalid: Error during planning: table `events.dnsQueries` not found"
+  },
+  "SQL schema events.workerVersions": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 81,
+    "text": "Input was invalid: Error during planning: table `events.workerVersions` not found"
+  },
+  "SQL schema analytics.httpRequests1m": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 84,
+    "text": "Input was invalid: Error during planning: table `analytics.httpRequests1m` not found"
+  },
+  "SQL schema analytics.httpRequests1d": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 84,
+    "text": "Input was invalid: Error during planning: table `analytics.httpRequests1d` not found"
+  },
+  "SQL analytics.httpRequests1d 按国家": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 84,
+    "text": "Input was invalid: Error during planning: table `analytics.httpRequests1d` not found"
+  },
+  "SQL events.httpRequests 按国家": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 1126,
+    "text": "Input was invalid: Schema error: No field named \"countryName\". Valid fields are events.\"httpRequests\".\"accountTag\", events.\"httpRequests\".\"botScore\", events.\"httpRequests\".\"clientAsn\", events.\"httpRequests\".\"clientRefererHost\", events.\"httpRequests\".\"clientRequestHttpHost\", events.\"httpRequests\".\"clientRequestPath\", events.\"httpRequests\".\"clientRequestQuery\", events.\"httpRequests\".\"edgeResponseBytes\", events.\"httpRequests\".\"edgeResponseStatus\", events.\"httpRequests\".\"edgeTimeToFirstByteMs\", events.\"httpRequests\".ja4, events.\"httpRequests\".\"originAsn\", events.\"httpRequests\".\"originResponseDurationMs\", events.\"httpRequests\".\"originResponseStatus\", events.\"httpRequests\".\"rayId\", events.\"httpRequests\".\"sampleInterval\", events.\"httpRequests\".timestamp, events.\"httpRequests\".\"userAgent\", events.\"httpRequests\".\"verifiedBotCategory\", events.\"httpRequests\".\"wafAttackScore\", events.\"httpRequests\".\"wafRceAttackScore\", events.\"httpRequests\".\"wafSqliAttackScore\", events.\"httpRequests\".\"wafXssAttackScore\", events.\"httpRequests\".\"webAssetsOperationId\", events.\"httpRequests\".\"xRequestedWith\", events.\"httpRequests\".\"zoneTag\"."
+  },
+  "SQL workers 用量表试探": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 84,
+    "text": "Input was invalid: Error during planning: table `analytics.workerVersions` not found"
+  },
+  "SQL AE 指定数据集名": {
+    "path": "/analytics/sql",
+    "method": "POST",
+    "status": 422,
+    "len": 2007,
+    "text": "Input was invalid: Schema error: No field named __bogus__. Valid fields are events.\"analyticsEngine\".__nope__.\"accountTag\", events.\"analyticsEngine\".__nope__.blob1, events.\"analyticsEngine\".__nope__.blob10, events.\"analyticsEngine\".__nope__.blob11, events.\"analyticsEngine\".__nope__.blob12, events.\"analyticsEngine\".__nope__.blob13, events.\"analyticsEngine\".__nope__.blob14, events.\"analyticsEngine\".__nope__.blob15, events.\"analyticsEngine\".__nope__.blob16, events.\"analyticsEngine\".__nope__.blob17, events.\"analyticsEngine\".__nope__.blob18, events.\"analyticsEngine\".__nope__.blob19, events.\"analyticsEngine\".__nope__.blob2, events.\"analyticsEngine\".__nope__.blob20, events.\"analyticsEngine\".__nope__.blob3, events.\"analyticsEngine\".__nope__.blob4, events.\"analyticsEngine\".__nope__.blob5, events.\"analyticsEngine\".__nope__.blob6, events.\"analyticsEngine\".__nope__.blob7, events.\"analyticsEngine\".__nope__.blob8, events.\"analyticsEngine\".__nope__.blob9, events.\"analyticsEngine\".__nope__.dataset, events.\"analyticsEngine\".__nope__.double1, events.\"analyticsEngine\".__nope__.double10, events.\"analyticsEngine\".__nope__.double11, events.\"analyticsEngine\".__nope__.double12, events.\"analyticsEngine\".__nope__.double13, events.\"analyticsEngine\".__nope__.double14, events.\"analyticsEngine\".__nope__.double15, events.\"analyticsEngine\".__nope__.double16, events.\"analyticsEngine\".__nope__.double17, events.\"analyticsEngine\".__nope__.double18, events.\"analyticsEngine\".__nope__.double19, events.\"analyticsEngine\".__nope__.double2, events.\"analyticsEngine\".__nope__.double20, events.\"analyticsEngine\".__nope__.double3, events.\"analyticsEngine\".__nope__.double4, events.\"analyticsEngine\".__nope__.double5, events.\"analyticsEngine\".__nope__.double6, events.\"analyticsEngine\".__nope__.double7, events.\"analyticsEngine\".__nope__.double8, events.\"analyticsEngine\".__nope__.double9, events.\"analyticsEngine\".__nope__.index1, events.\"analyticsEngine\".__nope__.\"sampleInterval\", events.\"analyticsEngine\".__nope__.tim"
+  },
+  "analytics_engine/datasets": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics_engine/datasets?limit=10&visibility=WorkerVisible",
+    "method": "GET",
+    "status": 500,
+    "len": 0,
+    "text": ""
+  },
+  "analytics_engine/datasets/{ns}": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics_engine/datasets/default",
+    "method": "GET",
+    "status": 500,
+    "len": 0,
+    "text": ""
+  },
+  "engine_usage 无viz": {
+    "path": "/accounts/«ACCOUNT_ID»/analytics/engine_usage/sum?since=2026-10-08T00:00:00Z&until=2026-10-09T00:00:00Z",
+    "method": "GET",
+    "status": 500,
+    "len": 0,
+    "text": ""
+  },
+  "workers/domains?per_page": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/domains?per_page=50",
+    "method": "GET",
+    "status": 200,
+    "len": 2381,
+    "resultKeys": "array[6]",
+    "body": [
+      {
+        "id": "566001fed4df3107dd8d2b26bef3844a56c618a5",
+        "zone_id": "50c463774e5fc1009c434c996d13353d",
+        "zone_name": "acct.example.com",
+        "hostname": "jtb.acct.example.com",
+        "service": "web-clipboard",
+        "environment": "production",
+        "cert_id": "7b5683a2-5ea0-4f43-91db-b46ec4e70956",
+        "previews_enabled": false,
+        "enabled": true
+      },
+      {
+        "id": "95a43d30f4dd0f2f7614c27460068c003adb64c3",
+        "zone_id": "50c463774e5fc1009c434c996d13353d",
+        "zone_name": "acct.example.com",
+        "hostname": "mail.acct.example.com",
+        "service": "mail",
+        "environment": "production",
+        "cert_id": "f56d8a6d-d1ff-4852-a667-b28f67a9f53e",
+        "previews_enabled": false,
+        "enabled": true
+      },
+      {
+        "id": "465a8e4d85b2b0d1b8dcb67675156708983378ff",
+        "zone_id": "50c463774e5fc1009c434c996d13353d",
+        "zone_name": "acct.example.com",
+        "hostname": "acct.example.com",
+        "service": "rin-server",
+        "environment": "production",
+        "cert_id": "4d597121-596a-4951-8468-8b327807b8ef",
+        "previews_enabled": false,
+        "enabled": true
+      },
+      {
+        "id": "c908442bdcb3fc00ac6ab7b41a6c79a752d27cb8",
+        "zone_id": "50c463774e5fc1009c434c996d13353d",
+        "zone_name": "acct.example.com",
+        "hostname": "rss.acct.example.com",
+        "service": "rssworker",
+        "environment": "production",
+        "cert_id": "74fb634e-5e47-4565-9fb2-a9be31d7b622",
+        "previews_enabled": false,
+        "enabled": true
+      },
+      {
+        "id": "678e79734862a58cdeab815a51cb62f581f7983c",
+        "zone_id": "50c463774e5fc1009c434c996d13353d",
+        "zone_name": "acct.example.com",
+        "hostname": "news.acct.example.com",
+        "service": "hot-news",
+        "environment": "production",
+        "cert_id": "83bd8352-fa05-458c-a634-176f08111827",
+        "previews_enabled": false,
+        "enabled": true
+      },
+      {
+        "id": "323a054ee64c3a5fd2ba0b067ece2b59f1560f63",
+        "zone_id": "50c463774e5fc1009c434c996d13353d",
+        "zone_name": "acct.example.com",
+        "hostname": "1.acct.example.com",
+        "service": "1",
+        "environment": "production",
+        "cert_id": "87fe165f-53d7-4b57-a921-8562d6f70a82",
+        "previews_enabled": false,
+        "enabled": true
+      }
+    ]
+  },
+  "pages/projects": {
+    "path": "/accounts/«ACCOUNT_ID»/pages/projects",
+    "method": "GET",
+    "status": 200,
+    "len": 190,
+    "resultKeys": "array[0]",
+    "body": []
+  },
+  "d1/database": {
+    "path": "/accounts/«ACCOUNT_ID»/d1/database",
+    "method": "GET",
+    "status": 200,
+    "len": 1039,
+    "resultKeys": "array[5]",
+    "body": [
+      {
+        "uuid": "ae46f35e-bba5-4e49-9822-93c1c54e342f",
+        "name": "rssworker-db",
+        "created_at": "2026-08-16T15:56:58.242Z",
+        "version": "production",
+        "num_tables": 0,
+        "file_size": 20480,
+        "jurisdiction": null
+      },
+      {
+        "uuid": "280ad62e-3b36-4f6f-9a47-79e55b0601e5",
+        "name": "cloud-mail",
+        "created_at": "2026-08-14T15:56:11.566Z",
+        "version": "production",
+        "num_tables": 0,
+        "file_size": 94208,
+        "jurisdiction": null
+      },
+      {
+        "uuid": "e1dbc594-5e5d-4caa-ae37-903e14b23d10",
+        "name": "clist-cf",
+        "created_at": "2026-08-03T06:04:20.373Z",
+        "version": "production",
+        "num_tables": 0,
+        "file_size": 163840,
+        "jurisdiction": null
+      },
+      {
+        "uuid": "1b5ecc1f-c6fd-40e5-a89e-6ab456557bdc",
+        "name": "cloudpaste-db",
+        "created_at": "2026-08-01T09:03:09.216Z",
+        "version": "production",
+        "num_tables": 0,
+        "file_size": 2269184,
+        "jurisdiction": null
+      },
+      {
+        "uuid": "84f4174e-c620-481a-bd3a-e1312dfbddee",
+        "name": "rin",
+        "created_at": "2025-08-25T09:10:26.038Z",
+        "version": "production",
+        "num_tables": 0,
+        "file_size": 135168,
+        "jurisdiction": null
+      }
+    ]
+  },
+  "r2/buckets": {
+    "path": "/accounts/«ACCOUNT_ID»/r2/buckets",
+    "method": "GET",
+    "status": 403,
+    "len": 134,
+    "errCode": 10042,
+    "errMsg": "Please enable R2 through the Cloudflare Dashboard.",
+    "body": null
+  },
+  "zones?per_page": {
+    "path": "/zones?per_page=50",
+    "method": "GET",
+    "status": 200,
+    "len": 1455,
+    "resultKeys": "array[1]",
+    "body": [
+      {
+        "id": "50c463774e5fc1009c434c996d13353d",
+        "name": "acct.example.com",
+        "status": "active",
+        "paused": false,
+        "type": "full",
+        "development_mode": 0,
+        "name_servers": [
+          "anton.ns.cloudflare.com",
+          "serenity.ns.cloudflare.com"
+        ],
+        "original_name_servers": [
+          "fonzie.ns.cloudflare.com",
+          "treasure.ns.cloudflare.com"
+        ],
+        "original_registrar": null,
+        "original_dnshost": null,
+        "modified_on": "2025-08-29T03:49:43.125549Z",
+        "created_on": "2025-08-25T06:37:55.711338Z",
+        "activated_on": "2025-08-25T06:39:22.474353Z",
+        "vanity_name_servers": [],
+        "vanity_name_servers_ips": null,
+        "meta": {
+          "step": 2,
+          "custom_certificate_quota": 0,
+          "page_rule_quota": 3,
+          "phishing_detected": false
+        },
+        "owner": {
+          "id": null,
+          "type": "user",
+          "email": null
+        },
+        "account": {
+          "id": "«ACCOUNT_ID»",
+          "name": "bai account"
+        },
+        "tenant": {
+          "id": null,
+          "name": null
+        },
+        "tenant_unit": {
+          "id": null
+        },
+        "permissions": [
+          "#zone:read",
+          "#zone_settings:read",
+          "#dns_records:read",
+          "#waf:read",
+          "#page_shield:read",
+          "#zone_versioning:read",
+          "#api_gateway:read",
+          "#zaraz:read",
+          "#web3:read",
+          "#healthchecks:read",
+          "#waitingroom:read",
+          "#access:read",
+          "#ssl:read",
+          "#worker:read",
+          "#logs:read",
+          "#lb:read",
+          "#analytics:read"
+        ],
+        "plan": {
+          "id": "e694487e9229224cad81539ce0c5e6bb",
+          "name": "Free Website",
+          "price": 0,
+          "currency": "USD",
+          "frequency": "",
+          "is_subscribed": false,
+          "can_subscribe": false,
+          "legacy_id": "free",
+          "legacy_discount": false,
+          "externally_managed": false
+        }
+      }
+    ]
+  },
+  "accounts": {
+    "path": "/accounts",
+    "method": "GET",
+    "status": 200,
+    "len": 493,
+    "resultKeys": "array[1]",
+    "body": [
+      {
+        "id": "«ACCOUNT_ID»",
+        "name": "bai account",
+        "type": "standard",
+        "settings": {
+          "enforce_twofactor": false,
+          "api_access_enabled": null,
+          "access_approval_expiry": null,
+          "abuse_contact_email": null,
+          "oauth_app_access_enabled": true
+        },
+        "legacy_flags": {
+          "enterprise_zone_quota": {
+            "maximum": 0,
+            "current": 0,
+            "available": 0
+          }
+        },
+        "created_on": "2025-06-28T09:17:17.786403Z"
+      }
+    ]
+  }
+}

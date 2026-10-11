@@ -1,0 +1,76 @@
+{
+  "entrypoint entry": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/entry/entrypoint",
+    "status": 400,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"message\": \"unknown phase \\\"entry\\\"\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint pre-scrub": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/pre-scrub/entrypoint",
+    "status": 400,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"message\": \"unknown phase \\\"pre-scrub\\\"\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint http_request_security_rule": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/http_request_security_rule/entrypoint",
+    "status": 400,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"message\": \"unknown phase \\\"http_request_security_rule\\\"\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint http_ratelimit": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/http_ratelimit/entrypoint",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 10003,\n      \"message\": \"could not find entrypoint ruleset in the http_ratelimit phase\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint scrub_off": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/scrub_off/entrypoint",
+    "status": 400,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"message\": \"unknown phase \\\"scrub_off\\\"\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint post-scrub": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/post-scrub/entrypoint",
+    "status": 400,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"message\": \"unknown phase \\\"post-scrub\\\"\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint http_request_firewall_managed": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/http_request_firewall_managed/entrypoint",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 10003,\n      \"message\": \"could not find entrypoint ruleset in the http_request_firewall_managed phase\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint http_request_firewall_custom": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/http_request_firewall_custom/entrypoint",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"description\": \"\",\n    \"id\": \"5d28bc0bd1dd9a777c760efc8256037c\",\n    \"kind\": \"zone\",\n    \"last_updated\": \"2026-08-15T17:37:45.044425Z\",\n    \"name\": \"default\",\n    \"phase\": \"http_request_firewall_custom\",\n    \"rules\": [\n      {\n        \"action\": \"block\",\n        \"description\": \"AI Crawl Control - Block AI bots by User Agent\",\n        \"enabled\": true,\n        \"expression\": \"(http.request.uri.path ne \\\"/robots.txt\\\" and (http.user_agent contains \\\"Claude-SearchBot\\\"))\",\n        \"id\": \"967dc7b360e48a7892758f061be5f13d\",\n        \"last_updated\": \"2026-08-15T17:37:45.044425Z\",\n        \"ref\": \"[CF AI Audit]\",\n        \"version\": \"1\"\n      }\n    ],\n    \"source\": \"firewall_custom\",\n    \"version\": \"1\"\n  },\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint http_request_cache_settings": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/http_request_cache_settings/entrypoint",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 10003,\n      \"message\": \"could not find entrypoint ruleset in the http_request_cache_settings phase\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "entrypoint http_response_managed_settings": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets/phases/http_response_managed_settings/entrypoint",
+    "status": 400,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"message\": \"unknown phase \\\"http_response_managed_settings\\\"\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "rulesets 列表": {
+    "path": "/zones/50c463774e5fc1009c434c996d13353d/rulesets",
+    "status": 200,
+    "body": "{\n  \"result\": [\n    {\n      \"description\": \"Created by the Cloudflare security team, this ruleset provides normalization on the URL path\",\n      \"id\": \"d65440e51a36a076448a0c1e9584d07f\",\n      \"kind\": \"managed\",\n      \"last_updated\": \"2024-08-01T17:37:11.538019Z\",\n      \"name\": \"Cloudflare Normalization Ruleset\",\n      \"phase\": \"http_request_sanitize\",\n      \"version\": \"6\"\n    },\n    {\n      \"description\": \"Created by the Cloudflare security team, this ruleset is designed to provide protection for free zones\",\n      \"id\": \"d93e87cbf5a90fbd7d661d71843c2045\",\n      \"kind\": \"managed\",\n      \"last_updated\": \"2026-08-17T16:24:51.912839Z\",\n      \"name\": \"Cloudflare Managed Free Ruleset\",\n      \"phase\": \"http_request_firewall_managed\",\n      \"source\": \"firewall_managed\",\n      \"version\": \"74\"\n    },\n    {\n      \"description\": \"Automatic mitigation of HTTP-based DDoS attacks. Cloudflare routinely adds signatures to address new attack vectors. Additional configuration allows you to customize the sensitivity of each rule and the performed mitigation action.\",\n      \"id\": \"52b6b3f01c7fc224c1e0fe76553a8539\",\n      \"kind\": \"managed\",\n      \"last_updated\": \"2026-10-08T20:48:18.04038Z\",\n      \"name\": \"DDoS L7 ruleset\",\n      \"phase\": \"ddos_l7\",\n      \"version\": \"3447\"\n    },\n    {\n      \"description\": \"\",\n      \"id\": \"5d28bc0bd1dd9a777c760efc8256037c\",\n      \"kind\": \"zone\",\n      \"last_updated\": \"2026-08-15T17:37:45.044425Z\",\n      \"name\": \"default\",\n      \"phase\": \"http_request_firewall_custom\",\n      \"source\": \"firewall_custom\",\n      \"version\": \"1\"\n    }\n  ],\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "account entrypoint http_request_firewall_custom": {
+    "path": "/accounts/«ACCOUNT_ID»/rulesets/phases/http_request_firewall_custom/entrypoint",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 10003,\n      \"message\": \"could not find entrypoint ruleset in the http_request_firewall_custom phase\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "__summary": {
+    "zones": [
+      {
+        "id": "50c463774e5fc1009c434c996d13353d",
+        "name": "acct.example.com"
+      }
+    ],
+    "codes_404": {
+      "entrypoint http_ratelimit": "10003",
+      "entrypoint http_request_firewall_managed": "10003",
+      "entrypoint http_request_cache_settings": "10003",
+      "account entrypoint http_request_firewall_custom": "10003"
+    }
+  }
+}

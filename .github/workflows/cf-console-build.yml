@@ -1,0 +1,198 @@
+# CF 控制台 —— 出包流水线（增强项，不是主交付路径）
+#
+# 主交付 = PWA：手机浏览器打开 https 域名 → 添加到主屏。它不需要签名、不需要下载 APK。
+# 这条流水线存在的理由见 docs/09 §C5/C6：本机没有 Android SDK、只有 JDK 8，本地出不了包，
+# 所以只在 CI 上现装现用；而 Actions 的 artifact 下载要 GitHub 登录、国内直连不稳，
+# 装不上 APK 不算失败 —— 退回 PWA 就是预期行为。
+#
+# 位置：必须在**仓库根**的 .github/workflows/，GitHub 只认这一个位置。
+# 触发方式刻意只做手动：不要 push 就自动跑，避免误触发包。
+name: cf-console-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "debug = 直接能装的调试包；release = 需要签名密钥（本仓库目前没配，选它会明确失败）"
+        required: false
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+      gateway_base:
+        description: "写进包里的网关地址（例：https://cf.acct.example.com）。留空 = 装机后在设置页手填"
+        required: false
+        default: ""
+        type: string
+      build_apk:
+        description: "是否出 APK（关掉就只跑类型检查 + 静态包，纯验证代码能不能构建）"
+        required: false
+        default: true
+        type: boolean
+
+# 打进 APK 的静态壳连的是**你部署好的网关**。所以这条流水线真正可用之前，docs/11 §4.1/§4.2
+# （部署 Worker + 绑自己的域名）必须先做完；否则装出来的是一个连不上任何东西的空壳：
+# Capacitor WebView 的 origin 是 https://localhost，相对 /api 打不通（见 app/console/src/lib/config.ts）。
+env:
+  VITE_GATEWAY_BASE: ${{ github.event.inputs.gateway_base }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cf-console-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 纯离线自检：这两条本机也有对应命令（docs/12 §1.4），CI 上复跑一遍图的是"换台机器也绿"。
+  # 只读冒烟**不放进来**：它要么打本地 workerd、要么真打 api.cloudflare.com，
+  # 后者要求把 CF API Token 存进 GitHub secrets —— 令牌只该活在 Worker secret 里（docs/06 §2）。
+  checks:
+    name: 类型检查 + 前后端路由对齐
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            app/console/package-lock.json
+            app/gateway/package-lock.json
+
+      - name: 前端类型检查
+        working-directory: app/console
+        run: |
+          npm ci
+          npx vue-tsc --noEmit
+
+      - name: 前后端路由静态对齐（28 条网关路由 vs 前端调用）
+        working-directory: app/console
+        run: node ../../tools/check-route-parity.mjs --selftest
+
+      - name: 网关类型检查
+        working-directory: app/gateway
+        run: |
+          npm ci
+          npx tsc --noEmit
+
+  web:
+    name: 静态包（PWA / dist）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/console/package-lock.json
+
+      - name: 装依赖
+        working-directory: app/console
+        run: npm ci
+
+      - name: 出静态包
+        working-directory: app/console
+        run: npm run build
+
+      - name: 记录打进包里的网关地址
+        run: |
+          if [ -z "$VITE_GATEWAY_BASE" ]; then
+            echo "gateway_base 留空：这个包的同源 /api 只在有反代的环境可用，装到手机要去设置页手填地址。"
+          else
+            echo "打包默认网关：$VITE_GATEWAY_BASE"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cf-console-dist
+          path: app/console/dist
+          if-no-files-found: error
+          retention-days: 14
+
+  apk:
+    name: 调试用 APK
+    needs: [checks, web]
+    if: github.event.inputs.build_apk == 'true' && github.event.inputs.build_type == 'debug'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: JDK 17（Capacitor 7 / AGP 8 的要求；本机只有 JDK 8，所以这一步只能在 CI 做）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      # 这里刻意**不复用** web job 的 dist artifact：upload-artifact v4 会把目录层级原样存进 artifact，
+      # 下载时指定 path 就会出现 app/console/dist/app/console/dist 的嵌套，构建会静默拿到空 webDir。
+      # 重新 build 一次多花一分钟，少一个只有出包时才暴露的坑。
+      - name: 装依赖并出静态包
+        working-directory: app/console
+        run: |
+          npm ci
+          npm run build
+
+      - name: 生成 Android 工程并构建 APK
+        working-directory: app/console
+        run: |
+          set -euo pipefail
+          # 版本必须钉住：写 @latest 的话，Capacitor 某次大版本发布会让这条流水线在没人改代码的情况下自己坏掉。
+          # 钉 7.x 与 capacitor.config.ts + JDK 17 的口径一致。
+          npm install --no-audit --no-fund --save-dev "@capacitor/core@7" "@capacitor/cli@7" "@capacitor/android@7"
+          # 不加 || true：cap add 失败必须让整条流水线红掉，否则下一步 cd android 报的是"目录不存在"，
+          # 看日志的人会先怀疑 Gradle，而不是怀疑壳没生成。
+          npx cap add android
+          test -d android || { echo "cap add 声称成功但没有 android/ 目录"; exit 1; }
+          npx cap sync android
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 校验 APK 真的产出了
+        working-directory: app/console
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
+          test -n "$apk" || { echo "没有 APK 产物"; exit 1; }
+          ls -l "$apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cf-console-debug-apk
+          path: app/console/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 取包说明
+        run: |
+          echo "APK 在 Actions run 页面底部的 artifacts 里；下载需要 GitHub 登录。"
+          echo "如果直连下载不稳：把这个 artifact 页面临时开一个新标签用浏览器登录态下，或者干脆装 PWA（更省事）。"
+          echo "debug 包可以直接装机（签名是 Android debug key），但手机要允许「安装未知来源应用」。"
+
+  # release 不静默跳过：选错输入项时，"什么都没发生"和"成功但没产物"是最难查的两种结果。
+  release-guard:
+    name: release 分支（未配置签名）
+    needs: [checks, web]
+    if: always() && github.event.inputs.build_type == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 明确失败并说明原因
+        run: |
+          echo "本仓库没有配置 release 签名密钥（keystore / SIGNING_* secrets），所以不出 release 包。"
+          echo "要 debug 包就把 build_type 改回 debug；真要 release 再补签名材料并加 signingConfigs。"
+          exit 1

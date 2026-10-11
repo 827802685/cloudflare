@@ -1,0 +1,175 @@
+{
+  "verifiedAt": "2026-10-09T13:16:46.358Z",
+  "accountTag": "«ACCOUNT_ID»",
+  "note": "账号级 = viewer.accounts(filter:{accountTag})",
+  "sets": {
+    "httpRequests1dGroups.sum": {
+      "ok": [
+        {
+          "field": "requests",
+          "sample": 8867
+        },
+        {
+          "field": "bytes",
+          "sample": 131352359
+        },
+        {
+          "field": "encryptedRequests",
+          "sample": 5683
+        },
+        {
+          "field": "threats",
+          "sample": 223
+        }
+      ],
+      "denied": [],
+      "unknown": [
+        {
+          "field": "visits",
+          "why": "unknown field \"visits\""
+        },
+        {
+          "field": "bandwidth",
+          "why": "unknown field \"bandwidth\""
+        },
+        {
+          "field": "cachedDatabytes",
+          "why": "unknown field \"cachedDatabytes\""
+        },
+        {
+          "field": "uncachedDatabytes",
+          "why": "unknown field \"uncachedDatabytes\""
+        },
+        {
+          "field": "pageSessions",
+          "why": "unknown field \"pageSessions\""
+        },
+        {
+          "field": "indexedBytes",
+          "why": "unknown field \"indexedBytes\""
+        },
+        {
+          "field": "savedBytes",
+          "why": "unknown field \"savedBytes\""
+        },
+        {
+          "field": "originErrorRequests",
+          "why": "unknown field \"originErrorRequests\""
+        },
+        {
+          "field": "botRequests",
+          "why": "unknown field \"botRequests\""
+        }
+      ]
+    },
+    "httpRequests1dGroups.dimensions": {
+      "ok": [
+        {
+          "field": "date",
+          "sample": "2026-10-06"
+        }
+      ],
+      "denied": [],
+      "unknown": [
+        {
+          "field": "day",
+          "why": "unknown field \"day\""
+        },
+        {
+          "field": "datetimeDay",
+          "why": "unknown field \"datetimeDay\""
+        },
+        {
+          "field": "countryName",
+          "why": "unknown field \"countryName\""
+        }
+      ]
+    },
+    "httpRequestsAdaptiveGroups.sum": {
+      "ok": [
+        {
+          "field": "visits",
+          "sample": 4284
+        },
+        {
+          "field": "edgeResponseBytes",
+          "sample": 769269413
+        }
+      ],
+      "denied": [],
+      "unknown": [
+        {
+          "field": "count",
+          "why": "unknown field \"count\""
+        },
+        {
+          "field": "requests",
+          "why": "unknown field \"requests\""
+        },
+        {
+          "field": "originalResponseBytes",
+          "why": "unknown field \"originalResponseBytes\""
+        },
+        {
+          "field": "cachedRequestCount",
+          "why": "unknown field \"cachedRequestCount\""
+        },
+        {
+          "field": "uncachedRequestCount",
+          "why": "unknown field \"uncachedRequestCount\""
+        },
+        {
+          "field": "encryptedRequestCount",
+          "why": "unknown field \"encryptedRequestCount\""
+        },
+        {
+          "field": "savedBytes",
+          "why": "unknown field \"savedBytes\""
+        },
+        {
+          "field": "indexedBytes",
+          "why": "unknown field \"indexedBytes\""
+        }
+      ]
+    },
+    "httpRequestsAdaptiveGroups.dimensions": {
+      "ok": [
+        {
+          "field": "clientCountryName",
+          "sample": "BR"
+        },
+        {
+          "field": "clientRequestHTTPHost",
+          "sample": "acct.example.com"
+        },
+        {
+          "field": "cacheStatus",
+          "sample": "none"
+        },
+        {
+          "field": "clientDeviceType",
+          "sample": "desktop"
+        },
+        {
+          "field": "edgeResponseStatus",
+          "sample": 301
+        },
+        {
+          "field": "originResponseStatus",
+          "sample": 301
+        }
+      ],
+      "denied": [
+        {
+          "field": "clientASNDescription",
+          "why": "account '«ACCOUNT_ID»' does not have access to the field 'clientasndes"
+        },
+        {
+          "field": "clientRequestReferer",
+          "why": "account '«ACCOUNT_ID»' does not have access to the field 'clientreques"
+        }
+      ],
+      "unknown": []
+    }
+  }
+}

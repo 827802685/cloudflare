@@ -1,0 +1,489 @@
+{
+  "generated_at": "2026-10-10T03:49:28.096Z",
+  "source": "tools/probe-tail-net.mjs",
+  "scope_note": "只读网络探测：不带 CF 令牌、不调 POST …/tails（那是写操作）。结论只覆盖'本机能不能连到'这一面。",
+  "hosts": {
+    "tail.developers.workers.dev": {
+      "why": "Workers Tail 的 wss 端点（C3 主角）",
+      "resolve4_tries": [
+        {
+          "step": "resolve4#0",
+          "ok": true,
+          "result": [
+            "174.37.243.85"
+          ]
+        },
+        {
+          "step": "resolve4#1",
+          "ok": true,
+          "result": [
+            "174.37.243.85"
+          ]
+        },
+        {
+          "step": "resolve4#2",
+          "ok": true,
+          "result": [
+            "174.37.243.85"
+          ]
+        }
+      ],
+      "distinct_ipv4": [
+        "174.37.243.85"
+      ],
+      "resolve4_errors": [],
+      "lookup": {
+        "step": "lookup(system)",
+        "ok": true,
+        "result": [
+          {
+            "address": "2a03:2880:f126:83:face:b00c:0:25de",
+            "family": 6
+          },
+          {
+            "address": "174.37.243.85",
+            "family": 4
+          }
+        ]
+      },
+      "lookup_answers": [
+        "2a03:2880:f126:83:face:b00c:0:25de",
+        "174.37.243.85"
+      ],
+      "dns_answers": [
+        "174.37.243.85",
+        "2a03:2880:f126:83:face:b00c:0:25de"
+      ],
+      "all_in_cf_anycast": false,
+      "dns_stable": false,
+      "resolve6": {
+        "step": "resolve6",
+        "ok": true,
+        "result": [
+          "2a03:2880:f126:83:face:b00c:0:25de"
+        ]
+      },
+      "tcp": {
+        "step": "tcp:443",
+        "ok": false,
+        "error": "timeout 10000ms (tcp:443)"
+      },
+      "tls": {
+        "step": "tls",
+        "ok": false,
+        "error": "timeout 10000ms (tls)"
+      },
+      "upgrade": {
+        "step": "WS upgrade",
+        "ok": false,
+        "error": "timeout 10000ms (WS upgrade)"
+      },
+      "upgrade_tracev1": {
+        "step": "WS upgrade + trace-v1",
+        "ok": false,
+        "error": "timeout 10000ms (WS upgrade + trace-v1)"
+      },
+      "verdict": "dns_answers_but_unreachable",
+      "dns_note": "2 个不同答案且都不在 CF 段（174.37.243.85, 2a03:2880:f126:83:face:b00c:0:25de）—— 污染型解析：同一个 host 每次给不同的假地址"
+    },
+    "acct0501.workers.dev": {
+      "why": "对照：本账号的 workers.dev 前缀，验证污染是否覆盖整个 apex",
+      "resolve4_tries": [
+        {
+          "step": "resolve4#0",
+          "ok": true,
+          "result": [
+            "122.10.85.4"
+          ]
+        },
+        {
+          "step": "resolve4#1",
+          "ok": true,
+          "result": [
+            "122.10.85.4"
+          ]
+        },
+        {
+          "step": "resolve4#2",
+          "ok": true,
+          "result": [
+            "122.10.85.4"
+          ]
+        }
+      ],
+      "distinct_ipv4": [
+        "122.10.85.4"
+      ],
+      "resolve4_errors": [],
+      "lookup": {
+        "step": "lookup(system)",
+        "ok": true,
+        "result": [
+          {
+            "address": "2a03:2880:f130:83:face:b00c:0:25de",
+            "family": 6
+          },
+          {
+            "address": "122.10.85.4",
+            "family": 4
+          }
+        ]
+      },
+      "lookup_answers": [
+        "2a03:2880:f130:83:face:b00c:0:25de",
+        "122.10.85.4"
+      ],
+      "dns_answers": [
+        "122.10.85.4",
+        "2a03:2880:f130:83:face:b00c:0:25de"
+      ],
+      "all_in_cf_anycast": false,
+      "dns_stable": false,
+      "resolve6": {
+        "step": "resolve6",
+        "ok": true,
+        "result": [
+          "2a03:2880:f130:83:face:b00c:0:25de"
+        ]
+      },
+      "tcp": {
+        "step": "tcp:443",
+        "ok": false,
+        "error": "timeout 10000ms (tcp:443)"
+      },
+      "tls": {
+        "step": "tls",
+        "ok": false,
+        "error": "timeout 10000ms (tls)"
+      },
+      "upgrade": {
+        "step": "WS upgrade",
+        "ok": false,
+        "error": "timeout 10000ms (WS upgrade)"
+      },
+      "upgrade_tracev1": {
+        "step": "WS upgrade + trace-v1",
+        "ok": false,
+        "error": "timeout 10000ms (WS upgrade + trace-v1)"
+      },
+      "verdict": "dns_answers_but_unreachable",
+      "dns_note": "2 个不同答案且都不在 CF 段（122.10.85.4, 2a03:2880:f130:83:face:b00c:0:25de）—— 污染型解析：同一个 host 每次给不同的假地址"
+    },
+    "acct.example.com": {
+      "why": "对照：自有域名，已知可达；也是将来网关注册的同类域名",
+      "resolve4_tries": [
+        {
+          "step": "resolve4#0",
+          "ok": true,
+          "result": [
+            "172.67.173.205",
+            "104.21.47.223"
+          ]
+        },
+        {
+          "step": "resolve4#1",
+          "ok": true,
+          "result": [
+            "172.67.173.205",
+            "104.21.47.223"
+          ]
+        },
+        {
+          "step": "resolve4#2",
+          "ok": true,
+          "result": [
+            "172.67.173.205",
+            "104.21.47.223"
+          ]
+        }
+      ],
+      "distinct_ipv4": [
+        "172.67.173.205",
+        "104.21.47.223"
+      ],
+      "resolve4_errors": [],
+      "lookup": {
+        "step": "lookup(system)",
+        "ok": true,
+        "result": [
+          {
+            "address": "2606:4700:3031::6815:2fdf",
+            "family": 6
+          },
+          {
+            "address": "2606:4700:3037::ac43:adcd",
+            "family": 6
+          },
+          {
+            "address": "172.67.173.205",
+            "family": 4
+          },
+          {
+            "address": "104.21.47.223",
+            "family": 4
+          }
+        ]
+      },
+      "lookup_answers": [
+        "2606:4700:3031::6815:2fdf",
+        "2606:4700:3037::ac43:adcd",
+        "172.67.173.205",
+        "104.21.47.223"
+      ],
+      "dns_answers": [
+        "172.67.173.205",
+        "104.21.47.223",
+        "2606:4700:3031::6815:2fdf",
+        "2606:4700:3037::ac43:adcd"
+      ],
+      "all_in_cf_anycast": true,
+      "dns_stable": false,
+      "resolve6": {
+        "step": "resolve6",
+        "ok": true,
+        "result": [
+          "2606:4700:3031::6815:2fdf",
+          "2606:4700:3037::ac43:adcd"
+        ]
+      },
+      "tcp": {
+        "step": "tcp:443",
+        "ok": true,
+        "result": {
+          "connected": true,
+          "local_socket": "2409:8a38:ac22:b3b1:38f7:804c:f21c:6cdf:50435",
+          "egress": "IPv6"
+        }
+      },
+      "tls": {
+        "step": "tls",
+        "ok": true,
+        "result": {
+          "connected": true,
+          "authorized": true,
+          "alpn": "h2",
+          "issuer": "WE1",
+          "notAfter": "Jan  5 06:09:52 2027 GMT"
+        }
+      },
+      "upgrade": {
+        "step": "WS upgrade",
+        "ok": true,
+        "result": {
+          "status_line": "HTTP/1.1 200 OK",
+          "upgrade_header": null,
+          "sec_ws_accept": null,
+          "sec_ws_protocol": null,
+          "cf_cache": "HIT",
+          "body_head": "<!DOCTYPE html> <html lang=\"en\">   <head>     <meta charset=\"UTF-8\" />     <meta name=\"viewport\" content=\"width=devi"
+        }
+      },
+      "upgrade_tracev1": {
+        "step": "WS upgrade + trace-v1",
+        "ok": true,
+        "result": {
+          "status_line": "HTTP/1.1 200 OK",
+          "upgrade_header": null,
+          "sec_ws_accept": null,
+          "sec_ws_protocol": null,
+          "cf_cache": "HIT",
+          "body_head": "<!DOCTYPE html> <html lang=\"en\">   <head>     <meta charset=\"UTF-8\" />     <meta name=\"viewport\" content=\"width=devi"
+        }
+      },
+      "verdict": "reachable",
+      "dns_note": "4 个答案，全落在 CF 常见 anycast 段（v4 2 个 + v6 2 个），属于正常 anycast"
+    },
+    "api.cloudflare.com": {
+      "why": "对照：官方 API，已知可达",
+      "resolve4_tries": [
+        {
+          "step": "resolve4#0",
+          "ok": true,
+          "result": [
+            "104.19.193.29",
+            "104.19.192.175",
+            "104.19.192.174",
+            "104.19.192.176",
+            "104.19.192.29",
+            "104.19.192.177"
+          ]
+        },
+        {
+          "step": "resolve4#1",
+          "ok": true,
+          "result": [
+            "104.19.193.29",
+            "104.19.192.175",
+            "104.19.192.174",
+            "104.19.192.176",
+            "104.19.192.29",
+            "104.19.192.177"
+          ]
+        },
+        {
+          "step": "resolve4#2",
+          "ok": true,
+          "result": [
+            "104.19.193.29",
+            "104.19.192.175",
+            "104.19.192.174",
+            "104.19.192.176",
+            "104.19.192.29",
+            "104.19.192.177"
+          ]
+        }
+      ],
+      "distinct_ipv4": [
+        "104.19.193.29",
+        "104.19.192.175",
+        "104.19.192.174",
+        "104.19.192.176",
+        "104.19.192.29",
+        "104.19.192.177"
+      ],
+      "resolve4_errors": [],
+      "lookup": {
+        "step": "lookup(system)",
+        "ok": true,
+        "result": [
+          {
+            "address": "2606:4700:300a::6813:c0b1",
+            "family": 6
+          },
+          {
+            "address": "2606:4700:300a::6813:c11d",
+            "family": 6
+          },
+          {
+            "address": "2606:4700:300a::6813:c0af",
+            "family": 6
+          },
+          {
+            "address": "2606:4700:300a::6813:c0ae",
+            "family": 6
+          },
+          {
+            "address": "2606:4700:300a::6813:c0b0",
+            "family": 6
+          },
+          {
+            "address": "2606:4700:300a::6813:c01d",
+            "family": 6
+          },
+          {
+            "address": "104.19.193.29",
+            "family": 4
+          },
+          {
+            "address": "104.19.192.175",
+            "family": 4
+          },
+          {
+            "address": "104.19.192.174",
+            "family": 4
+          },
+          {
+            "address": "104.19.192.176",
+            "family": 4
+          },
+          {
+            "address": "104.19.192.29",
+            "family": 4
+          },
+          {
+            "address": "104.19.192.177",
+            "family": 4
+          }
+        ]
+      },
+      "lookup_answers": [
+        "2606:4700:300a::6813:c0b1",
+        "2606:4700:300a::6813:c11d",
+        "2606:4700:300a::6813:c0af",
+        "2606:4700:300a::6813:c0ae",
+        "2606:4700:300a::6813:c0b0",
+        "2606:4700:300a::6813:c01d",
+        "104.19.193.29",
+        "104.19.192.175",
+        "104.19.192.174",
+        "104.19.192.176",
+        "104.19.192.29",
+        "104.19.192.177"
+      ],
+      "dns_answers": [
+        "104.19.193.29",
+        "104.19.192.175",
+        "104.19.192.174",
+        "104.19.192.176",
+        "104.19.192.29",
+        "104.19.192.177",
+        "2606:4700:300a::6813:c0b1",
+        "2606:4700:300a::6813:c11d",
+        "2606:4700:300a::6813:c0af",
+        "2606:4700:300a::6813:c0ae",
+        "2606:4700:300a::6813:c0b0",
+        "2606:4700:300a::6813:c01d"
+      ],
+      "all_in_cf_anycast": true,
+      "dns_stable": false,
+      "resolve6": {
+        "step": "resolve6",
+        "ok": true,
+        "result": [
+          "2606:4700:300a::6813:c0b1",
+          "2606:4700:300a::6813:c11d",
+          "2606:4700:300a::6813:c0af",
+          "2606:4700:300a::6813:c0ae",
+          "2606:4700:300a::6813:c0b0",
+          "2606:4700:300a::6813:c01d"
+        ]
+      },
+      "tcp": {
+        "step": "tcp:443",
+        "ok": true,
+        "result": {
+          "connected": true,
+          "local_socket": "2409:8a38:ac22:b3b1:38f7:804c:f21c:6cdf:50442",
+          "egress": "IPv6"
+        }
+      },
+      "tls": {
+        "step": "tls",
+        "ok": true,
+        "result": {
+          "connected": true,
+          "authorized": true,
+          "alpn": "h2",
+          "issuer": "WE1",
+          "notAfter": "Nov 11 23:31:01 2026 GMT"
+        }
+      },
+      "upgrade": {
+        "step": "WS upgrade",
+        "ok": true,
+        "result": {
+          "status_line": "HTTP/1.1 404 Not Found",
+          "upgrade_header": null,
+          "sec_ws_accept": null,
+          "sec_ws_protocol": null,
+          "cf_cache": "DYNAMIC",
+          "body_head": "{\"success\":false,\"errors\":[{\"code\":10404,\"message\":\"No route for that URI\"}],\"messages\":[],\"result\":null}"
+        }
+      },
+      "upgrade_tracev1": {
+        "step": "WS upgrade + trace-v1",
+        "ok": true,
+        "result": {
+          "status_line": "HTTP/1.1 404 Not Found",
+          "upgrade_header": null,
+          "sec_ws_accept": null,
+          "sec_ws_protocol": null,
+          "cf_cache": "DYNAMIC",
+          "body_head": "{\"success\":false,\"errors\":[{\"code\":10404,\"message\":\"No route for that URI\"}],\"messages\":[],\"result\":null}"
+        }
+      },
+      "verdict": "reachable",
+      "dns_note": "12 个答案，全落在 CF 常见 anycast 段（v4 6 个 + v6 6 个），属于正常 anycast"
+    }
+  }
+}

@@ -1,0 +1,156 @@
+[
+ {
+  "label": "SQL introspection（数据集目录）",
+  "group": "H",
+  "method": "GET",
+  "path": "/analytics/sql/introspection?account_tag=«ACCOUNT_ID»",
+  "http": 200,
+  "ms": 1299,
+  "ok": true,
+  "brief": "{\"datasets\":[{\"name\":\"events.accessLoginRequests\",\"title\":\"Access Login Requests\",\"category\":\"Zero Trust\",\"description\":\"Logins to applications protected by Cloudflare Access\",\"kind\":{\"events\":{\"sampl",
+  "note": "GET；返回账号可查的全部数据集清单（名称/分类/采样方式）"
+ },
+ {
+  "label": "SQL 顶层别名（带 scope）",
+  "group": "H",
+  "method": "POST",
+  "path": "/analytics/sql",
+  "http": 200,
+  "ms": 574,
+  "ok": true,
+  "brief": "data=[{\"n\":5034}] rows=1",
+  "note": "与 /accounts/{a}/analytics/sql 等价"
+ },
+ {
+  "label": "SQL account 作用域路径",
+  "group": "H",
+  "method": "POST",
+  "path": "/accounts/«ACCOUNT_ID»/analytics/sql",
+  "http": 200,
+  "ms": 517,
+  "ok": true,
+  "brief": "data=[{\"n\":5034}] rows=1",
+  "note": "规格里收录的正式路径"
+ },
+ {
+  "label": "SQL 带 time_range 参数",
+  "group": "H",
+  "method": "POST",
+  "path": "/analytics/sql",
+  "http": 200,
+  "ms": 530,
+  "ok": true,
+  "brief": "data=[{\"d\":\"2026-10-02 00:00:00\",\"n\":2234},{\"d\":\"2026-10-03 00:00:00\",\"n\":2649},{\"d\":\"2026-10-04 00:00:00\",\"n\":2604},{\"d\":\"2026-10-05 00:00:00\",\"n\":2206},{\"d\":\"2026-10-06 00:00:00\",\"n\":2084},{\"d\":\"2026-10- rows=7",
+  "note": "time_range 替代手写 WHERE"
+ },
+ {
+  "label": "SQL SHOW TABLES（不允许）",
+  "group": "H",
+  "method": "POST",
+  "path": "/analytics/sql",
+  "http": 422,
+  "ms": 306,
+  "ok": false,
+  "brief": "Input was invalid: Error during planning: SHOW TABLES is not supported unless information_schema is enabled",
+  "note": "httpRequests 面禁用 information_schema"
+ },
+ {
+  "label": "AE SHOW TABLES（列自建数据集）",
+  "group": "H",
+  "method": "POST",
+  "path": "/accounts/«ACCOUNT_ID»/analytics_engine/sql",
+  "http": 200,
+  "ms": 373,
+  "ok": true,
+  "brief": "data=[] rows=0",
+  "note": "body 是裸 SQL，不是 JSON"
+ },
+ {
+  "label": "AE 选数据集不能带库名前缀",
+  "group": "H",
+  "method": "POST",
+  "path": "/accounts/«ACCOUNT_ID»/analytics_engine/sql",
+  "http": 422,
+  "ms": 601,
+  "ok": false,
+  "brief": "Input was invalid: sql parser error: Expected literal string, found: 1",
+  "note": "负例：证明这里是 AE 方言，只能选自己的数据集"
+ },
+ {
+  "label": "AE GET ?query=",
+  "group": "H",
+  "method": "GET",
+  "path": "/accounts/«ACCOUNT_ID»/analytics_engine/sql?query=SHOW%20TABLES",
+  "http": 200,
+  "ms": 374,
+  "ok": true,
+  "brief": "data=[] rows=0",
+  "note": "GET 形态同样可用"
+ },
+ {
+  "label": "telemetry/keys 属性目录",
+  "group": "H",
+  "method": "POST",
+  "path": "/accounts/«ACCOUNT_ID»/workers/observability/telemetry/keys",
+  "http": 200,
+  "ms": 1234,
+  "ok": true,
+  "brief": "result=[{\"key\":\"$metadata.message\",\"type\":\"string\",\"lastSeenAt\":1791546568496},{\"key\":\"$metadata.messageTemplate\",\"type\":\"string\",\"lastSeenAt\":1791546568496},{\"key\":\"$metadata.error\",\"type\":\"string\",\"lastSee",
+  "note": "200 即说明这个产品在本账号可用"
+ },
+ {
+  "label": "telemetry/query 需要 queryId",
+  "group": "H",
+  "method": "POST",
+  "path": "/accounts/«ACCOUNT_ID»/workers/observability/telemetry/query",
+  "http": 400,
+  "ms": 337,
+  "ok": false,
+  "brief": "{\"success\":false,\"_e\":null,\"_i\":{\"query\":\"SELECT 1\"},\"_c\":{\"issues\":[{\"expected\":\"string\",\"code\":\"invalid_type\",\"path\":[\"queryId\"],\"message\":\"Invalid input\"},{\"expected\":\"object\",\"code\":\"invalid_type\"",
+  "note": "负例：证明它跑的是已保存查询而不是裸 SQL"
+ },
+ {
+  "label": "telemetry/values 取值",
+  "group": "H",
+  "method": "POST",
+  "path": "/accounts/«ACCOUNT_ID»/workers/observability/telemetry/values",
+  "http": 400,
+  "ms": 407,
+  "ok": false,
+  "brief": "{\"success\":false,\"_e\":null,\"_i\":{\"timeframe\":{\"start\":\"2026-10-08T00:00:00Z\",\"end\":\"2026-10-09T00:00:00Z\"}},\"_c\":{\"issues\":[{\"expected\":\"number\",\"code\":\"invalid_type\",\"path\":[\"timeframe\",\"to\"],\"messag",
+  "note": ""
+ },
+ {
+  "label": "email routing 正确路径",
+  "group": "H",
+  "method": "GET",
+  "path": "/accounts/«ACCOUNT_ID»/email/routing/settings",
+  "http": 400,
+  "ms": 282,
+  "ok": false,
+  "brief": "E 7003 Could not route to /accounts/«ACCOUNT_ID»/email/routing/settings, perhaps your object identifier is invalid? | 7000 No route for that URI",
+  "note": "规格里只有 /email/routing/...（斜杠），我们上一轮打的 /email_routing/settings 是老写法"
+ },
+ {
+  "label": "KV 写值正确路径（不存在则 404）",
+  "group": "H",
+  "method": "GET",
+  "path": "/accounts/«ACCOUNT_ID»/storage/kv/namespaces/cbcec7efa09b774e3dd2ff13e8dc2ef4/values/__probe__",
+  "http": 404,
+  "ms": 312,
+  "ok": false,
+  "brief": "E 10009 get: 'key not found'",
+  "note": "GET；规格里 keys 只能列，写值走 /values/{key_name}"
+ },
+ {
+  "label": "workers/tails 老批量接口",
+  "group": "H",
+  "method": "GET",
+  "path": "/accounts/«ACCOUNT_ID»/workers/tails",
+  "http": 405,
+  "ms": 280,
+  "ok": false,
+  "brief": "E 10405 Method not allowed for this authentication scheme",
+  "note": "规格里已无此路径，改用 /workers/scripts/{s}/tails"
+ }
+]

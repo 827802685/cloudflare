@@ -1,0 +1,80 @@
+{
+  "script-settings GET": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/script-settings",
+    "method": "GET",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"logpush\": false,\n    \"tags\": null,\n    \"tail_consumers\": null,\n    \"observability\": null\n  },\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "deployments/{id} GET(假 id)": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/deployments/00000000-0000-4000-8000-000000000000",
+    "method": "GET",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 10336,\n      \"message\": \"This deployment does not exist on your Worker.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "deployments/{id} GET(真实 id)": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/deployments/7f9ad0a6-2aa5-4168-bad4-e080011df277",
+    "method": "GET",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"id\": \"7f9ad0a6-2aa5-4168-bad4-e080011df277\",\n    \"source\": \"wrangler\",\n    \"strategy\": \"percentage\",\n    \"annotations\": {\n      \"workers/message\": \"Automatic deployment on upload.\",\n      \"workers/triggered_by\": \"upload\"\n    },\n    \"versions\": [\n      {\n        \"version_id\": \"e0b67a07-8532-4843-b2ff-f27029fc135b\",\n        \"percentage\": 100\n      }\n    ],\n    \"created_on\": \"2026-10-09T03:35:30.449022Z\"\n  },\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "worker subdomain GET": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/subdomain",
+    "method": "GET",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"subdomain\": \"acct0501\"\n  },\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "script subdomain GET": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/subdomain",
+    "method": "GET",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"enabled\": true,\n    \"previews_enabled\": true\n  },\n  \"success\": true,\n  \"errors\": [],\n  \"messages\": []\n}\n"
+  },
+  "versions/{v} GET（已在 B2 测过，复跑对照）": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/rin-server/versions/e0b67a07-8532-4843-b2ff-f27029fc135b",
+    "method": "GET",
+    "status": 200,
+    "body": "{\n  \"result\": {\n    \"id\": \"e0b67a07-8532-4843-b2ff-f27029fc135b\",\n    \"number\": 148,\n    \"metadata\": {\n      \"created_on\": \"2026-10-09T03:35:30.449022Z\",\n      \"source\": \"wrangler\",\n      \"author_id\": \"e18fba761923af88f63319ad1e1dd26b\",\n      \"author_email\": \"\",\n      \"has_preview\": true\n    },\n    \"annotations\": {\n      \"workers/triggered_by\": \"upload\"\n    },\n    \"resources\": {\n      \"script\": {\n        \"etag\": \"03014dfd747f4ed4e946d78969bafd3d4cc7938c5941af4b658174289e15a2cc\",\n        \"handlers\": [\n          \"fetch\",\n          \"scheduled\",\n          \"queue\"\n        ],\n        \"placement_mode\": \"smart\",\n        \"placement\": {\n          \"mode\": \"smart\"\n        },\n        \"last_deployed_from\": \"wrangler\"\n      },\n      \"script_runtime\": {\n        \"assets\": {\n          \"serve_directly\": true,\n          \"raw_run_worker_first\": false,\n          \"base_path\": \"/\"\n        },\n        \"compatibility_date\": \"2026-01-20\",\n        \"usage_model\": \"standard\"\n      },\n      \"bindings\": [\n        {\n          \"name\": \"ADMIN_PASSWORD\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"ADMIN_USERNAME\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"AI\",\n          \"project\": \"\\u003ccatalog\\u003e\",\n          \"type\": \"ai\"\n        },\n        {\n          \"name\": \"ASSETS\",\n          \"type\": \"assets\"\n        },\n        {\n          \"name\": \"AVATAR\",\n          \"text\": \"\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"CACHE_STORAGE_MODE\",\n          \"text\": \"database\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"database_id\": \"84f4174e-c620-481a-bd3a-e1312dfbddee\",\n          \"id\": \"84f4174e-c620-481a-bd3a-e1312dfbddee\",\n          \"name\": \"DB\",\n          \"type\": \"d1\"\n        },\n        {\n          \"name\": \"DESCRIPTION\",\n          \"text\": \"A lightweight personal blogging system\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"JWT_SECRET\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"NAME\",\n          \"text\": \"Rin\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"PAGE_SIZE\",\n          \"text\": \"5\",\n          \"type\": \"plain_text\"\n        },\n        {\n          \"name\": \"RIN_GITHUB_CLIENT_ID\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"RIN_GITHUB_CLIENT_SECRET\",\n          \"type\": \"secret_text\"\n        },\n        {\n          \"name\": \"RSS_DESCRIPTION\",\n          \"text\": \"\",\n          \"type\": \"plain_text\"\n"
+  },
+  "domains PATCH(假 id)": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/domains/00000000-0000-4000-8000-000000000000",
+    "method": "PATCH",
+    "status": 405,
+    "body": "{\"success\":false,\"errors\":[{\"code\":10405,\"message\":\"Method not allowed for this authentication scheme\"}],\"messages\":[],\"result\":null}\n"
+  },
+  "workers/workers/{id}/versions DELETE(假)": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/workers/__probe-nonexistent-worker__/versions/00000000-0000-4000-8000-000000000000",
+    "method": "DELETE",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 10007,\n      \"message\": \"This Worker does not exist on your account.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "versions/{v}/deploy POST(假 worker)": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/__probe-nonexistent-worker__/versions/00000000-0000-4000-8000-000000000000/deploy",
+    "method": "POST",
+    "status": 405,
+    "body": "{\n  \"code\": 1001,\n  \"error\": \"method_not_allowed\"\n}\n"
+  },
+  "secrets-bulk PATCH(假 worker)": {
+    "path": "/accounts/«ACCOUNT_ID»/workers/scripts/__probe-nonexistent-worker__/secrets-bulk",
+    "method": "PATCH",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 10007,\n      \"message\": \"This Worker does not exist on your account.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "pages deployments/{id}": {
+    "path": "/accounts/«ACCOUNT_ID»/pages/projects/__none__/deployments/00000000-0000-4000-8000-000000000000",
+    "method": "GET",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 8000007,\n      \"message\": \"Project not found. The specified project name does not match any of your existing projects.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "pages deployments/{id}/history/logs": {
+    "path": "/accounts/«ACCOUNT_ID»/pages/projects/__none__/deployments/00000000-0000-4000-8000-000000000000/history/logs",
+    "method": "GET",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 8000007,\n      \"message\": \"Project not found. The specified project name does not match any of your existing projects.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  },
+  "pages upload-token": {
+    "path": "/accounts/«ACCOUNT_ID»/pages/projects/__none__/upload-token",
+    "method": "GET",
+    "status": 404,
+    "body": "{\n  \"result\": null,\n  \"success\": false,\n  \"errors\": [\n    {\n      \"code\": 8000007,\n      \"message\": \"Project not found. The specified project name does not match any of your existing projects.\"\n    }\n  ],\n  \"messages\": []\n}\n"
+  }
+}
