@@ -162,12 +162,14 @@ jobs:
           npm install --no-audit --no-fund --save-dev "@capacitor/core@7" "@capacitor/cli@7" "@capacitor/android@7"
           # 不加 || true：cap add 失败必须让整条流水线红掉，否则下一步 cd android 报的是"目录不存在"，
           # 看日志的人会先怀疑 Gradle，而不是怀疑壳没生成。
-          npx cap add android
+          npx cap add android 2>&1
           test -d android || { echo "cap add 声称成功但没有 android/ 目录"; exit 1; }
-          npx cap sync android
+          npx cap sync android 2>&1
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          # 打印 gradle 版本与 AGP 版本，便于排查
+          ./gradlew --version
+          ./gradlew assembleDebug --no-daemon --stacktrace --info 2>&1 | tail -200
 
       - name: 校验 APK 真的产出了
         working-directory: app/console
