@@ -136,6 +136,13 @@ jobs:
 
       - name: Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          api-level: 34
+          ndk-version: r27c
+          cmdline-tools-version: latest
+
+      - name: 接受 Android SDK 许可证
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
 
       # 这里刻意**不复用** web job 的 dist artifact：upload-artifact v4 会把目录层级原样存进 artifact，
       # 下载时指定 path 就会出现 app/console/dist/app/console/dist 的嵌套，构建会静默拿到空 webDir。
