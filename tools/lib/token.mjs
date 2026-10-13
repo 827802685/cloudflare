@@ -1,5 +1,5 @@
 /**
- * 探针脚本共用的凭证读取：环境变量 → F:\work\cf-probe\app\.dev.vars → F:\Documents\GitHub\Rin\.env.local
+ * 探针脚本共用的凭证读取：环境变量 → «LOCAL_PATH» → «LOCAL_PATH»
  * → 仓库内 app\gateway\.dev.vars（最后一档，让"只有这个仓库"的环境也能跑探针）。
  * 只读，绝不打印令牌内容，也绝不写进任何证据文件。
  *
@@ -19,8 +19,8 @@ export function loadCreds() {
     return { tok: process.env.CLOUDFLARE_API_TOKEN, acc: process.env.CLOUDFLARE_ACCOUNT_ID || "" };
   }
   const sources = [
-    "F:/work/cf-probe/app/.dev.vars",
-    "F:/Documents/GitHub/Rin/.env.local",
+    "«LOCAL_PATH»",
+    "«LOCAL_PATH»",
     resolve(REPO_ROOT, "app", "gateway", ".dev.vars"),
   ];
   for (const p of sources) {
@@ -31,5 +31,5 @@ export function loadCreds() {
       if (tok) return { tok, acc: acc || "" };
     } catch { /* 下一个来源 */ }
   }
-  throw new Error("没找到令牌：设 CLOUDFLARE_API_TOKEN，或确认 F:/work/cf-probe/app/.dev.vars / Rin/.env.local 存在");
+  throw new Error("没找到令牌：设 CLOUDFLARE_API_TOKEN，或确认 «LOCAL_PATH» / Rin/.env.local 存在");
 }

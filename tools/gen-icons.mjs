@@ -7,11 +7,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
-const require = createRequire("F:/Documents/work/cloudflare/app/gateway/package.json");
+const require = createRequire("«LOCAL_PATH»");
 const sharp = require("sharp");
 
-const src = readFileSync("F:/Documents/work/cloudflare/app/console/public/icon.svg");
-const outDir = "F:/Documents/work/cloudflare/app/console/public/";
+const src = readFileSync("«LOCAL_PATH»");
+const outDir = "«LOCAL_PATH»";
 
 for (const size of [180, 192, 512]) {
   const file = `${outDir}icon-${size}.png`;

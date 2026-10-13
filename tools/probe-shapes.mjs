@@ -1,6 +1,6 @@
 // 定向探测：Workers 单版本 / 代码内容 / Analytics Engine 数据集 的正确请求形状
 import { readFileSync } from "node:fs";
-const s = readFileSync("F:/work/cf-probe/app/.dev.vars", "utf8");
+const s = readFileSync("«LOCAL_PATH»", "utf8");
 const TOK = /^CF_API_TOKEN=(.*)$/m.exec(s)[1].trim();
 const ACC = /^CF_ACCOUNT_ID=(.*)$/m.exec(s)[1].trim();
 const H = { authorization: "Bearer " + TOK, "content-type": "application/json" };

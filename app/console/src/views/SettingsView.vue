@@ -2,7 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import UnavailableNote from "../components/board/UnavailableNote.vue";
-import { api, gwHealth, gwMeta, GwError, setWritesOptIn, writesOptIn, type Account } from "../lib/api";
+import { api, gwHealth, gwMeta, GwError, setWritesOptIn, writesOptIn, probeToken, type Account } from "../lib/api";
+import { acctState, addAccount, removeAccount, labelOf, createVault, unlockAccounts, lockAccounts, destroyAll, type CfAccount } from "../lib/accounts";
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
 import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
@@ -47,6 +48,120 @@ const switching = ref(false);
  */
 const pickStale = computed(() => !!gw.config.account && accounts.value.every((a) => a.id !== gw.config.account));
 
+/* ============================================================================
+ * 账号 = 一把 CF API Token（多账号就是这么实现的）。
+ * 令牌由这台设备保存、每次请求经 HTTPS 带给网关（x-cf-token），网关只在这一次请求里用它调 CF。
+ * 三件事：验证并添加（probeToken 先打一次 /v1/accounts）、切换（改 config.account）、删除。
+ * ========================================================================== */
+const accts = computed(() => acctState.list);
+const newAlias = ref("");
+const newToken = ref("");
+const revealNew = ref(false);
+const adding = ref(false);
+const addErr = ref<GwError | null>(null);
+
+/* ---------- 保险箱（令牌加密存储）：首次设口令 / 解锁 / 上锁 ---------- */
+const pass1 = ref("");
+const pass2 = ref("");
+const vaultBusy = ref(false);
+const vaultErr = ref("");
+/** 旧版本留下的明文账号（迁移用）；加密落盘后由 accounts.createVault 清空 */
+const legacyCount = computed(() => acctState.legacy.length);
+
+async function doCreate() {
+  vaultErr.value = "";
+  if (pass1.value !== pass2.value) { vaultErr.value = "两次输入的口令不一样"; return; }
+  if (pass1.value.length < 6) { vaultErr.value = "口令至少 6 位"; return; }
+  vaultBusy.value = true;
+  try {
+    await createVault(pass1.value);
+    pass1.value = "";
+    pass2.value = "";
+    await test();
+  } catch (e) {
+    vaultErr.value = String((e as Error)?.message || e);
+  } finally {
+    vaultBusy.value = false;
+  }
+}
+
+async function doUnlock() {
+  vaultErr.value = "";
+  if (!pass1.value) { vaultErr.value = "先输口令"; return; }
+  vaultBusy.value = true;
+  try {
+    await unlockAccounts(pass1.value);
+    pass1.value = "";
+    await test();
+  } catch {
+    // GCM 校验失败就是口令不对（或密文被改过），别说成"解密失败"这种含糊话
+    vaultErr.value = "口令不对（或保险箱被改过）";
+  } finally {
+    vaultBusy.value = false;
+  }
+}
+
+function doLock() {
+  lockAccounts();
+  pass1.value = "";
+  pass2.value = "";
+  result.value = {};
+}
+
+async function doDestroy() {
+  if (!confirm("销毁保险箱会连同所有已保存的令牌一起删掉，且不可恢复。确定？")) return;
+  destroyAll();
+  gw.save({ account: "", accountName: "" });
+  result.value = {};
+}
+
+async function addAcc() {
+  addErr.value = null;
+  const token = newToken.value.trim();
+  if (!token) { addErr.value = new GwError("badQuery", 422, null, "先粘一把 Cloudflare API Token"); return; }
+  adding.value = true;
+  try {
+    const r = await probeToken(token);
+    const list = Array.isArray(r.result) ? r.result : [];
+    if (!list.length) {
+      addErr.value = new GwError("permission", 403, null, "这把令牌没看见任何账号 —— 多半缺 Account:Read 权限，或者令牌已经失效");
+      return;
+    }
+    const first = list[0];
+    const acc: CfAccount = { token, id: String(first.id), name: String(first.name || ""), alias: newAlias.value.trim() };
+    await addAccount(acc);
+    // 本机第一个账号、或当前没选账号 → 自动选中（否则"加了但没在用"会很迷惑）
+    if (!gw.config.account || acctState.list.length === 1) gw.save({ account: acc.id, accountName: labelOf(acc) });
+    newAlias.value = "";
+    newToken.value = "";
+    await test();
+    if (list.length > 1) {
+      result.value = { ...result.value, account: `${labelOf(acc)}（这把令牌可见 ${list.length} 个账号，已添加第一个；其余的可各存一把令牌）` };
+    }
+  } catch (e) {
+    addErr.value = e instanceof GwError ? e : new GwError("unknown", 0, null, String(e));
+  } finally {
+    adding.value = false;
+  }
+}
+
+async function pickAcc(a: CfAccount) {
+  if (a.id === gw.config.account || switching.value) return;
+  switching.value = true;
+  gw.save({ account: a.id, accountName: labelOf(a) });
+  try { await test(); } finally { switching.value = false; }
+}
+
+/** 删账号：删的是选中项就顺位选剩下的第一个；一个都不剩就回到"网关默认令牌" */
+async function delAcc(a: CfAccount) {
+  await removeAccount(a.id);
+  if (gw.config.account === a.id) {
+    const next = acctState.list[0];
+    gw.save(next ? { account: next.id, accountName: labelOf(next) } : { account: "", accountName: "" });
+  }
+  await test();
+}
+
 async function test() {
   testing.value = true;
   result.value = {};
@@ -80,28 +195,6 @@ async function test() {
   }
 }
 
-/** 切账号 = 改存储里的 account，之后每个请求都自动带 ?account=，网关那侧还会再校验一次 */
-async function pick(a: Account) {
-  if (a.id === gw.config.account || switching.value) return;
-  switching.value = true;
-  gw.save({ account: a.id, accountName: a.name });
-  try {
-    await test();
-  } finally {
-    switching.value = false;
-  }
-}
-/** 回到"不传 account"，也就是网关 env 里的默认账号 */
-async function useGatewayDefault() {
-  if (!gw.config.account) return;
-  switching.value = true;
-  gw.save({ account: "", accountName: "" });
-  try {
-    await test();
-  } finally {
-    switching.value = false;
-  }
-}
 onMounted(() => { if (gw.configured) test(); });
 
 /* ============================================================================
@@ -181,7 +274,7 @@ const budgetRunning = computed(() => gw.budget.running);
         而 <code>acct.example.com</code> 这类自定义域名可达（docs/09 §C1）。
       </div>
 
-      <label class="lbl">设备令牌（对应网关的 DEVICE_TOKENS，不是 CF API Token）</label>
+      <label class="lbl">设备令牌（对应网关的 DEVICE_TOKENS；它只管「谁能用这个网关」，网关没配名单可留空）</label>
       <div class="row">
         <input v-model="token" class="field" style="flex: 1" :type="reveal ? 'text' : 'password'" spellcheck="false" />
         <button class="ghost" @click="reveal = !reveal">{{ reveal ? "隐藏" : "显示" }}</button>
@@ -255,56 +348,93 @@ const budgetRunning = computed(() => gw.budget.running);
       </FoldNote>
     </div>
 
-    <!-- ============ 账号 ============ -->
-    <div class="card wide" v-if="accounts.length">
-      <h3>这把令牌能看见的账号</h3>
+    <!-- ============ 账号（CF 令牌，加密保管）============ -->
+    <div class="card wide">
+      <h3>账号（CF 令牌）</h3>
       <div class="small muted">
-        <template v-if="pickStale">
-          你在这台设备上选过「{{ gw.config.accountName || gw.config.account.slice(0, 8) + "…" }}」，但它已经不在可见列表里了
-          （多半是后台改了这把令牌的账号作用域）。这一屏还能打开是因为账号列表豁免 account 参数，
-          其它屏的请求都会被网关 422 挡掉 —— 点下方「回到网关默认账号」恢复。
-        </template>
-        <template v-else>
-          {{ accounts.length === 1
-            ? "只有 1 个账号，所以不给切换器 —— 界面上所有数据都来自它。"
-            : `${accounts.length} 个账号，选一个后所有界面跟着切（网关会拿 /accounts 的可见集合校验，不合法的 id 直接 422）。` }}
-        </template>
+        一个账号 = 一把 Cloudflare API Token。令牌由这台设备<b>用口令派生的密钥加密后</b>保存
+        （PBKDF2 + AES-256-GCM），每次请求经 HTTPS 带给网关（头 <code>x-cf-token</code>），
+        网关只在这一次请求里用它调 CF、不留副本。
       </div>
-      <ul v-if="accounts.length > 1" class="list">
-        <li v-for="a in accounts" :key="a.id" class="item">
-          <div class="k">
-            {{ a.name }}
-            <div class="small muted">{{ a.id.slice(0, 8) }}…{{ a.type ? " · " + a.type : "" }}</div>
-          </div>
-          <button
-            class="chip"
-            :class="{ on: a.id === (gw.config.account || active) }"
-            :disabled="switching"
-            @click="pick(a)"
-          >{{ a.id === (gw.config.account || active) ? "当前使用中" : "选择此账号" }}</button>
-        </li>
-      </ul>
-      <div v-else class="list" style="margin-top: 8px">
-        <div class="item">
-          <div class="k">
-            {{ accounts[0].name }}
-            <div class="small muted">{{ accounts[0].id.slice(0, 8) }}…{{ accounts[0].type ? " · " + accounts[0].type : "" }}</div>
-          </div>
-          <!-- 选择失效时这个账号只是"网关默认"，不能标成当前（标了就等于替失效的选择背书） -->
-          <span class="chip" :class="{ on: !pickStale }">{{ pickStale ? "网关默认" : "当前使用中" }}</span>
+
+      <!-- ① 还没建保险箱：设口令 -->
+      <template v-if="!acctState.exists">
+        <div class="small" style="margin-top: 12px">
+          先给这台设备设一个<b>解锁口令</b>：它只用来加解密本机的令牌，<b>不上传、也不存盘</b> ——
+          忘了就只剩「销毁重来」。
+          <template v-if="legacyCount"> 检测到 <b>{{ legacyCount }}</b> 个旧版明文账号，设完口令会自动加密收进去。</template>
         </div>
-      </div>
-      <div v-if="gw.config.account" class="row" style="margin-top: 8px">
-        <button class="ghost" :disabled="switching" @click="useGatewayDefault">回到网关默认账号</button>
-        <span class="small muted">当前：{{ gw.config.accountName || gw.config.account.slice(0, 8) + "…" }}</span>
-      </div>
-      <div v-else-if="accounts.length > 1" class="small muted" style="margin-top: 8px">
-        当前用的是网关 env 里的默认账号（没传 account）。
-      </div>
-      <div class="small muted" style="margin-top: 8px">
-        诚实提示：多账号的读侧接口面在本机验过（假 id 422 / 真 id 200），但"切到第二个账号后数据真的变了"
-        要等有第二个账号才能实测，见 docs/09 §F。
-      </div>
+        <label class="lbl" style="margin-top: 10px">解锁口令（至少 6 位）</label>
+        <input v-model="pass1" class="field" type="password" spellcheck="false" />
+        <label class="lbl" style="margin-top: 8px">再输一遍</label>
+        <input v-model="pass2" class="field" type="password" spellcheck="false" @keyup.enter="doCreate" />
+        <div class="row" style="margin-top: 10px">
+          <button class="primary" :disabled="vaultBusy" @click="doCreate">{{ vaultBusy ? "创建中…" : "创建并解锁" }}</button>
+        </div>
+        <div v-if="vaultErr" class="small" style="color: var(--bad); margin-top: 8px">{{ vaultErr }}</div>
+      </template>
+
+      <!-- ② 有保险箱但没解锁 -->
+      <template v-else-if="acctState.locked">
+        <div class="small muted" style="margin-top: 12px">
+          这台设备上的令牌是加密保存的，输口令解锁后才能用。
+        </div>
+        <div class="row" style="margin-top: 10px">
+          <input v-model="pass1" class="field" style="flex: 1" type="password" placeholder="解锁口令" spellcheck="false" @keyup.enter="doUnlock" />
+          <button class="primary" :disabled="vaultBusy" @click="doUnlock">{{ vaultBusy ? "解锁中…" : "解锁" }}</button>
+        </div>
+        <div v-if="vaultErr" class="small" style="color: var(--bad); margin-top: 8px">{{ vaultErr }}</div>
+        <div class="row" style="margin-top: 10px">
+          <button class="ghost" @click="doDestroy">忘了口令？销毁保险箱重来</button>
+          <span class="small muted">销毁会删掉所有已保存的令牌，不可恢复。</span>
+        </div>
+      </template>
+
+      <!-- ③ 已解锁：管理账号 -->
+      <template v-else>
+        <div style="margin-top: 12px">
+          <label class="lbl">别名（随便起，用来认）</label>
+          <input v-model="newAlias" class="field" placeholder="例如：主账号 / 备用号" spellcheck="false" />
+          <label class="lbl" style="margin-top: 8px">Cloudflare API Token</label>
+          <div class="row">
+            <input v-model="newToken" class="field" style="flex: 1" :type="revealNew ? 'text' : 'password'" placeholder="粘一把 API Token" spellcheck="false" />
+            <button class="ghost" @click="revealNew = !revealNew">{{ revealNew ? "隐藏" : "显示" }}</button>
+          </div>
+          <div class="row" style="margin-top: 10px">
+            <button class="primary" :disabled="adding" @click="addAcc">{{ adding ? "验证中…" : "验证并添加" }}</button>
+            <span class="small muted">先拿它打一次 <code>/v1/accounts</code> —— 令牌和权限对不对，当场就知道。</span>
+          </div>
+          <ErrorNote :err="addErr || undefined" />
+        </div>
+
+        <div v-if="accts.length" class="list" style="margin-top: 12px">
+          <div v-for="a in accts" :key="a.id" class="item">
+            <div class="k">
+              {{ labelOf(a) }}
+              <div class="small muted">{{ a.id.slice(0, 8) }}…{{ a.name && a.name !== labelOf(a) ? " · " + a.name : "" }}</div>
+            </div>
+            <div class="row">
+              <button class="chip" :class="{ on: a.id === gw.config.account }" :disabled="switching" @click="pickAcc(a)">
+                {{ a.id === gw.config.account ? "使用中" : "用它" }}
+              </button>
+              <button class="chip" :disabled="switching" @click="delAcc(a)">删除</button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty" style="margin-top: 12px">还没添加账号 —— 粘一把 Cloudflare API Token 就能用了。</div>
+
+        <div v-if="pickStale" class="small muted" style="margin-top: 8px">
+          这台设备选过「{{ gw.config.accountName || gw.config.account.slice(0, 8) + "…" }}」，但它已经不在上面这个列表里了。
+          请求会被网关 422 挡掉 —— 点任一账号的「用它」恢复。
+        </div>
+        <div v-else-if="!gw.config.account && accts.length" class="small muted" style="margin-top: 8px">
+          当前没选账号，请求走的是网关 env 里那把默认令牌。
+        </div>
+
+        <div class="row" style="margin-top: 12px">
+          <button class="ghost" @click="doLock">上锁（清掉内存里的密钥）</button>
+        </div>
+      </template>
     </div>
 
     <!-- ============ 写闸门 ============ -->
@@ -379,9 +509,15 @@ const budgetRunning = computed(() => gw.budget.running);
     <div class="card">
       <h3>这台设备存了什么</h3>
       <div class="small muted">
-        localStorage 里只有 <code>cfconsole.config.v1</code>：网关地址 + 设备令牌 + 选定账号 id 与名字，外加两枚本机偏好 <code>cfconsole.theme.v1</code>（深浅档）、<code>cfconsole.accent.v1</code>（强调色档）。<br />
-        CF API Token 只在网关侧（本地 <code>app/gateway/.dev.vars</code>，线上 <code>wrangler secret put</code>），
-        前端拿不到，也永远不该拿到。吊销某台设备 = 从网关的 DEVICE_TOKENS 里删掉那一项。
+        <code>cfconsole.vault.v1</code>：<b>加密后</b>的账号列表 —— 口令经 PBKDF2-SHA256（31 万次）派生密钥，
+        令牌用 AES-256-GCM 加密。口令本身不落盘、也不上传，解锁后的密钥只驻留内存，关页面或点「上锁」即丢：
+        <b>把整份 localStorage 拖走也解不开</b>。<br />
+        <code>cfconsole.config.v1</code>：网关地址 + 设备令牌 + 选定的账号 id 与名字（这些不是凭据，明文存）；
+        外加本机偏好 <code>cfconsole.theme.v1</code> / <code>cfconsole.accent.v1</code> / <code>cfconsole.listCount.v1</code> / <code>cfconsole.writes.v1</code>。<br /><br />
+        <b>边界说清楚</b>：加密防的是「存储被拖走 / 被云备份同步出去」这类<b>静态</b>窃取；解锁之后，同源的脚本照样能拿到令牌。
+        所以别用全局 API Key，给每把令牌只勾它真正需要的权限，手机上加锁屏。<br /><br />
+        设备令牌（<code>DEVICE_TOKENS</code>）仍然留着，但角色是「谁能用这个网关」；CF 令牌回答「用哪个账号的数据」。
+        网关侧不长期保存 CF 令牌（请求自带、用完即弃），要停用某台设备就从 <code>DEVICE_TOKENS</code> 里删掉那一项。
       </div>
     </div>
 

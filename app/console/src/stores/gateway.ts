@@ -3,6 +3,7 @@ import { watch } from "vue";
 import { api, gwAgeMs, gwMeta, MEM_TTL_MS, forceFreshWindow } from "../lib/api";
 import { sharedLoad } from "../composables/useLoad";
 import { loadConfig, saveConfig, type Config } from "../lib/config";
+import { acctState } from "../lib/accounts";
 
 /**
  * 刷新协调器（用户原话的落地）：「降低网关对 cf 的请求次数，改成进 app 一次 + 每格 5 分钟
@@ -74,8 +75,8 @@ export const useGatewayStore = defineStore("gateway", {
     };
   },
   getters: {
-    /** 没设备令牌就别发请求了，直接引导去设置页；否则每个界面都会 401 刷屏 */
-    configured: (s) => s.config.deviceToken.length > 0,
+    /** 有设备令牌、或本机存了至少一个账号令牌（自带令牌模式），才算「有资格取数」 */
+    configured: (s) => s.config.deviceToken.length > 0 || acctState.list.length > 0,
     /** 最近一次经手数据距今多久；Infinity = 这台设备还没取到过（界面不能说"0 秒前"） */
     dataAgeMs: () => gwAgeMs(),
     stale: () => gwAgeMs() >= MEM_TTL_MS,

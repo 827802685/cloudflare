@@ -7,7 +7,8 @@
  * 绝对不要出现"请求失败"三个字了事——permission 和 notFound 的处置方式完全不同。
  */
 import { reactive } from "vue";
-import { effectiveBase, loadConfig } from "./config";
+import { effectiveBase, loadConfig, type Config } from "./config";
+import { findAccount } from "./accounts";
 
 export type ErrKind =
   | "auth" | "permission" | "planLimit" | "serviceDisabled" | "notFound"
@@ -48,6 +49,16 @@ function qs(query?: Record<string, string | number | undefined>): string {
   for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== "") p.set(k, String(v));
   const s = p.toString();
   return s ? "?" + s : "";
+}
+
+/**
+ * 选中账号的令牌头（x-cf-token）。**自带令牌模式下这是唯一要带的东西**，设备令牌可以留空。
+ * 没选账号就一个头都不加，退回"设备令牌 + 网关 env 令牌"的老路子 —— 两条路网关都认。
+ * 令牌每次请求现取现带，不在这里缓存；网关也不留副本。
+ */
+function cfTokenHeader(cfg: Config): Record<string, string> {
+  const acc = cfg.account ? findAccount(cfg.account) : null;
+  return acc ? { "x-cf-token": acc.token } : {};
 }
 
 /**
@@ -142,7 +153,7 @@ export async function gw<T>(path: string, query?: Record<string, string | number
   const finalUrl = fresh ? url + (url.includes("?") ? "&" : "?") + "fresh=1" : url;
   let res: Response;
   try {
-    res = await fetchNetRetry(finalUrl, { headers: { "x-device-token": cfg.deviceToken }, signal: AbortSignal.timeout(25000) });
+    res = await fetchNetRetry(finalUrl, { headers: { "x-device-token": cfg.deviceToken, ...cfTokenHeader(cfg) }, signal: AbortSignal.timeout(25000) });
   } catch (e) {
     if (e instanceof GwError) throw e;
     const isTimeout = (e as Error)?.name === "TimeoutError";
@@ -186,6 +197,37 @@ export async function gwHealth(base: string): Promise<{ ok: boolean; service?: s
   }
   if (!res.ok) throw new GwError("unknown", res.status, null, `HTTP ${res.status}`);
   return (await res.json()) as any;
+}
+
+/**
+ * 用一把**还没保存**的令牌去问 CF：它看得见哪些账号。添加账号时用它做验证 ——
+ * 令牌对不对、有没有 `Account:Read` 权限，在这一步就说清楚，别等保存完才发现是坏的。
+ * 走 `/v1/accounts`（它豁免 `?account=`），带的头与正式请求一致：`x-cf-token` 是待验证的那把。
+ */
+export async function probeToken(token: string): Promise<AccountsResult> {
+  const cfg = loadConfig();
+  const url = effectiveBase(cfg) + "/v1/accounts";
+  let res: Response;
+  try {
+    res = await fetchNetRetry(url, {
+      headers: { "x-cf-token": token, ...(cfg.deviceToken ? { "x-device-token": cfg.deviceToken } : {}) },
+      signal: AbortSignal.timeout(25000),
+    });
+  } catch (e) {
+    if (e instanceof GwError) throw e;
+    const isTimeout = (e as Error)?.name === "TimeoutError";
+    throw new GwError(isTimeout ? "timeout" : "network", 0, null, isTimeout ? "网关 25 秒没响应" : String((e as Error)?.message || e));
+  }
+  const text = await res.text();
+  let json: any = null;
+  try { json = JSON.parse(text); } catch { /* 非 JSON 一律当失败处理 */ }
+  if (!res.ok) {
+    const err = json?.error;
+    const kind = (err?.kind as ErrKind) || (res.status === 401 ? "auth" : res.status >= 500 ? "upstreamBroken" : "unknown");
+    throw new GwError(kind, res.status, err?.code ?? null, String(err?.message || text.slice(0, 160) || res.statusText));
+  }
+  if (!json) throw new GwError("unknown", res.status, null, "网关返回了非 JSON 内容");
+  return json as AccountsResult;
 }
 
 /* ---------- 类型：只写界面真正会读的字段，其余保持开放 ---------- */
@@ -531,7 +573,7 @@ export async function gwWrite<T = any>(method: WritePreview["method"], path: str
   try {
     res = await fetch(url, {
       method,
-      headers: { "x-device-token": cfg.deviceToken, "content-type": "application/json" },
+      headers: { "x-device-token": cfg.deviceToken, "content-type": "application/json", ...cfTokenHeader(cfg) },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(25000),
     });

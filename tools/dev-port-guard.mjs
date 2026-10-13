@@ -8,7 +8,7 @@
  *  于是连接会随机落到某个已经退化的实例上，或者落在刚死掉、还没来得及被别人接手的端口上。
  *  实测 10 次探测：5 次 /health 与 /v1/workers 同时拿 000（连接被拒），中途 netstat 一个监听都没有，
  *  过一会儿又自己好了 —— 这正是"数据有时刷得出来、有时刷不出来"的形状。
- *  另一半坑是 vite：5173 被另一个 worktree（F:\work\wt\console-data）的 vite 占着，
+ *  另一半坑是 vite：5173 被另一个 worktree（«LOCAL_PATH»）的 vite 占着，
  *  本项目的 vite 静默漂到 5174/5175/5176，而 5174 的 IPv4 又被 workers-ui 那个 worktree 占着，
  *  人打开 localhost:5173 看到的其实是一份**旧分支界面**，还以为是自己刚改的那份。
  *

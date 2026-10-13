@@ -12,7 +12,7 @@
 #   debug   —— Android 调试密钥自动签名，能直接装机自测，但不能长期对外分发。
 #   release —— 用 GitHub secrets 里的仓库密钥签名，可长期分发/覆盖升级。
 #              密钥材料存在 secrets（ANDROID_KEYSTORE_BASE64 等），**不进仓库**；
-#              本机备份在仓库外（不入库）。
+#              本机备份在 «LOCAL_PATH»（仓库外）。
 #
 # 2026-10-11 修复：JDK 17 → 21。Capacitor 7 的 capacitor-android 模块 sourceCompatibility
 # 是 21，JDK 17 上编译报 "invalid source release: 21"（run #38118785061 的失败根因）。
@@ -371,4 +371,4 @@ jobs:
           echo "APK 在 Actions run 页面底部的 artifacts 里；下载需要 GitHub 登录。"
           echo "如果直连下载不稳：把这个 artifact 页面临时开一个新标签用浏览器登录态下，或者干脆装 PWA（更省事）。"
           echo "debug 包可直接装机（Android 调试密钥），手机要允许「安装未知来源应用」。"
-          echo "release 包用仓库密钥签名，换机/升级都能覆盖安装；密钥备份在仓库外本机目录。"
+          echo "release 包用仓库密钥签名，换机/升级都能覆盖安装；密钥备份见 «LOCAL_PATH»。"

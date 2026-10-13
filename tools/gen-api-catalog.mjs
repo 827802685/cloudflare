@@ -4,7 +4,7 @@
  *
  * 数据源：Cloudflare 官方 OpenAPI 规格（github.com/cloudflare/api-schemas 的 openapi.json，BSD-3-Clause）。
  * raw.githubusercontent.com 在本机不可达，所以走 api.github.com 的 trees + blobs 接口取（约 8 秒 / 27 MB）。
- * 规格文件缓存在仓库外 F:\work\openapi.json，不入库；重跑只在 sha 变化时才重新下载（--refresh 强制）。
+ * 规格文件缓存在仓库外 «LOCAL_PATH»，不入库；重跑只在 sha 变化时才重新下载（--refresh 强制）。
  *
  * 产出：
  *  - docs/evidence/openapi-operations.json  全部 3670 个 operation 的机器可读清单（方法/路径/族/所需令牌权限/是否废弃）
@@ -13,8 +13,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 
-const CACHE = "F:/work/openapi.json";
-const SHA_CACHE = "F:/work/openapi.sha";
+const CACHE = "«LOCAL_PATH»";
+const SHA_CACHE = "«LOCAL_PATH»";
 const REFRESH = process.argv.includes("--refresh");
 const API = "https://api.github.com/repos/cloudflare/api-schemas";
 
@@ -127,7 +127,7 @@ md += "前 9 份文档回答的是「我这四块功能要用的接口能不能�
 md += "## 1. 数据源与统计\n\n";
 md += "| 项 | 值 |\n|---|---|\n";
 md += "| 来源 | `cloudflare/api-schemas` 仓库的 `openapi.json`（OpenAPI " + (spec.openapi || "?") + "，BSD-3-Clause，**不是**我们手写清单） |\n";
-md += "| 规格 blob sha | `" + meta.sha + "`（缓存于仓库外 `F:\\work\\openapi.json`，约 " + Math.round(meta.bytes / 1048576) + " MB，不入库） |\n";
+md += "| 规格 blob sha | `" + meta.sha + "`（缓存于仓库外 `«LOCAL_PATH»`，约 " + Math.round(meta.bytes / 1048576) + " MB，不入库） |\n";
 md += "| 路径数 | " + Object.keys(spec.paths || {}).length + " |\n";
 md += "| operation 数（path×method） | " + ops.length + " |\n";
 md += "| 产品族（tag）数 | " + famAll + " |\n";
@@ -214,7 +214,7 @@ if (existsSync("docs/evidence/sql-surfaces.json")) {
   md += "3. **Workers Observability 的 `telemetry/keys` 实测 200** 并返回真实属性目录（`$metadata.message` 之类），但 `telemetry/query` 要 `queryId`（跑已保存查询，不吞裸 SQL）且规格要求 `Workers Observability Write` 权限 —— 想在自己的域名上看 Workers 级用量，这条路是通的，但要补权限并且得先在后台建保存查询。\n\n";
 }
 md += "## 7. 复跑与刷新\n\n";
-md += "```bash\ncd F:\\Documents\\work\\cloudflare\nnode tools/gen-api-catalog.mjs            # sha 没变就走 F:\\work\\openapi.json 缓存\nnode tools/gen-api-catalog.mjs --refresh   # 强制重新拉官方规格（Cloudflare 几乎每天更新）\n```\n\n";
+md += "```bash\ncd «LOCAL_PATH» tools/gen-api-catalog.mjs            # sha 没变就走 «LOCAL_PATH» 缓存\nnode tools/gen-api-catalog.mjs --refresh   # 强制重新拉官方规格（Cloudflare 几乎每天更新）\n```\n\n";
 md += "机器可读全量在 `docs/evidence/openapi-operations.json`（" + ops.length + " 条，含族名/权限/废弃标记），后续要按产品族筛接口、生成客户端代码都从它出发。\n";
 writeFileSync("docs/10-API-全量清单.md", md);
 

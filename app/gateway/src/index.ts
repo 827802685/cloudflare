@@ -40,7 +40,10 @@ const app = new Hono<{ Bindings: Env; Variables: { acctEnv: Env; cfClient: CfCli
 
 const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, content-type, x-device-token",
+  // 必须列全前端会带的每一个自定义头：Allow-Origin: * 时，没进这个列表的头会让预检直接失败。
+  // x-cf-token 是自带令牌（多账号）模式的核心头 —— 漏了它，APK 的跨域请求连门都进不来
+  // （网页版同源访问不触发预检，所以这个坑一直没暴露）。
+  "access-control-allow-headers": "authorization, content-type, x-device-token, x-cf-token",
   // 写路由上线后必须一起放开，否则手机上的预检会把 PUT/DELETE 挡在网关之外
   "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
   "access-control-max-age": "600",
@@ -87,10 +90,22 @@ app.get("/health", (c) =>
   }),
 );
 
+/**
+ * 鉴权：两种凭证取其一。
+ *  1. **自带 CF 令牌**（`x-cf-token`）—— 令牌由客户端持有、经 HTTPS 带来，它本身就是账号凭证，
+ *     也是"多账号"的实现方式（每个账号一条记录，切账号 = 换令牌）。带了就通过，不再问设备令牌。
+ *  2. **设备令牌**（`x-device-token`）—— 旧模式，用于没在客户端存 CF 令牌的部署。
+ * 两者都没有、或设备令牌不在名单里 → 401。设备名单没配时只认 CF 令牌。
+ * 注意：带了 CF 令牌不等于"能看所有账号"——权限仍然由那把令牌自己决定，网关只是转交。
+ */
 app.use("/v1/*", async (c, next) => {
+  const cfTok = (c.req.header("x-cf-token") || "").trim();
+  if (cfTok) return next();
   const list = (c.env.DEVICE_TOKENS || "").split(",").map((s) => s.trim()).filter(Boolean);
   const got = (c.req.header("x-device-token") || (c.req.header("authorization") || "").replace(/^Bearer\s+/i, "")).trim();
-  if (!list.length) return c.json({ error: { kind: "misconfigured", message: "网关没配 DEVICE_TOKENS" } }, 500);
+  if (!list.length) {
+    return c.json({ error: { kind: "auth", message: "请求没带 CF 令牌（x-cf-token），网关也没配设备令牌兜底" } }, 401);
+  }
   if (!got || !list.includes(got)) return c.json({ error: { kind: "auth", message: "设备令牌不对" } }, 401);
   await next();
 });
@@ -115,7 +130,7 @@ app.use("/v1/*", async (c, next) => {
     return c.json({ error: { kind: "badQuery", message: "account 得是 32 位账号 id" } }, 422);
   }
   try {
-    const ids = await visibleAccountIds(cf(c), c.env.CF_API_TOKEN || "");
+    const ids = await visibleAccountIds(cf(c), reqToken(c));
     if (!ids.includes(want)) {
       return c.json({ error: { kind: "badQuery", message: "这个账号不在当前令牌可见的账号列表里" } }, 422);
     }
@@ -134,13 +149,22 @@ const E = (c: Ctx): Env => c.get("acctEnv") ?? c.env;
  * 响应头 `x-gw-cf-calls` 要能说清「这一条响应打了几次 CF」。
  * `?fresh=1` 让这个实例绕过缓存 —— 界面上的「刷新」按钮靠它，否则主动刷新会变成假动作。
  */
+/**
+ * 当前请求该用哪把 CF 令牌：客户端经 `x-cf-token` 带来的**优先**（自带令牌 / 多账号模式），
+ * 没带才回落网关 env 的 `CF_API_TOKEN`（兼容只用 secret 的旧配法）。
+ * 令牌只在这一次请求里用，网关不留副本 —— 它由客户端持有，这条是"多账号"能成立的前提。
+ */
+function reqToken(c: Ctx): string {
+  return (c.req.header("x-cf-token") || "").trim() || c.env.CF_API_TOKEN || "";
+}
+
 function cf(c: Ctx) {
-  if (!c.env.CF_API_TOKEN || !c.env.CF_ACCOUNT_ID) {
-    throw new CfError("misconfigured", 500, null, "网关缺 CF_API_TOKEN / CF_ACCOUNT_ID");
+  if (!reqToken(c) || !c.env.CF_ACCOUNT_ID) {
+    throw new CfError("misconfigured", 500, null, "网关缺 CF_ACCOUNT_ID（默认账号），且本次请求没带 x-cf-token");
   }
   let cli = c.get("cfClient");
   if (!cli) {
-    cli = new CfClient(c.env.CF_API_TOKEN, c.env.CF_BASE || undefined, c.req.query("fresh") === "1");
+    cli = new CfClient(reqToken(c), c.env.CF_BASE || undefined, c.req.query("fresh") === "1");
     c.set("cfClient", cli);
   }
   return cli;
@@ -270,7 +294,7 @@ async function jsonBody(c: Ctx): Promise<Record<string, unknown>> {
 async function writeZone(c: Ctx): Promise<VisibleZone> {
   const zone = param(c, "zone");
   if (!/^[0-9a-f]{32}$/.test(zone)) throw new CfError("badQuery", 422, null, "zone 得是 32 位 zone id");
-  const list = await visibleZones(cf(c), E(c).CF_API_TOKEN || "");
+  const list = await visibleZones(cf(c), reqToken(c));
   const z = list.find((x) => x.id === zone);
   if (!z) throw new CfError("badQuery", 422, null, "这个 zone 不在当前令牌可见的站点列表里");
   if (z.accountId && z.accountId !== E(c).CF_ACCOUNT_ID) throw new CfError("badQuery", 422, null, "这个 zone 不属于当前账号");

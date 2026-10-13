@@ -2,7 +2,7 @@
 // 只读：全部 GET 或 SELECT/GraphQL 查询，不改任何资源，不打印令牌。
 import { readFileSync, writeFileSync } from "node:fs";
 
-const s = readFileSync("F:/work/cf-probe/app/.dev.vars", "utf8");
+const s = readFileSync("«LOCAL_PATH»", "utf8");
 const TOK = /^CF_API_TOKEN=(.*)$/m.exec(s)[1].trim();
 const ACC = /^CF_ACCOUNT_ID=(.*)$/m.exec(s)[1].trim();
 const H = { authorization: "Bearer " + TOK, "content-type": "application/json" };

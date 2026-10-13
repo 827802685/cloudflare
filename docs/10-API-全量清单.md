@@ -7,7 +7,7 @@
 | 项 | 值 |
 |---|---|
 | 来源 | `cloudflare/api-schemas` 仓库的 `openapi.json`（OpenAPI 3.0.3，BSD-3-Clause，**不是**我们手写清单） |
-| 规格 blob sha | `ce5e099f5c19ce18b6e3e5b25a9cf58064d0e942`（缓存于仓库外 `F:\work\openapi.json`，约 26 MB，不入库） |
+| 规格 blob sha | `ce5e099f5c19ce18b6e3e5b25a9cf58064d0e942`（缓存于仓库外 `«LOCAL_PATH»`，约 26 MB，不入库） |
 | 路径数 | 2303 |
 | operation 数（path×method） | 3670 |
 | 产品族（tag）数 | undefined |
@@ -397,8 +397,8 @@
 ## 7. 复跑与刷新
 
 ```bash
-cd F:\Documents\work\cloudflare
-node tools/gen-api-catalog.mjs            # sha 没变就走 F:\work\openapi.json 缓存
+cd «LOCAL_PATH»
+node tools/gen-api-catalog.mjs            # sha 没变就走 «LOCAL_PATH» 缓存
 node tools/gen-api-catalog.mjs --refresh   # 强制重新拉官方规格（Cloudflare 几乎每天更新）
 ```
 

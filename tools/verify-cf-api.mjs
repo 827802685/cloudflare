@@ -3,7 +3,7 @@
  * Cloudflare API 可行性验证工具 v2（只读 + 权限探测，不做任何真实变更）
  *
  * 用法：node tools/verify-cf-api.mjs [--verbose]
- * 令牌来源：环境变量 CLOUDFLARE_API_TOKEN，否则回退读 F:\work\cf-probe\app\.dev.vars / Rin\.env.local（只读不打印）
+ * 令牌来源：环境变量 CLOUDFLARE_API_TOKEN，否则回退读 «LOCAL_PATH» / Rin\.env.local（只读不打印）
  *
  * 安全约束：
  *  - A~E 组：GET 或只读 SELECT/GraphQL 查询，不改资源。

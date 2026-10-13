@@ -1,6 +1,6 @@
 // tools/sanitize-for-publish.mjs
 //
-// 目的：建仓/公开前把这份项目变成"可以公开"的副本。**不改原文件**，输出到仓库外（默认 F:/work/cf-console-public）。
+// 目的：建仓/公开前把这份项目变成"可以公开"的副本。**不改原文件**，输出到仓库外（默认 «LOCAL_PATH»）。
 // 为什么要有它：docs/09 §G 早就说过证据文件里有可识别信息，但如果等到要 push 的那天再手工删，一定会漏。
 // 这里的处理是可复跑的、可断言的：
 //   - 凭据：直接屏蔽（Account ID / 设备令牌 / CF Token），并断言副本里 0 命中
@@ -10,7 +10,7 @@
 // 不处理的东西（写清楚，别假装干净）：Worker 脚本名（rin-server 等）、队列名、KV/D1 绑定名 ——
 // 它们撑起了文档的可读性，本身不构成凭据；要不要一起抹由你决定。
 //
-// 跑法：node tools/sanitize-for-publish.mjs [--out D:\some\dir]
+// 跑法：node tools/sanitize-for-publish.mjs [--out «LOCAL_PATH»]
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const outArgIndex = argv.indexOf("--out");
-const OUT = outArgIndex >= 0 && argv[outArgIndex + 1] ? path.resolve(argv[outArgIndex + 1]) : "F:/work/cf-console-public";
+const OUT = outArgIndex >= 0 && argv[outArgIndex + 1] ? path.resolve(argv[outArgIndex + 1]) : "«LOCAL_PATH»";
 
 // .workbuddy 是本机 Agent/记忆目录，绝不该进任何公开产物 —— 早拦一层。
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".wrangler", ".tmp", "android", "ios", ".workbuddy", ".idea", ".vscode"]);
@@ -192,8 +192,19 @@ const tokenMap = new Map(
     .map((x, i) => [x, `«REMOVED_CF_API_TOKEN_${i + 1}»`])
 );
 
+// 本机绝对路径：盘符根 + 用户名 + 后面整条路径一起抹掉，换成中性占位。
+// 为什么必须有这条：docs/ 与 tools/ 里大量写死了 `«LOCAL_PATH»` / `«LOCAL_PATH»`，
+// 公开出去等于把开发机的盘符、用户名和目录结构一起送人。旧版脚本对这类完全没管，
+// 而残留断言也只查凭据/主机名 —— 结果是副本「零残留」地带着真实路径出门。
+// 负向后行断言挡住 `http://x` 这种（`p:` 前面是字母就不当盘符看）。
+const WIN_PATH_RE = /(?<![A-Za-z0-9])[A-Za-z]:[\\/][A-Za-z0-9._\\/-]*/g;
+// Unix 家目录同理：本机是 Windows，但文档示例里会出现
+const UNIX_HOME_RE = /(?<![A-Za-z0-9._-])\/(?:home|Users)\/[A-Za-z0-9._-]*/g;
+
 function replaceAll(t) {
   let s = t;
+  // 路径先吃：它最长，先替掉可以避免后面 host/id 规则去处理路径内部的片段
+  s = s.replace(WIN_PATH_RE, "«LOCAL_PATH»").replace(UNIX_HOME_RE, "«LOCAL_PATH»");
   if (creds.account) s = s.split(creds.account).join("«ACCOUNT_ID»");
   if (creds.token) s = s.split(creds.token).join("«CF_API_TOKEN»");
   if (creds.device) s = s.split(creds.device).join("«DEVICE_TOKEN»");
@@ -220,7 +231,7 @@ for (const f of todo) {
 // 断言：副本里绝不允许再出现任何一条凭据；顺带统计假化名的覆盖情况
 // residue.token 是"等于 .dev.vars 那把"的命中，residue.tokenShape 是"任何 CF 令牌形态"的命中 ——
 // 后者才是防假绿灯的那道：仓库里新冒出来的、脚本没登记过的硬编码令牌会被它抓到。
-const residue = { account: 0, token: 0, tokenShape: 0, device: 0, email: 0, realHost: 0, keptPublic: 0 };
+const residue = { account: 0, token: 0, tokenShape: 0, device: 0, email: 0, realHost: 0, localPath: 0, keptPublic: 0 };
 const tokenResidueFiles = [];
 const scanned = [];
 (function w(d) {
@@ -249,6 +260,8 @@ for (const p of scanned) {
     tokenResidueFiles.push(p.replace(OUT + path.sep, "").replace(/\\/g, "/"));
   }
   if (creds.device) residue.device += t.split(creds.device).length - 1;
+  for (const _m of t.matchAll(WIN_PATH_RE)) residue.localPath++;
+  for (const _m of t.matchAll(UNIX_HOME_RE)) residue.localPath++;
   for (const e of emailMap.keys()) residue.email += t.split(e).length - 1;
   // 只统计"确实被化名过"的主机名。`*.workers.dev` / `*.pages.dev` 是 Cloudflare 的公共域名，
   // 是文档的论述对象，故意保持原样 —— 把它们算进残留会得到 12 这种假报警（第一版就是这么误报的）。
@@ -273,13 +286,14 @@ const clean =
   residue.tokenShape === 0 &&
   residue.device === 0 &&
   residue.email === 0 &&
+  residue.localPath === 0 &&
   leakedIgnored.length === 0;
 console.log(`副本目录：${OUT}`);
 console.log(`  复制 ${copied} 个文件到副本，跳过凭据文件 ${skipped.length} 个：${skipped.join(", ") || "无"}`);
 console.log(`  按 .gitignore 跳过 ${skippedByIgnore.length} 个未入库文件：${skippedByIgnore.join(", ") || "无"}`);
 console.log(`  化名化：Account ID ×1 直接屏蔽；32 位 id ${stats.ids} 个 → HMAC 稳定假 id；主机名 ${stats.hosts} 个 → example.*；邮箱 ${stats.emails} 个 → user3@example.com`);
 console.log(`  屏蔽：.dev.vars 那把令牌/设备令牌各 1 处 + 仓库内其它硬编码令牌 ${tokenMap.size} 把 → «REMOVED_CF_API_TOKEN_n» 占位`);
-console.log(`  残留断言：Account ID ${residue.account} · CF Token ${residue.token} · 令牌形态 ${residue.tokenShape} · 设备令牌 ${residue.device} · 邮箱 ${residue.email} · 个人主机名 ${residue.realHost}（另有 ${residue.keptPublic} 个 *.workers.dev / *.pages.dev 公共域名按设计保留）`);
+console.log(`  残留断言：Account ID ${residue.account} · CF Token ${residue.token} · 令牌形态 ${residue.tokenShape} · 设备令牌 ${residue.device} · 邮箱 ${residue.email} · 个人主机名 ${residue.realHost} · 本机路径 ${residue.localPath}（另有 ${residue.keptPublic} 个 *.workers.dev / *.pages.dev 公共域名按设计保留）`);
 if (tokenResidueFiles.length) console.log(`  ❗ 仍带令牌形态的文件：${[...new Set(tokenResidueFiles)].join(", ")}`);
 if (leakedIgnored.length) console.log(`  ❗ 被 .gitignore 挡住却混进副本的文件：${[...new Set(leakedIgnored)].join(", ")}`);
 console.log(`  ${clean ? "✅ 凭据类零残留 · 无被忽略文件混入" : "❌ 仍有残留（凭据 或 被忽略文件），别 push"}`);

@@ -7,7 +7,7 @@
 ## 1. 本地开发闭环（已实测）
 
 ```bash
-# 沙箱位置：F:\work\cf-probe\app（本次调研临时建的，收尾会删）
+# 沙箱位置：«LOCAL_PATH»（本次调研临时建的，收尾会删）
 npm i -D user4@example.com            # 约 1 分钟 / node_modules 172 MB / 37 包
 npx wrangler dev                      # 起在 http://127.0.0.1:8787
 ```
