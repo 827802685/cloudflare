@@ -130,7 +130,7 @@ app.use("/v1/*", async (c, next) => {
     return c.json({ error: { kind: "badQuery", message: "account 得是 32 位账号 id" } }, 422);
   }
   try {
-    const ids = await visibleAccountIds(cf(c), reqToken(c));
+    const ids = await visibleAccountIds(cfClient(c), reqToken(c));
     if (!ids.includes(want)) {
       return c.json({ error: { kind: "badQuery", message: "这个账号不在当前令牌可见的账号列表里" } }, 422);
     }
@@ -151,23 +151,52 @@ const E = (c: Ctx): Env => c.get("acctEnv") ?? c.env;
  */
 /**
  * 当前请求该用哪把 CF 令牌：客户端经 `x-cf-token` 带来的**优先**（自带令牌 / 多账号模式），
- * 没带才回落网关 env 的 `CF_API_TOKEN`（兼容只用 secret 的旧配法）。
+ * 没带才回落网关 env 的 `CF_API_TOKEN`（只在单账号自用部署里才有意义）。
  * 令牌只在这一次请求里用，网关不留副本 —— 它由客户端持有，这条是"多账号"能成立的前提。
  */
 function reqToken(c: Ctx): string {
   return (c.req.header("x-cf-token") || "").trim() || c.env.CF_API_TOKEN || "";
 }
 
-function cf(c: Ctx) {
-  if (!reqToken(c) || !c.env.CF_ACCOUNT_ID) {
-    throw new CfError("misconfigured", 500, null, "网关缺 CF_ACCOUNT_ID（默认账号），且本次请求没带 x-cf-token");
+/**
+ * 只要令牌、不要账号 id 的 client，给路径里**不含账号片段**的调用用：
+ * 列账号（`GET /accounts`）、列 zone（`GET /zones`）—— 拿令牌直接查就行。
+ *
+ * 单独拆出来是为了让 `/v1/accounts` 这条**自救路径不依赖云端配没配 `CF_ACCOUNT_ID`**：
+ * 客户端存的那个账号 id 一旦失效（后台改了令牌作用域），用户必须还能进设置页把令牌换掉。
+ */
+function cfClient(c: Ctx): CfClient {
+  const tok = reqToken(c);
+  if (!tok) {
+    throw new CfError(
+      "misconfigured", 500, null,
+      "本次请求没带 CF 令牌：客户端要经 x-cf-token 带来，或网关配 CF_API_TOKEN 兜底",
+    );
   }
   let cli = c.get("cfClient");
   if (!cli) {
-    cli = new CfClient(reqToken(c), c.env.CF_BASE || undefined, c.req.query("fresh") === "1");
+    cli = new CfClient(tok, c.env.CF_BASE || undefined, c.req.query("fresh") === "1");
     c.set("cfClient", cli);
   }
   return cli;
+}
+
+/**
+ * 需要账号 id 的调用（路径要拼 `/accounts/{id}/…`）。账号从哪来：
+ * 客户端 `?account=`（多账号 / 纯自带令牌）**优先**，没带才用网关默认 `CF_ACCOUNT_ID`。
+ *
+ * ⚠ 这里必须用 `E(c)` 而不是 `c.env` —— 用 `c.env` 的话，云端一旦没配 `CF_ACCOUNT_ID`，
+ * 哪怕客户端已经把账号 id 带来了也照样 500，等于强迫云端持有账号信息，
+ * 跟「凭据全在本地、云端只转发」的架构直接冲突（上面那个 `?account=` 覆盖就白做了）。
+ */
+function cf(c: Ctx) {
+  if (!E(c).CF_ACCOUNT_ID) {
+    throw new CfError(
+      "misconfigured", 500, null,
+      "本次请求没有账号 id：客户端没带 ?account=，网关也没配 CF_ACCOUNT_ID",
+    );
+  }
+  return cfClient(c);
 }
 
 /** 把 CfError 翻译成前端能分支的结构 */
@@ -311,18 +340,19 @@ const recordId = (c: Ctx): string => {
 // ---------- 账号 / 资源发现 ----------
 // 令牌可见的账号全量列表 + 本次请求实际用的账号，设置页靠它决定"要不要给切换器"。
 // 三个字段各有用途，缺一个就会撒谎：
-//   active    = 这份响应用的是哪个账号（因为本路由豁免 ?account=，所以恒等于网关默认账号）
+//   active    = 这份响应用的是哪个账号 id（本路由豁免 ?account=，所以它只能来自网关的默认账号；
+//               纯客户端凭据部署下网关不配默认账号，这里就是 null —— 界面按 null 处理，别当错误）
 //   requested = 设备存储里选的是哪个（原样回显，不校验、不拼进任何 CF 路径）
 //   applied   = requested 是否还在可见集合里。false 时界面上要明说"这个选择已经失效"，
 //               不能一边显示旧账号名一边让其它屏全部 422（同一类错见 docs/09 §E17）
 app.get(
   "/v1/accounts",
   route(async (c) => {
-    const list = ((await reads.account(cf(c), E(c))).data as any[]) || [];
+    const list = ((await reads.account(cfClient(c), E(c))).data as any[]) || [];
     const requested = (c.req.query("account") || "").trim();
     return {
       result: list,
-      active: E(c).CF_ACCOUNT_ID,
+      active: E(c).CF_ACCOUNT_ID ?? null,
       requested: requested || null,
       applied: requested ? list.some((a) => String(a?.id) === requested) : true,
     };
