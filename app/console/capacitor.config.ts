@@ -17,6 +17,18 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: false,
   },
+  plugins: {
+    /**
+     * 原生 HTTP：开启后 Capacitor 把 WebView 里的 fetch/XHR 代理到原生网络栈，**不参与同源策略**，
+     * 所以 APK 可以直接打 api.cloudflare.com —— 这正是浏览器做不到、必须靠网关绕开 CORS 的那件事。
+     * 开了它，App 就不必依赖任何人的网关（开源用户装包即用）。
+     *
+     * 代价（在直连层里规避）：原生 fetch 对 AbortSignal 支持有限，所以超时用 Promise.race 自己控。
+     */
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;

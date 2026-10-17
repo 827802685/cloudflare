@@ -146,7 +146,33 @@ jobs:
       matrix:
         variant: ${{ fromJSON(format('["{0}"]', github.event.inputs.build_type)) }}
     steps:
+      # fetch-depth: 0 —— 版本号要靠 tag 递进，而浅克隆拿不到 tag（`git tag` 会是空的，
+      # 于是每次都退回 0.1.0，两个 Release 撞名就是这么来的）。
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 算这个包的版本号（在上一个 tag 上自动 +1）
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 最新语义化 tag（v0.1.1）；历史的 v0.1.0-<sha> 也认 —— 先剥掉 -sha 后缀再解析
+          latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+          if [ -z "$latest" ]; then
+            base="0.1.0"
+          else
+            base="${latest#v}"; base="${base%%-*}"
+          fi
+          IFS=. read -r MA MI PA <<<"$base"
+          MA="${MA:-0}"; MI="${MI:-0}"; PA="${PA:-0}"
+          NEXT="${MA}.${MI}.$((PA + 1))"
+          # Android 的 versionCode 必须是单调递增的整数，否则系统拒绝当成"升级"装上去。
+          # 编码规则：major*10000 + minor*100 + patch。
+          CODE=$((MA * 10000 + MI * 100 + PA + 1))
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "上一个 tag = ${latest:-（无）} → 本次 $NEXT（versionCode $CODE）"
 
       - uses: actions/setup-node@v4
         with:
@@ -218,6 +244,12 @@ jobs:
           test -d android || { echo "cap add 声称成功但没有 android/ 目录"; exit 1; }
           npx cap sync android 2>&1
 
+          # 版本号写进 Android 清单：versionName 是用户看到的、versionCode 决定"能不能覆盖升级"
+          # （必须单调递增，否则系统会把新包拒掉）。两个值都来自本 job 开头那步算出的 tag 递进。
+          sed -i "s/^\([[:space:]]*\)versionCode .*/\1versionCode ${{ steps.ver.outputs.code }}/" android/app/build.gradle
+          sed -i "s/^\([[:space:]]*\)versionName .*/\1versionName \"${{ steps.ver.outputs.version }}\"/" android/app/build.gradle
+          grep -nE "versionCode|versionName" android/app/build.gradle | head -4
+
           if [ "$variant" = "release" ]; then
             : "${ANDROID_KEYSTORE_BASE64:?缺少 secrets.ANDROID_KEYSTORE_BASE64 —— release 包没有密钥就没法签名，宁愿红也别出个未签名的包}"
             printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
@@ -284,7 +316,9 @@ jobs:
             echo "::warning::APK 真实包名($pkg) 与 capacitor.config.ts($cfg) 不一致，以 APK 为准"
           fi
 
-          ver=$(node -p "require('./package.json').version")
+          # 版本号来自 tag 自动递进（本 job 开头那步），不再读 package.json 里那个固定值 ——
+          # 读它的话每个 Release 都叫同一个版本，下载页上分不出新旧。
+          ver="${{ steps.ver.outputs.version }}"
           sha=$(git rev-parse --short=7 HEAD)
           out="cf-console-${variant}-${ver}-${sha}.apk"
           cp "$apk" "android/app/build/outputs/apk/$variant/$out"
@@ -331,7 +365,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          tag="v${{ steps.apk.outputs.ver }}-${{ steps.apk.outputs.sha }}"
+          # tag 用纯语义化版本（v0.1.1），sha 留在标题与 notes 里 ——
+          # 这样下一次构建能从 tag 直接读出上一个版本、自动 +1。
+          tag="v${{ steps.apk.outputs.ver }}"
           asset="android/app/build/outputs/apk/release/${{ steps.apk.outputs.file }}"
           # 幂等：同一个 sha 重跑时 tag 已存在会让 create 直接失败 —— 先清掉再发。
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
