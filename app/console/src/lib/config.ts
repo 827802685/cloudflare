@@ -80,3 +80,31 @@ export function baseSource(c: Config = loadConfig()): { base: string; from: "本
   if (BUILD_BASE) return { base: BUILD_BASE, from: "打包默认" };
   return { base: "/api", from: "同源 /api" };
 }
+
+/**
+ * 是不是跑在 Capacitor 原生壳里（APK）。判定按优先级：
+ *  1. `window.Capacitor.isNativePlatform()` —— 原生运行时（native-bridge.js）注入的全局。
+ *     它存在就说明两件事都成立：这是原生壳、且 fetch 已被 patch 到原生网络栈（直连的前提）。
+ *  2. 兜底：`capacitor://` 老 scheme，或 `androidScheme:"https"` 下的 `https://localhost`
+ *     + Android WebView UA（桥注入万一晚到时的第二信号）。
+ *
+ * 放在 config.ts 而不是 api.ts：accounts.ts（免口令直连存储）也要用它，
+ * 而 api.ts 已经 import config —— 放这里就不会出现 api↔accounts 循环引用。
+ */
+export function isNativeApp(): boolean {
+  try {
+    const c = (globalThis as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+    if (c && typeof c.isNativePlatform === "function" && c.isNativePlatform()) return true;
+  } catch {
+    /* 探测本身抛错：按非原生走 */
+  }
+  try {
+    if (typeof location !== "undefined") {
+      if (location.protocol === "capacitor:") return true;
+      if (location.protocol === "https:" && location.hostname === "localhost" && /android/i.test(navigator.userAgent)) return true;
+    }
+  } catch {
+    /* 同左 */
+  }
+  return false;
+}

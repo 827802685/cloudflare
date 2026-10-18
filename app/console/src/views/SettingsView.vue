@@ -389,13 +389,12 @@ const budgetRunning = computed(() => gw.budget.running);
     <div class="card wide">
       <h3>账号（CF 令牌）</h3>
       <div class="small muted">
-        一个账号 = 一把 Cloudflare API Token。令牌由这台设备<b>用口令派生的密钥加密后</b>保存
-        （PBKDF2 + AES-256-GCM）。
+        一个账号 = 一把 Cloudflare API Token。
         <template v-if="directMode">
-          直连模式下，每次请求由本机直接带 <code>Authorization: Bearer</code> 头打 Cloudflare，不经过任何中间服务。
+          直连模式下令牌由本机随机密钥<b>自动加密</b>后保存（AES-256-GCM，<b>无需设置口令</b>），每次请求由本机直接带 <code>Authorization: Bearer</code> 头打 Cloudflare，不经过任何中间服务 —— 粘一把令牌验证通过就能用。加密密钥也在本机，防「翻文件」不防「整库拖走」：<b>令牌权限按需最小化、手机加锁屏</b>。
         </template>
         <template v-else>
-          每次请求经 HTTPS 带给网关（头 <code>x-cf-token</code>），网关只在这一次请求里用它调 CF、不留副本。
+          令牌由这台设备<b>用口令派生的密钥加密后</b>保存（PBKDF2 + AES-256-GCM），每次请求经 HTTPS 带给网关（头 <code>x-cf-token</code>），网关只在这一次请求里用它调 CF、不留副本。
         </template>
       </div>
 
@@ -476,7 +475,9 @@ const budgetRunning = computed(() => gw.budget.running);
         </div>
 
         <div class="row" style="margin-top: 12px">
-          <button class="ghost" @click="doLock">上锁（清掉内存里的密钥）</button>
+          <button v-if="!directMode" class="ghost" @click="doLock">上锁（清掉内存里的密钥）</button>
+          <span v-if="!directMode" class="small muted">上锁后要重新输口令才能取数。</span>
+          <span v-else class="small muted">直连模式没有口令，也就没有"上锁" —— 令牌随装随用。</span>
         </div>
       </template>
     </div>
@@ -560,16 +561,23 @@ const budgetRunning = computed(() => gw.budget.running);
     <div class="card">
       <h3>这台设备存了什么</h3>
       <div class="small muted">
-        <code>cfconsole.vault.v1</code>：<b>加密后</b>的账号列表 —— 口令经 PBKDF2-SHA256（31 万次）派生密钥，
-        令牌用 AES-256-GCM 加密。口令本身不落盘、也不上传，解锁后的密钥只驻留内存，关页面或点「上锁」即丢：
-        <b>把整份 localStorage 拖走也解不开</b>。<br />
-        <code>cfconsole.config.v1</code>：网关地址 + 设备令牌 + 选定的账号 id 与名字（这些不是凭据，明文存）；
-        外加本机偏好 <code>cfconsole.theme.v1</code> / <code>cfconsole.accent.v1</code> / <code>cfconsole.listCount.v1</code> / <code>cfconsole.writes.v1</code>。<br /><br />
-        <b>边界说清楚</b>：加密防的是「存储被拖走 / 被云备份同步出去」这类<b>静态</b>窃取；解锁之后，同源的脚本照样能拿到令牌。
-        所以别用全局 API Key，给每把令牌只勾它真正需要的权限，手机上加锁屏。<br /><br />
-        设备令牌（<code>DEVICE_TOKENS</code>）仍然留着，但角色是「谁能用这个网关」；CF 令牌回答「用哪个账号的数据」。
-        网关侧不长期保存 CF 令牌（请求自带、用完即弃），要停用某台设备就从 <code>DEVICE_TOKENS</code> 里删掉那一项。
-        <template v-if="directMode"><br />直连模式（APK）下设备令牌用不到：请求不经过网关，鉴权就是本机保存的 CF 令牌本身。</template>
+        <template v-if="directMode">
+          <code>cfconsole.vault.device.v1</code>：<b>AES-256-GCM 加密后</b>的账号列表。密钥在
+          <code>cfconsole.vault.devicekey.v1</code>，首次启动自动随机生成、<b>不设口令</b> —— 这道加密防的是
+          「有人翻你的应用文件」，密钥和密文同在本机，防不住「整库拖走」：别用全局 API Key，
+          给每把令牌只勾它真正需要的权限，手机上加锁屏。<br />
+        </template>
+        <template v-else>
+          <code>cfconsole.vault.v1</code>：<b>加密后</b>的账号列表 —— 口令经 PBKDF2-SHA256（31 万次）派生密钥，
+          令牌用 AES-256-GCM 加密。口令本身不落盘、也不上传，解锁后的密钥只驻留内存，关页面或点「上锁」即丢：
+          <b>把整份 localStorage 拖走也解不开</b>。<br />
+          <code>cfconsole.config.v1</code>：网关地址 + 设备令牌 + 选定的账号 id 与名字（这些不是凭据，明文存）。
+          设备令牌（<code>DEVICE_TOKENS</code>）的角色是「谁能用这个网关」；CF 令牌回答「用哪个账号的数据」，
+          网关侧不长期保存 CF 令牌（请求自带、用完即弃）。<br /><br />
+          <b>边界说清楚</b>：加密防的是「存储被拖走 / 被云备份同步出去」这类<b>静态</b>窃取；解锁之后，同源的脚本照样能拿到令牌。
+          所以别用全局 API Key，给每把令牌只勾它真正需要的权限，手机上加锁屏。<br />
+        </template>
+        外加本机偏好 <code>cfconsole.theme.v1</code> / <code>cfconsole.accent.v1</code> / <code>cfconsole.listCount.v1</code> / <code>cfconsole.writes.v1</code>。
       </div>
     </div>
 

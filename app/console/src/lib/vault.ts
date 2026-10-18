@@ -149,3 +149,76 @@ export function destroyVault(): void {
     /* ignore */
   }
 }
+
+/* ============================================================================
+ * 设备密钥保险箱（APK 直连模式专用）：自动加密、无口令。
+ *
+ * 他要的口径是「不留解锁口令这一步，但令牌别裸存」。做法：首启生成 32 字节随机
+ * AES-256 密钥存本机（cfconsole.vault.devicekey.v1），令牌列表用 AES-256-GCM 加密后
+ * 存 cfconsole.vault.device.v1。加密算法与上面的口令保险箱同款，只是密钥来源从
+ * 「口令派生」换成「随机生成本机保存」。
+ *
+ * 诚实边界（界面文案里也这么写）：密钥与密文同在本机，这道加密防的是「有人翻你的
+ * 应用文件 / 误同步出部分数据」，防不住「整库拖走」—— 后者只有 Android Keystore
+ * 那类硬件级方案能挡，真到那步再把 deviceKey() 的实现换掉、调用方一行不用改。
+ * ========================================================================== */
+const DEVICE_KEY = "cfconsole.vault.devicekey.v1";
+const DEVICE_BLOB = "cfconsole.vault.device.v1";
+
+export function deviceVaultExists(): boolean {
+  try {
+    return localStorage.getItem(DEVICE_BLOB) !== null;
+  } catch {
+    return false;
+  }
+}
+
+async function deviceKey(): Promise<CryptoKey> {
+  let b64 = localStorage.getItem(DEVICE_KEY);
+  if (!b64) {
+    b64 = toB64(crypto.getRandomValues(new Uint8Array(32)));
+    try {
+      localStorage.setItem(DEVICE_KEY, b64);
+    } catch {
+      throw new Error("本机存储写不进去（隐私模式？）");
+    }
+  }
+  return crypto.subtle.importKey("raw", buf(fromB64(b64)), "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+/** 加密写回整个账号列表。每次都换新 IV，同一列表密文也不同。 */
+export async function deviceSeal(list: CfAccount[]): Promise<void> {
+  const key = await deviceKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: buf(iv) }, key, enc.encode(JSON.stringify(list)));
+  try {
+    localStorage.setItem(DEVICE_BLOB, JSON.stringify({ v: 1, iv: toB64(iv), ct: toB64(new Uint8Array(ct)) }));
+  } catch {
+    throw new Error("本机存储写不进去（隐私模式？）");
+  }
+}
+
+/** 解出账号列表。密钥被清（换机/清应用数据）→ GCM 校验失败抛错，调用方按"数据作废"处理。 */
+export async function deviceUnlock(): Promise<CfAccount[]> {
+  let stored: { iv?: string; ct?: string } | null = null;
+  try {
+    stored = JSON.parse(localStorage.getItem(DEVICE_BLOB) || "null");
+  } catch {
+    stored = null;
+  }
+  if (!stored?.iv || !stored?.ct) return [];
+  const key = await deviceKey();
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buf(fromB64(stored.iv)) }, key, buf(fromB64(stored.ct)));
+  const list = JSON.parse(dec.decode(plain));
+  return Array.isArray(list) ? list : [];
+}
+
+/** 连密文带设备密钥一起删。不可逆，UI 要二次确认。 */
+export function deviceDestroy(): void {
+  try {
+    localStorage.removeItem(DEVICE_BLOB);
+    localStorage.removeItem(DEVICE_KEY);
+  } catch {
+    /* ignore */
+  }
+}

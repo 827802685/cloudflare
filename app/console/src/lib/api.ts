@@ -15,7 +15,7 @@
  * 分流只发生在这一层，上面所有视图 / store / composable 无感。
  */
 import { reactive } from "vue";
-import { effectiveBase, loadConfig, type Config } from "./config";
+import { effectiveBase, isNativeApp, loadConfig, type Config } from "./config";
 import { findAccount } from "./accounts";
 import { DirectError, dropDirect, gwDirect, probeTokenDirect, takeDirectCalls, writeDirect, type DirectCtx } from "./direct";
 
@@ -56,34 +56,9 @@ const KIND_HINT: Record<ErrKind, string> = {
  * 双模式分流：APK 直连 / 浏览器走网关
  * ========================================================================== */
 
-/**
- * 是不是跑在 Capacitor 原生壳里（APK）。判定按优先级：
- *  1. `window.Capacitor.isNativePlatform()` —— 原生运行时（native-bridge.js）注入的全局。
- *     它存在就说明两件事都成立：这是原生壳、且 fetch 已被 patch 到原生网络栈（直连的前提）。
- *  2. 兜底：`capacitor://` 老 scheme，或 `androidScheme:"https"` 下的 `https://localhost`
- *     + Android WebView UA（桥注入万一晚到时的第二信号）。
- *
- * 为什么每次请求都现算而不是模块加载时算一次：vite 产物的脚本在页面加载早期执行，
- * 不替我们保证原生桥那时已注入完；而所有请求都发生在用户交互之后（远晚于 onPageFinished），
- * 懒算不会漏，也不会把"探测失败"错判成原生。
- */
-export function isNativeApp(): boolean {
-  try {
-    const c = (globalThis as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
-    if (c && typeof c.isNativePlatform === "function" && c.isNativePlatform()) return true;
-  } catch {
-    /* 探测本身抛错：按非原生走，行为与加这个函数之前完全一致 */
-  }
-  try {
-    if (typeof location !== "undefined") {
-      if (location.protocol === "capacitor:") return true;
-      if (location.protocol === "https:" && location.hostname === "localhost" && /android/i.test(navigator.userAgent)) return true;
-    }
-  } catch {
-    /* 同左 */
-  }
-  return false;
-}
+// isNativeApp 的实现搬到了 config.ts（accounts.ts 的免口令直连存储也要用它，
+// 放 config 避免 api↔accounts 循环引用）；这里原样 re-export，老引用不用改。
+export { isNativeApp };
 
 /**
  * 直连上下文：选中账号的令牌 + 账号 id。返回 null = 这台设备现在没法直连
