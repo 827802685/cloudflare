@@ -7,7 +7,6 @@ import { acctState, addAccount, removeAccount, labelOf, createVault, unlockAccou
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
 import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
-import FoldNote from "../components/FoldNote.vue";
 import { dt } from "../lib/fmt";
 import { useGatewayStore } from "../stores/gateway";
 import { APP_VERSION, ACCEL_BASE, checkUpdate, type UpdateInfo } from "../lib/version";
@@ -234,27 +233,16 @@ const gwWrites = computed<string | null>(() => {
   return w === "enabled" || w === "disabled" ? w : null;
 });
 const writeGateNote = computed(() => {
-  // 直连模式（APK）：写请求从这台设备直接发给 CF，**没有网关这道闸门**，
-  // 所以"两道闸门"的说法在这里不成立 —— 只有本机开关一个。别照抄网关模式的文案。
+  // 长解释搬去了 docs/14 §5，界面只留一句"现在是什么状态、下一步做什么"
   if (directMode) {
     return allowWrites.value
-      ? "直连模式：写请求会从这台设备直接发给 Cloudflare，只受上面这个本机开关管辖（没有网关第二道闸门）。每个动作发出前仍会回显完整请求并要求确认。"
-      : "直连模式：本机开关关着，写请求在这台设备上就被拦下、不会发出。直连模式没有网关那道闸门，所以这一个是唯一的闸门。";
+      ? "已打开：写请求直接从这台设备发给 Cloudflare，每个动作发出前仍逐条确认。"
+      : "关着：写请求不出这台设备（直连模式这是唯一的闸门）。";
   }
-  if (!allowWrites.value) {
-    return gwWrites.value === "enabled"
-      ? "本地闸门关着：写请求在本机就被拦下、不会发出。网关那侧其实已经放行（writes=enabled），但你不打开它也不起作用 —— 这是默认状态。"
-      : gwWrites.value === "disabled"
-        ? "本地闸门关着：写请求在本机就被拦下、不会发出。网关那侧也没放行（writes=disabled），两边都关，一切写操作都停留在纸面上。"
-        : "本地闸门关着：写请求在本机就被拦下、不会发出。网关那侧的状态还不知道（下面点过「保存并测试连接」才会显示），但不影响这条：本机不发就是不发。";
-  }
-  if (gwWrites.value === "enabled") {
-    return "两道闸门都开着：App 里的 DNS 增删改与清缓存会真的作用于你的 Cloudflare 账号。每个动作发出前仍会回显完整请求并要求确认。";
-  }
-  if (gwWrites.value === "disabled") {
-    return "本地已打开，但网关这侧 WRITE_ENABLED 没放行：请求会发到网关并被它以 501 拒绝。处置在网关（app/gateway 的 WRITE_ENABLED，写链路分支上线），不是在这台设备上再点什么。";
-  }
-  return "本地已打开，但还没测过连接，网关那侧是 enabled 还是 disabled 未知 —— 先点上面「保存并测试连接」。在那之前发出去的写请求会得到什么答复，取决于你没看到的那个开关。";
+  if (!allowWrites.value) return "本地闸门关着：写请求不出这台设备，网关那侧什么状态都不影响这条。";
+  if (gwWrites.value === "enabled") return "两道闸门都开着：写操作会真实生效，发出前仍逐条确认。";
+  if (gwWrites.value === "disabled") return "网关这侧 WRITE_ENABLED 没放行：请求会被 501 拒绝，处置在网关侧（docs/14 §5）。";
+  return "本地已打开；网关状态未知，先点「保存并测试连接」。";
 });
 
 /* ---------- 请求预算（调度器账本，来自 stores/gateway.ts） ---------- */
@@ -299,36 +287,25 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
     <div class="card wide">
       <h3>{{ directMode ? "连接（APK 直连）" : "网关配置" }}</h3>
       <template v-if="directMode">
-        <!-- APK 直连：没有网关地址、没有设备令牌。装包即用，唯一要填的是下面的 CF 令牌 -->
-        <div class="small" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px">
-          这台设备是 <b>APK 直连模式</b>：所有请求从本机直接发给 <code>api.cloudflare.com</code>，<b>不经过网关、不需要部署任何服务</b>。
-          令牌由这台设备用口令派生的密钥加密保存、每次请求现取现带 —— 在下面「账号（CF 令牌）」里粘一把 Token 就能用。
-        </div>
         <div class="small muted" style="margin-bottom: 10px">
           当前生效：<b>直连 api.cloudflare.com</b> · 账号：{{ savedAccount }}
         </div>
         <div class="row">
           <button class="primary" :disabled="testing" @click="test">{{ testing ? "测试中" : "测试直连连接" }}</button>
-          <span class="small muted">拿选中账号的令牌打一次 /accounts，验证令牌有效、且至少看得见一个账号。</span>
         </div>
       </template>
       <template v-else>
-        <!-- 这台设备现在真的走哪个网关、哪个账号：顶栏右上角那条搬来的，措辞按"生效/草稿"分开 -->
+        <!-- 这台设备现在真的走哪个网关、哪个账号：措辞按"生效/草稿"分开 -->
         <div class="small muted" style="margin-bottom: 10px">
           <template v-if="gw.configured">
             当前生效：<code>{{ savedBase.base }}</code>（来源：{{ savedBase.from }}）· 账号：{{ savedAccount }}
           </template>
-          <template v-else>当前状态：<b>未配置</b> —— 这台设备还没有设备令牌，除了本页哪一屏都进不去（顶栏那个红点就是它）。</template>
+          <template v-else>当前状态：<b>未配置</b> —— 还没有设备令牌，除了本页哪一屏都进不去（顶栏那个红点就是它）。</template>
         </div>
-        <label class="lbl">网关地址（留空 = {{ baseInfo.from === "同源 /api" ? "同源 /api，本地开发由 vite 反代到 127.0.0.1:8788" : "用打包时写进去的默认地址" }}）</label>
+        <label class="lbl">网关地址（留空 = {{ baseInfo.from }}）</label>
         <input v-model="baseUrl" class="field" placeholder="https://控制台域名.你的站点" spellcheck="false" />
-        <div class="small muted" style="margin-top: 6px">
-          按当前填法会走 <code>{{ baseInfo.base }}</code>（来源：{{ baseInfo.from }}；改了要先点"保存并测试连接"才生效）。<br />
-          必须填你自己的域名：实测 <code>*.workers.dev</code> 在本机网络不可达（DNS 被污染到 <code>108.160.166.148</code>），
-          而 <code>acct.example.com</code> 这类自定义域名可达（docs/09 §C1）。
-        </div>
 
-        <label class="lbl">设备令牌（对应网关的 DEVICE_TOKENS；它只管「谁能用这个网关」，网关没配名单可留空）</label>
+        <label class="lbl" style="margin-top: 10px">设备令牌（网关没配名单可留空）</label>
         <div class="row">
           <!-- 不用 type=password：WebView 里它会唤起"安全键盘"，第三方输入法直接失效。
                这里用 -webkit-text-security 做同款圆点遮罩，行为一致且输入法照常。 -->
@@ -396,26 +373,14 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
           >{{ p.label }}</button>
         </div>
       </div>
-      <FoldNote label="这几项是怎么回事">
-        深浅两档都是正式设计过的（语义色按各自底色重挑过对比度）。选「跟随系统」时跟着系统的深浅走；显式选浅/深会钉住。
-        强调色只换按钮、标签、焦点环这一族控件色；<b>卡片左沿那条读数轨不受它影响，仍是「橙 = 有真数 / 蓝 = 取数中」</b>，
-        所以换色不会把四态编码混掉。字体不点名具体字体（只给通用族），本机换字体界面跟着换。
-        「长列表默认显示」这一档管的是<b>「一行一个东西」的列表</b>：Worker 版本列表与部署历史、Pages 部署历史、DNS 记录、
-        D1 库 / KV 命名空间 / R2 桶的左栏、KV 的 Key 表 —— 超出这个条数就出「展开更多」，选「全部」则不折。
-        <b>不跟这一档走的是计算页顶部的「每日额度」和「按 Worker 事件分布」</b>：那两块默认只留消耗/数量最高的那条，
-        是刻意的极值读数而不是分页，展开按钮照旧。
-        三项都存在本机（<code>cfconsole.theme.v1</code>、<code>cfconsole.accent.v1</code>、<code>cfconsole.listCount.v1</code>），
-        不上云、不影响取数请求数。
-      </FoldNote>
+      <!-- 各档位的设计考量与生效范围见 docs/14 §2，界面不再复述 -->
     </div>
 
     <!-- ============ 版本 / 更新 ============ -->
     <div class="card">
       <h3>版本</h3>
       <div class="small muted">
-        当前版本：<code>{{ APP_VERSION }}</code> ·
-        <template v-if="ACCEL_BASE">更新检查与下载走加速域名 <code>{{ ACCEL_BASE }}</code>（换加速域名：仓库变量 <code>GH_ACCEL_BASE</code>，改完重出包生效）。</template>
-        <template v-else>没配加速域名（仓库变量 <code>GH_ACCEL_BASE</code>），直连 GitHub Releases。</template>
+        当前版本：<code>{{ APP_VERSION }}</code> · 检查更新{{ ACCEL_BASE ? `走加速域名 ${ACCEL_BASE}` : "直连 GitHub" }}。
       </div>
       <div class="row" style="margin-top: 10px">
         <button class="primary" :disabled="checking" @click="doCheckUpdate">{{ checking ? "检查中…" : "检查更新" }}</button>
@@ -433,13 +398,7 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
     <div class="card wide">
       <h3>账号（CF 令牌）</h3>
       <div class="small muted">
-        一个账号 = 一把 Cloudflare API Token。
-        <template v-if="directMode">
-          直连模式下令牌由本机随机密钥<b>自动加密</b>后保存（AES-256-GCM，<b>无需设置口令</b>），每次请求由本机直接带 <code>Authorization: Bearer</code> 头打 Cloudflare，不经过任何中间服务 —— 粘一把令牌验证通过就能用。加密密钥也在本机，防「翻文件」不防「整库拖走」：<b>令牌权限按需最小化、手机加锁屏</b>。
-        </template>
-        <template v-else>
-          令牌由这台设备<b>用口令派生的密钥加密后</b>保存（PBKDF2 + AES-256-GCM），每次请求经 HTTPS 带给网关（头 <code>x-cf-token</code>），网关只在这一次请求里用它调 CF、不留副本。
-        </template>
+        一个账号 = 一把 Cloudflare API Token，{{ directMode ? "本机随机密钥自动加密保存（无需口令），直连 Cloudflare" : "口令加密保存，每次请求现取现带给网关、不留副本" }}。
       </div>
 
       <!-- ① 还没建保险箱：设口令 -->
@@ -488,7 +447,6 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
           </div>
           <div class="row" style="margin-top: 10px">
             <button class="primary" :disabled="adding" @click="addAcc">{{ adding ? "验证中…" : "验证并添加" }}</button>
-            <span class="small muted">先拿它打一次 <code>/v1/accounts</code> —— 令牌和权限对不对，当场就知道。</span>
           </div>
           <ErrorNote :err="addErr || undefined" />
         </div>
@@ -519,10 +477,9 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
           <template v-else>当前没选账号，请求走的是网关 env 里那把默认令牌。</template>
         </div>
 
-        <div class="row" style="margin-top: 12px">
-          <button v-if="!directMode" class="ghost" @click="doLock">上锁（清掉内存里的密钥）</button>
-          <span v-if="!directMode" class="small muted">上锁后要重新输口令才能取数。</span>
-          <span v-else class="small muted">直连模式没有口令，也就没有"上锁" —— 令牌随装随用。</span>
+        <div v-if="!directMode" class="row" style="margin-top: 12px">
+          <button class="ghost" @click="doLock">上锁（清掉内存里的密钥）</button>
+          <span class="small muted">上锁后要重新输口令才能取数。</span>
         </div>
       </template>
     </div>
@@ -541,11 +498,9 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
 
       <template v-if="confirmOpenWrites && !allowWrites">
         <div class="small" style="margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px">
-          打开后，App 里的 <b>DNS 新增 / 修改 / 删除</b> 与 <b>清缓存</b> 会<b>真的作用于你选定的 Cloudflare 账号</b>
-          （目前是「{{ gw.config.accountName || (gw.config.account ? gw.config.account.slice(0, 8) + "…" : "网关默认账号") }}」
-          。每个动作发出前仍会回显完整请求（方法 / 路径 / 请求体）并要求你确认，删除类还要点名。<br />
-          <template v-if="directMode">这一开关是直连模式下<b>唯一</b>的闸门：打开后写请求直接从这台设备发给 Cloudflare。</template>
-          <template v-else>这一开关只解锁本机出口；网关那侧是否放行见下面的 writes 状态，两道闸门缺一不可。</template>
+          打开后，<b>DNS 新增 / 修改 / 删除</b> 与 <b>清缓存</b> 会<b>真的作用于你选定的 Cloudflare 账号</b>
+          （当前：{{ gw.config.accountName || (gw.config.account ? gw.config.account.slice(0, 8) + "…" : "网关默认账号") }}）。
+          每个动作发出前仍会回显完整请求并要求确认。
           <div class="row" style="margin-top: 10px">
             <button class="primary" @click="commitOpenWrites">确认打开</button>
             <button class="ghost" @click="confirmOpenWrites = false">先不打开</button>
@@ -556,18 +511,11 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
       <dl class="kv" style="margin-top: 12px">
         <dt>本机闸门</dt>
         <dd>{{ allowWrites ? "开" : "关（默认）" }}</dd>
-        <dt>网关闸门</dt>
-        <dd>
-          <template v-if="directMode">
-            <span class="badge">不存在</span>
-            <span class="small muted">（直连模式没有网关这道闸门，写请求从本机直达 CF）</span>
-          </template>
-          <template v-else>
-            <span v-if="gwWrites === 'enabled'" class="badge live">已放行</span>
-            <span v-else-if="gwWrites === 'disabled'" class="badge">未放行</span>
-            <span v-else class="badge">没测过 —— 点上方「保存并测试连接」才知道</span>
-            <span class="small muted">（来自 /health 的 writes 字段，非猜测）</span>
-          </template>
+        <dt v-if="!directMode">网关闸门</dt>
+        <dd v-if="!directMode">
+          <span v-if="gwWrites === 'enabled'" class="badge live">已放行</span>
+          <span v-else-if="gwWrites === 'disabled'" class="badge">未放行</span>
+          <span v-else class="badge">没测过</span>
         </dd>
       </dl>
       <div class="small" style="margin-top: 8px">{{ writeGateNote }}</div>
@@ -577,72 +525,41 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
     <div class="card wide">
       <h3>请求预算（调度器账本）</h3>
       <div class="small muted">
-        规则：进 App 拉一轮，之后每 5 分钟一轮；后台标签页不打网关，回前台只有已过期才补。<br />
-        当前数据：{{ ageText }}。<span v-if="budgetRunning">这一轮正在跑…</span>
+        进 App 拉一轮，之后每 5 分钟一轮；后台不打，回前台按需补。当前数据：{{ ageText }}。<span v-if="budgetRunning">这一轮正在跑…</span>
       </div>
       <dl class="kv" style="margin-top: 10px">
         <dt>调度轮次数</dt><dd>{{ gw.budget.rounds }} 轮</dd>
         <dt>最近一轮</dt>
-        <dd v-if="gw.budget.lastRoundAt">{{ dt(gw.budget.lastRoundAt) }} · 发网关 {{ gw.budget.last.requests }} 条 / 本机缓存命中 {{ gw.budget.last.localHits }} 条（没出网）/ 网关回源 CF {{ gw.budget.last.cfCalls }} 次 / 失败 {{ gw.budget.last.errors }} 块</dd>
+        <dd v-if="gw.budget.lastRoundAt">{{ dt(gw.budget.lastRoundAt) }} · 发网关 {{ gw.budget.last.requests }} 条 / 本机缓存命中 {{ gw.budget.last.localHits }} 条 / 回源 CF {{ gw.budget.last.cfCalls }} 次 / 失败 {{ gw.budget.last.errors }} 块</dd>
         <dd v-else>还没跑过第一轮</dd>
         <dt>累计</dt>
         <dd>发网关 {{ gw.budget.total.requests }} 条 · 回源 CF {{ gw.budget.total.cfCalls }} 次 · 缓存命中 {{ gw.budget.total.localHits }} 条</dd>
         <dt>下一轮</dt><dd>{{ gw.nextRoundNote }}</dd>
       </dl>
       <div class="row" style="margin-top: 10px">
-        <button class="ghost" :disabled="budgetRunning || !gw.configured" @click="gw.roundNow()">立刻走一轮（新鲜数据直接复用缓存，几乎不出网）</button>
-        <button class="ghost" :disabled="budgetRunning || !gw.configured" @click="gw.roundForceFresh()">强制新取一轮（破两层缓存，会真的打网关和 CF）</button>
+        <button class="ghost" :disabled="budgetRunning || !gw.configured" @click="gw.roundNow()">立刻走一轮</button>
+        <button class="ghost" :disabled="budgetRunning || !gw.configured" @click="gw.roundForceFresh()">强制新取一轮</button>
       </div>
-      <div class="small muted" style="margin-top: 8px">
-        口径说明：这份账只覆盖调度器发出的列表级请求（看板 + Workers/Pages/域名清单）。你在详情页的加载和各屏「刷新」按钮不经调度器、不进这份账
-        —— 但它们同样被本机 5 分钟缓存和网关缓存拦着。CF 侧真实总次数以网关响应头 x-gw-cf-calls 为准，这里累加的就是它，不是估算。
-      </div>
+      <!-- 口径说明（只覆盖调度器请求、x-gw-cf-calls 是实测口径等）见 docs/14 §6 -->
     </div>
 
     <!-- 看板上的「取不到」清单搬到这里了（10-11：读数面只放数，介绍进设置） -->
     <div class="wide"><UnavailableNote /></div>
 
-    <!-- ============ 说明（本机存储 / 未开放功能）============ -->
+    <!-- ============ 说明 ============ -->
     <div class="card">
       <h3>这台设备存了什么</h3>
       <div class="small muted">
-        <template v-if="directMode">
-          <code>cfconsole.vault.device.v1</code>：<b>AES-256-GCM 加密后</b>的账号列表。密钥在
-          <code>cfconsole.vault.devicekey.v1</code>，首次启动自动随机生成、<b>不设口令</b> —— 这道加密防的是
-          「有人翻你的应用文件」，密钥和密文同在本机，防不住「整库拖走」：别用全局 API Key，
-          给每把令牌只勾它真正需要的权限，手机上加锁屏。<br />
-        </template>
-        <template v-else>
-          <code>cfconsole.vault.v1</code>：<b>加密后</b>的账号列表 —— 口令经 PBKDF2-SHA256（31 万次）派生密钥，
-          令牌用 AES-256-GCM 加密。口令本身不落盘、也不上传，解锁后的密钥只驻留内存，关页面或点「上锁」即丢：
-          <b>把整份 localStorage 拖走也解不开</b>。<br />
-          <code>cfconsole.config.v1</code>：网关地址 + 设备令牌 + 选定的账号 id 与名字（这些不是凭据，明文存）。
-          设备令牌（<code>DEVICE_TOKENS</code>）的角色是「谁能用这个网关」；CF 令牌回答「用哪个账号的数据」，
-          网关侧不长期保存 CF 令牌（请求自带、用完即弃）。<br /><br />
-          <b>边界说清楚</b>：加密防的是「存储被拖走 / 被云备份同步出去」这类<b>静态</b>窃取；解锁之后，同源的脚本照样能拿到令牌。
-          所以别用全局 API Key，给每把令牌只勾它真正需要的权限，手机上加锁屏。<br />
-        </template>
-        外加本机偏好 <code>cfconsole.theme.v1</code> / <code>cfconsole.accent.v1</code> / <code>cfconsole.listCount.v1</code> / <code>cfconsole.writes.v1</code>。
+        账号令牌（{{ directMode ? "随机密钥加密，无口令" : "口令加密" }}）+ 界面偏好，全部只存本机、不上云。
+        存储键清单与加密的边界（防什么、不防什么）见 <code>docs/14</code> §4。
       </div>
     </div>
 
     <div class="card">
-      <h3>写功能与还没开放的功能</h3>
+      <h3>已就绪与未开放</h3>
       <div class="small muted">
-        DNS 增删改、清缓存：本机契约与确认抽屉已就绪（见上面「写操作」）。
-        <template v-if="directMode">
-          实际能不能落到你的账号，只取决于本机开关这一道闸门（直连模式没有网关闸门）—— 默认关；打开后写请求直接从这台设备发给 CF。
-        </template>
-        <template v-else>
-          实际能不能落到你的账号，取决于上面两道闸门的组合 —— 本机开关默认关；当前这台网关是否放行以 /health 的 writes 为准，没测过就是不知道，不猜。
-        </template><br /><br />
-        版本切换 / 回滚 / 灰度、Pages 部署与回滚、写 secret、改 cron —— 这几类网关侧链路还在另一个分支实现，本 App 不提供入口；
-        对只读网关发过去也会得到 <code>501 writesDisabled</code>。原因是两类问题还没解决：一是需要你明确授权对账号做变更，
-        二是这些写链路的请求体形状只有反推、没有实测（docs/09 §B）。
-        <br /><br />
-        实时日志（Workers Tail）也没做，而且原因分两层：tail 的 <code>wss://</code> 端点已实测在本机网络不可达
-        （DNS 污染 + TCP 443 超时，docs/09 §C1/C3），所以直连这条路是死的；"挂在你自己域名下的中继能不能work"
-        这层仍未实测，且不能拿本地 <code>wrangler dev</code> 测（必然假阴性）。所以这里不提供入口，也不暗示以后能开。
+        已就绪：DNS 增删改、清缓存（见「写操作」的本机开关，默认关）。<br />
+        未开放：版本切换 / 回滚 / 灰度、Pages 部署、写 secret、改 cron、实时日志（Tail）—— 原因与实测依据见 <code>docs/14</code> §7。
       </div>
     </div>
   </div>
