@@ -89,6 +89,8 @@ const sourceNote = computed(() => {
   const age = Math.max(0, Math.round((now.value - (gwMeta.fetchedAt || now.value)) / 1000));
   const ageTxt = age < 60 ? `${age} 秒前` : Math.round(age / 60) + " 分钟前";
   if (gwMeta.state === "local") return `本机内存里的数据（${ageTxt}取的）· 没发请求`;
+  // 直连模式（APK）：请求不经过网关，直接从这台设备打 CF；cfCalls 是直连层记的真出网次数
+  if (gwMeta.state === "direct") return `直连 Cloudflare API，不经过网关（${ageTxt}取的）· 本次出网 ${gwMeta.cfCalls} 次 CF`;
   if (gwMeta.state === "hit") return `网关缓存复用（${ageTxt}取的）· 这次一次 CF 都没打`;
   if (gwMeta.state === "mixed") return `部分复用缓存 · 这次出网 ${gwMeta.cfCalls} 次 CF`;
   if (gwMeta.state === "fresh") return `强制刷新 · 本次出网 ${gwMeta.cfCalls} 次 CF（看板 3 条：1 条 GraphQL + 2 条 SQL）`;

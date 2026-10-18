@@ -79,6 +79,18 @@ export function dropDirect(prefix: string): void {
 }
 
 /**
+ * 自上次读取以来，直连真出网的次数（设置页账本与看板"数据来源"文案用）。
+ * 并发请求之间只能做到大致归属 —— 和网关模式读响应头 x-gw-cf-calls 一样是近似账，
+ * 不是逐条精确计数，所以界面上说的是"本次出网 N 次"这种量级口径。
+ */
+let directCalls = 0;
+export function takeDirectCalls(): number {
+  const n = directCalls;
+  directCalls = 0;
+  return n;
+}
+
+/**
  * 超时自己控，不用 `AbortSignal.timeout` —— 原生 fetch（CapacitorHttp 代理后）对 AbortSignal 支持有限，
  * 靠它会在真机上静默不超时。
  */
@@ -104,6 +116,7 @@ async function send(token: string, path: string, spec: Spec, fresh: boolean): Pr
   const key = readable ? `${fnv(token)}|${method}|${path}|${fnv(bodyStr)}` : "";
 
   const run = async (): Promise<Entry> => {
+    directCalls++; // 记账：只有真的出网才 +1（缓存命中与 inflight 合并不走这里）
     const headers: Record<string, string> = {
       authorization: "Bearer " + token,
       "content-type": spec.rawText ? "text/plain;charset=UTF-8" : "application/json",
@@ -283,18 +296,354 @@ export interface DirectCtx {
 }
 
 /**
- * 直连入口。**只覆盖 REST 路由**；流量屏（overview / traffic/*）、WAF、Workers 用量这些
- * 需要 SQL/GraphQL 模板与多请求合并的路由，在这条分支上仍是未实现 —— 会抛一条说清楚原因的错，
- * 不做静默降级。
+ * 时间窗（移植网关 catalog.parseRange，口径一字不差）：
+ * 按缓存 TTL 对齐到 5 分钟整格，不取"此刻" —— 否则每条 query 的时间戳都不同，
+ * 缓存键永远不同、TTL 形同虚设（网关实测过的坑，docs/09）。
+ */
+const RANGE_TTL_MS = 300_000;
+export const RANGES: Record<string, { days: number; label: string }> = {
+  "24h": { days: 1, label: "最近 24 小时" },
+  "7d": { days: 7, label: "最近 7 天" },
+  "30d": { days: 30, label: "最近 30 天" },
+};
+export function parseRangeDirect(v: string | number | undefined): { key: string; days: number; start: string; end: string; dateGeq: string; dateLt: string } {
+  const key = v === "24h" || v === "30d" ? String(v) : "7d";
+  const { days } = RANGES[key];
+  const bucket = Math.floor(Date.now() / RANGE_TTL_MS) * RANGE_TTL_MS;
+  const end = new Date(bucket);
+  const start = new Date(end.getTime() - days * 86400000);
+  const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+  return {
+    key,
+    days,
+    start: iso(start),
+    end: iso(new Date(end.getTime() + 3600000)),
+    dateGeq: start.toISOString().slice(0, 10),
+    dateLt: new Date(end.getTime() + 86400000).toISOString().slice(0, 10),
+  };
+}
+
+/* ============================================================================
+ * 流量：命名模板（移植网关 catalog.traffic，参数只有时间窗）
+ * ========================================================================== */
+const ACC = (account: string) => account;
+const SCOPE = (account: string) => ({ scope: { accountTag: ACC(account) } });
+
+/** 首页大数字：1dGroups(requests/bytes/threats) + adaptiveGroups(visits/edgeResponseBytes) */
+async function consoleTotals(token: string, account: string, r: ReturnType<typeof parseRangeDirect>) {
+  const q = `{ viewer { accounts(filter:{accountTag:"${account}"}) {
+    g: httpRequests1dGroups(limit:${r.days}, filter:{date_geq:"${r.dateGeq}", date_lt:"${r.dateLt}"}, orderBy:["date_ASC"]) {
+      dimensions { date }
+      sum { requests bytes encryptedRequests threats }
+    }
+    v: httpRequestsAdaptiveGroups(limit:1, filter:{datetime_geq:"${r.start}", datetime_lt:"${r.end}"}) {
+      sum { visits edgeResponseBytes }
+    }
+  } } }`;
+  return graphql<any>(token, q);
+}
+
+/** 国家分布：SQL 面没有国家列，只有 GraphQL adaptive 有（看板里它并进 dashboard 的 a alias，这条是单独取） */
+async function countriesDirect(token: string, account: string, r: ReturnType<typeof parseRangeDirect>) {
+  const q = `{ viewer { accounts(filter:{accountTag:"${account}"}) {
+    a: httpRequestsAdaptiveGroups(limit:8, filter:{datetime_geq:"${r.start}", datetime_lt:"${r.end}"}, orderBy:["count_DESC"]) {
+      count dimensions { clientCountryName }
+    }
+  } } }`;
+  return graphql<any>(token, q);
+}
+
+/** 看板三块合成一条 GraphQL（g/v/a 三个 alias），响应形状与分开查一致 */
+async function dashboard(token: string, account: string, r: ReturnType<typeof parseRangeDirect>) {
+  const q = `{ viewer { accounts(filter:{accountTag:"${account}"}) {
+    g: httpRequests1dGroups(limit:${r.days}, filter:{date_geq:"${r.dateGeq}", date_lt:"${r.dateLt}"}, orderBy:["date_ASC"]) {
+      dimensions { date }
+      sum { requests bytes encryptedRequests threats }
+    }
+    v: httpRequestsAdaptiveGroups(limit:1, filter:{datetime_geq:"${r.start}", datetime_lt:"${r.end}"}) {
+      sum { visits edgeResponseBytes }
+    }
+    a: httpRequestsAdaptiveGroups(limit:8, filter:{datetime_geq:"${r.start}", datetime_lt:"${r.end}"}, orderBy:["count_DESC"]) {
+      count dimensions { clientCountryName }
+    }
+  } } }`;
+  return graphql<any>(token, q);
+}
+
+async function trafficSeries(token: string, account: string, r: ReturnType<typeof parseRangeDirect>) {
+  const fn = r.days <= 1 ? "toStartOfHour(timestamp)" : "toStartOfDay(timestamp)";
+  const limit = r.days <= 1 ? 24 : Math.min(r.days + 1, 31);
+  return sql(token, "/analytics/sql",
+    `SELECT ${fn} AS t, count() AS reqs, sum(edgeResponseBytes) AS bytes FROM events.httpRequests GROUP BY t ORDER BY t ASC LIMIT ${limit}`,
+    { time_range: { start: r.start, end: r.end }, ...SCOPE(account) });
+}
+async function trafficStatus(token: string, account: string, r: ReturnType<typeof parseRangeDirect>) {
+  return sql(token, "/analytics/sql",
+    "SELECT edgeResponseStatus AS code, count() AS reqs FROM events.httpRequests GROUP BY code ORDER BY reqs DESC LIMIT 12",
+    { time_range: { start: r.start, end: r.end }, ...SCOPE(account) });
+}
+async function trafficOrigin(token: string, account: string, r: ReturnType<typeof parseRangeDirect>) {
+  return sql(token, "/analytics/sql",
+    "SELECT originResponseStatus AS code, count() AS reqs, round(avg(originResponseDurationMs)) AS avg_ms FROM events.httpRequests WHERE originResponseStatus > 0 GROUP BY code ORDER BY reqs DESC LIMIT 12",
+    { time_range: { start: r.start, end: r.end }, ...SCOPE(account) });
+}
+async function trafficTop(token: string, account: string, r: ReturnType<typeof parseRangeDirect>, dim: "host" | "path" | "bot") {
+  const col = dim === "host" ? "clientRequestHttpHost" : dim === "path" ? "clientRequestPath" : "verifiedBotCategory";
+  return sql(token, "/analytics/sql",
+    `SELECT ${col} AS k, count() AS reqs FROM events.httpRequests GROUP BY k ORDER BY reqs DESC LIMIT 20`,
+    { time_range: { start: r.start, end: r.end }, ...SCOPE(account) });
+}
+/** 缓存命中 / 设备类型：SQL 面没有这两列（实测 422），只有 GraphQL adaptive 有 */
+async function trafficAdaptive(token: string, account: string, r: ReturnType<typeof parseRangeDirect>, dim: "cache" | "device") {
+  const col = dim === "cache" ? "cacheStatus" : "clientDeviceType";
+  const q = `{ viewer { accounts(filter:{accountTag:"${account}"}) {
+    x: httpRequestsAdaptiveGroups(limit:8, filter:{datetime_geq:"${r.start}", datetime_lt:"${r.end}"}, orderBy:["count_DESC"]) {
+      count dimensions { ${col} }
+    }
+  } } }`;
+  const j = await graphql<any>(token, q);
+  const rows = (j?.viewer?.accounts?.[0]?.x ?? []).map((g: any) => ({ k: g.dimensions?.[col] ?? "未知", reqs: g.count }));
+  return { rows, source: "graphql-adaptive", sampled: true };
+}
+
+/* ---------- 上一窗环比（移植 catalog.prevWindow/prevTotals） ---------- */
+function prevWindow(r: ReturnType<typeof parseRangeDirect>): ReturnType<typeof parseRangeDirect> {
+  const shift = r.days * 86400000;
+  const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const start = new Date(Date.parse(r.start) - shift);
+  const end = new Date(Date.parse(r.end) - shift);
+  return {
+    key: r.key, days: r.days, start: iso(start), end: iso(end),
+    dateGeq: start.toISOString().slice(0, 10),
+    dateLt: new Date(end.getTime() + 86400000).toISOString().slice(0, 10),
+  };
+}
+
+/** CF 免费档分析数据保留期实测 32 天；上一窗整段在保留期外就一条请求都不发 */
+const RETENTION_DAYS = 32;
+const beyondRetention = (startIso: string) => Date.parse(startIso) < Date.now() - RETENTION_DAYS * 86400_000;
+const retentionSkip = () => `CF 只保留最近 ${RETENTION_DAYS} 天的分析数据，上一窗整段在保留期外`;
+const isRetentionError = (msg: string) => /older than\s+\d+[wd]/i.test(msg);
+
+async function prevTotalsDirect(token: string, account: string, r: ReturnType<typeof parseRangeDirect>) {
+  const p = prevWindow(r);
+  const label = `上一窗 ${RANGES[r.key]?.label ?? r.key}（${p.start} → ${p.end}）`;
+  const base = { reqs: null as number | null, bytes: null as number | null, visits: null as number | null, threats: null as number | null, range: label };
+  if (beyondRetention(p.start)) return { ...base, skipped: retentionSkip() };
+  try {
+    const j = await consoleTotals(token, account, p);
+    const acc = (j as any)?.viewer?.accounts?.[0];
+    const days = Array.isArray(acc?.g) ? acc.g : [];
+    const sum = (f: string) => days.reduce((a: number, d: any) => a + (Number(d?.sum?.[f]) || 0), 0);
+    const visits = Array.isArray(acc?.v) ? acc.v : [];
+    return {
+      ...base,
+      reqs: sum("requests"),
+      bytes: sum("bytes"),
+      threats: sum("threats"),
+      visits: visits.reduce((a: number, x: any) => a + (Number(x?.sum?.visits) || 0), 0),
+    };
+  } catch (e) {
+    const msg = e instanceof DirectError ? e.message : String((e as Error)?.message || e);
+    if (isRetentionError(msg)) return { ...base, skipped: retentionSkip() };
+    return { ...base, error: msg };
+  }
+}
+
+/**
+ * 首页看板：与网关 overview() 同一套组装 —— 3 次 CF 请求出全部卡片
+ * （dashboard 一条 GraphQL + series + status），外加 prevTotals 环比。
+ * allSettled：一块坏不影响其它卡片，每张卡各自带 error/kind。
+ */
+export async function overviewDirect(ctx: DirectCtx, range?: string | number) {
+  const r = parseRangeDirect(range);
+  const settled = await Promise.allSettled([
+    dashboard(ctx.token, ctx.account, r),
+    trafficSeries(ctx.token, ctx.account, r),
+    trafficStatus(ctx.token, ctx.account, r),
+    prevTotalsDirect(ctx.token, ctx.account, r),
+  ]);
+  const pick = <T,>(i: number, fallback: T): { value: T; error?: string; kind?: string } => {
+    const s = settled[i];
+    if (s.status === "fulfilled") return { value: s.value as T };
+    const e = s.reason;
+    return { value: fallback, error: e instanceof DirectError ? e.message : String(e), kind: e instanceof DirectError ? e.kind : "unknown" };
+  };
+  const merged = pick<any>(0, null) as { value: any; error?: string; kind?: string };
+  const acc = merged.value?.viewer?.accounts?.[0];
+  const split = (fields: Record<string, any>) =>
+    merged.error
+      ? { value: null, error: merged.error, kind: merged.kind }
+      : { value: { viewer: { accounts: [fields] } } };
+  return {
+    range: r.key,
+    days: r.days,
+    consoleTotals: split({ g: acc?.g, v: acc?.v }),
+    series: pick(1, { rows: [] as any[] }),
+    status: pick(2, { rows: [] as any[] }),
+    countries: split({ a: acc?.a }),
+    prev:
+      settled[3].status === "fulfilled"
+        ? settled[3].value
+        : { reqs: null, bytes: null, visits: null, threats: null, range: `上一窗 ${RANGES[r.key]?.label ?? r.key}`, error: String((settled[3] as PromiseRejectedResult).reason?.message ?? "上一窗统计失败") },
+  };
+}
+
+/**
+ * Workers 今日用量：事件数（observability/usage，硬依赖）+ 请求数
+ * （GraphQL workersInvocationsAdaptive，best-effort 失败只置 null）。
+ * 时间窗默认 UTC 今日 00:00 → 现在；参数只认 epoch 毫秒。
+ */
+export async function workersUsageDirect(ctx: DirectCtx, from?: number, to?: number) {
+  const now = Date.now();
+  const dayStart = Math.floor(now / 86400000) * 86400000;
+  const f = from && from > 0 ? Math.floor(from) : dayStart;
+  const t = to && to > 0 ? Math.floor(to) : now;
+  if (now - f > 90 * 86400000) throw new DirectError("badQuery", 422, null, "from 太旧：用量接口最多回溯 90 天");
+  if (t < f) throw new DirectError("badQuery", 422, null, "to 不能早于 from");
+  const usage = await rest<any>(ctx.token, `${A(ctx.account)}/workers/observability/usage?from=${f}&to=${t}`, {}, ctx.fresh);
+  let requests: number | null = null;
+  let reqErrors: number | null = null;
+  let requestsErr: string | null = null;
+  try {
+    const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const q = `{ viewer { accounts(filter:{accountTag:"${ctx.account}"}) { workersInvocationsAdaptive(limit:1, filter:{datetime_geq:"${iso(f)}", datetime_lt:"${iso(t)}"}) { sum { requests errors } } } } }`;
+    const d = await graphql<any>(ctx.token, q);
+    const sum = d?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.[0]?.sum;
+    requests = typeof sum?.requests === "number" ? sum.requests : null;
+    reqErrors = typeof sum?.errors === "number" ? sum.errors : null;
+  } catch (e) {
+    requestsErr = e instanceof DirectError ? e.message : String((e as Error)?.message || e);
+  }
+  return { result: { ...(usage.data as object), requests, reqErrors, requestsErr, from: f, to: t } };
+}
+
+/* ---------- WAF / Rulesets（移植 catalog.waf） ---------- */
+const WAF_PHASES = [
+  { phase: "http_request_firewall_custom", label: "自定义规则" },
+  { phase: "http_request_firewall_managed", label: "托管规则集" },
+  { phase: "http_ratelimit", label: "限流规则" },
+] as const;
+
+function slimRule(r: any) {
+  return {
+    id: r?.id,
+    action: r?.action,
+    enabled: r?.enabled === true,
+    description: r?.description || "",
+    expression: r?.expression || "",
+    last_updated: r?.last_updated || "",
+    ref: r?.ref || "",
+    version: r?.version || "",
+  };
+}
+
+/**
+ * 三种"没拿到规则"的形状必须分开（网关同款）：
+ *   200          → 有规则集（rules 仍可能空）
+ *   404 code 10003 → 这个 phase 从没配过规则 = 正常空态
+ *   400 unknown phase → 本套餐不认这个 phase 名（错误对象没有 code，只能按文案）
+ */
+export async function wafDirect(ctx: DirectCtx, zone: string) {
+  const phases = await Promise.all(
+    WAF_PHASES.map(async ({ phase, label }) => {
+      try {
+        const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/rulesets/phases/${phase}/entrypoint`, {}, ctx.fresh);
+        const res = r.data ?? {};
+        const rules = Array.isArray(res.rules) ? res.rules.map(slimRule) : [];
+        return { phase, label, state: "ok" as const, name: res.name || "", last_updated: res.last_updated || "", version: res.version || "", rules, note: "" };
+      } catch (e) {
+        if (e instanceof DirectError) {
+          if (e.kind === "permission") return { phase, label, state: "denied" as const, rules: [], note: "令牌缺 Zone:Rules:Read / Zone WAF:Read，见 docs/05 §3" };
+          if (e.code === "10003") return { phase, label, state: "empty" as const, rules: [], note: "这个 phase 没配过规则（正常空态，不是权限问题）" };
+          if (/unknown phase/i.test(e.message)) return { phase, label, state: "unsupported" as const, rules: [], note: "本套餐不认这个 phase 名" };
+          return { phase, label, state: "error" as const, rules: [], note: `${e.kind}：${e.message}`.slice(0, 200) };
+        }
+        return { phase, label, state: "error" as const, rules: [], note: String((e as Error)?.message || e).slice(0, 200) };
+      }
+    }),
+  );
+  return { zone, phases, ruleCount: phases.reduce((n, p) => n + p.rules.length, 0) };
+}
+
+/* ---------- 账号 / 订阅 / zones（网关同款的字段处理） ---------- */
+
+/**
+ * 账号列表 + 三个状态字段的直连版合成：
+ *   active    —— 直连模式没有"网关默认账号"，就是当前选中的账号（没选 = null）
+ *   requested —— 设备存储里选的（原样回显）
+ *   applied   —— 那个选择是否还在令牌可见集合里
+ */
+export async function accountsDirect(ctx: DirectCtx, requested?: string) {
+  const r = await rest<any[]>(ctx.token, "/accounts", {}, ctx.fresh);
+  const list = Array.isArray(r.data) ? r.data : [];
+  const req = (requested || "").trim();
+  return {
+    result: list,
+    active: ctx.account || null,
+    requested: req || null,
+    applied: req ? list.some((a) => String(a?.id) === req) : true,
+  };
+}
+
+/** 订阅列表：CF 原始返回带 client_secrets 和价格字段，只留套餐标识（网关同款减法） */
+export async function subscriptionsDirect(ctx: DirectCtx) {
+  const r = await rest<any>(ctx.token, `${A(ctx.account)}/subscriptions`, {}, ctx.fresh);
+  const arr = Array.isArray(r.data) ? r.data : [];
+  return { result: arr.map((s: any) => ({ plan: s?.rate_plan?.id ?? null, state: s?.state ?? null })) };
+}
+
+/** Zone 列表按当前账号过滤：CF 每条都带 account.id，缺失的保留（"没返回"≠"不属于"） */
+export async function zonesDirect(ctx: DirectCtx) {
+  const r = await rest<any[]>(ctx.token, "/zones?per_page=50", {}, ctx.fresh);
+  const all = Array.isArray(r.data) ? r.data : [];
+  return { result: all.filter((z: any) => !z?.account?.id || String(z.account.id) === ctx.account) };
+}
+
+/**
+ * 直连入口。路由分三类，一条一条对照网关 `app/gateway/src/index.ts` 的注册表：
+ *  - 需要 SQL/GraphQL 模板或多请求合并的（流量屏 / WAF / Workers 用量 / D1 查询）：形状与网关逐字一致；
+ *  - 普通 REST：走 routeREST 映射表（对照网关 catalog.ts 的 reads 表）；
+ *  - 没覆盖的：抛一条说清楚原因的错，**不做静默降级** —— 界面上宁可明说这条不行，也别给半份数据。
  */
 export async function gwDirect<T = any>(path: string, query: Record<string, string | number | undefined>, ctx: DirectCtx): Promise<T> {
+  // 需要 SQL/GraphQL 模板或多请求合并的路由：一条一条对齐全，形状与网关逐字一致
+  // overview 在网关上注册了两个名字（/v1/overview 与 /v1/traffic/overview），这里同样都接
+  if (path === "/v1/overview" || path === "/v1/traffic/overview") return overviewDirect(ctx, query.range) as unknown as T;
+  if (path === "/v1/traffic/series") return trafficSeries(ctx.token, ctx.account, parseRangeDirect(query.range)) as unknown as T;
+  if (path === "/v1/traffic/status") return trafficStatus(ctx.token, ctx.account, parseRangeDirect(query.range)) as unknown as T;
+  if (path === "/v1/traffic/origin") return trafficOrigin(ctx.token, ctx.account, parseRangeDirect(query.range)) as unknown as T;
+  if (path === "/v1/traffic/countries") return { result: await countriesDirect(ctx.token, ctx.account, parseRangeDirect(query.range)) } as unknown as T;
+  if (path === "/v1/traffic/totals") return { result: await consoleTotals(ctx.token, ctx.account, parseRangeDirect(query.range)) } as unknown as T;
+  if (path === "/v1/traffic/top") {
+    const dim = query.dim;
+    if (dim !== "host" && dim !== "path" && dim !== "bot") throw new DirectError("badQuery", 422, null, "dim 只能是 host/path/bot");
+    return trafficTop(ctx.token, ctx.account, parseRangeDirect(query.range), dim) as unknown as T;
+  }
+  if (path === "/v1/traffic/adaptive") {
+    const dim = query.dim;
+    if (dim !== "cache" && dim !== "device") throw new DirectError("badQuery", 422, null, "dim 只能是 cache/device");
+    return trafficAdaptive(ctx.token, ctx.account, parseRangeDirect(query.range), dim) as unknown as T;
+  }
+  if (path === "/v1/workers/usage") return workersUsageDirect(ctx, query.from as number | undefined, query.to as number | undefined) as unknown as T;
+  if (path === "/v1/zones") return zonesDirect(ctx) as unknown as T;
+  if (path === "/v1/accounts") return accountsDirect(ctx, query.account as string | undefined) as unknown as T;
+  if (path === "/v1/subscriptions") return subscriptionsDirect(ctx) as unknown as T;
+
+  // 带段的路由，routeREST 覆盖不到，单独接（api.ts 把 ?sql= 拼在 path 上，所以先切开再匹配）
+  const [purePath, qsPart] = path.split("?");
+  const wafHit = /^\/v1\/zones\/([0-9a-f]{32})\/waf$/i.exec(purePath);
+  if (wafHit) return wafDirect(ctx, wafHit[1]) as unknown as T;
+  const d1q = /^\/v1\/d1\/([^/]+)\/query$/i.exec(purePath);
+  if (d1q) return d1QueryDirect(d1q[1], new URLSearchParams(qsPart || "").get("sql") || "", ctx) as unknown as T;
+
   const direct = routeREST(path, query, ctx.account);
   if (!direct) {
     throw new DirectError(
       "unknown",
       0,
       "DIRECT_UNSUPPORTED",
-      `直连模式还没实现这条路由：${path}。流量/WAF/用量这几屏要复刻网关的 SQL·GraphQL 模板，正在补；暂时可以在「设置」里把网关地址填上走网关模式。`,
+      `直连模式还没实现这条路由：${path}。`,
     );
   }
   const r = await rest<any>(ctx.token, direct.path, direct.spec, ctx.fresh);
@@ -305,8 +654,57 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
   return { result: r.data } as unknown as T;
 }
 
-/** D1 SQL 查询（POST，单独出来是因为它不是 GET 语义） */
+/**
+ * D1 SQL 查询（POST，单独出来是因为它不是 GET 语义）。
+ * 两条校验照抄网关 /v1/d1/:id/query：缺 sql 直接 422（别打一次 CF 才说），
+ * 超 2000 字符也 422（免费 Worker CPU 10ms/请求那条限制对直连同样成立 ——
+ * 它在手机主线程里跑，长 SQL 会直接把界面卡住）。
+ */
 export async function d1QueryDirect(id: string, sqlText: string, ctx: DirectCtx) {
-  const r = await rest<any>(ctx.token, `${A(ctx.account)}/d1/database/${enc(id)}/query`, { method: "POST", body: { sql: sqlText }, unwrap: "list" }, ctx.fresh);
+  const sql = String(sqlText || "");
+  if (!sql.trim()) throw new DirectError("badQuery", 422, null, "缺少 sql 参数");
+  if (sql.length > 2000) throw new DirectError("badQuery", 422, null, "SQL 太长（上限 2000 字符）");
+  const r = await rest<any>(ctx.token, `${A(ctx.account)}/d1/database/${enc(id)}/query`, { method: "POST", body: { sql }, unwrap: "list" }, ctx.fresh);
   return { result: r.data };
+}
+
+/**
+ * 添加账号前的令牌验证：拿一把**还没保存**的令牌直接问 CF「你能看见哪些账号」。
+ * 与 api.ts probeToken() 是同一件事，只是这条路不经过网关（APK 里本来就没有网关）。
+ */
+export async function probeTokenDirect(token: string): Promise<{ result: any[] }> {
+  const r = await rest<any[]>(token, "/accounts", {});
+  return { result: Array.isArray(r.data) ? r.data : [] };
+}
+
+/**
+ * 写侧直连：DNS 增删改 + 按 URL 清缓存（与网关 WRITE_ROUTES 同一张白名单，一条不多）。
+ * 校验在 api.ts 的 gwWrite() 里已经做过（validateDns / validatePurgeFiles），
+ * 这里只负责按白名单发出去；写完由调用方 dropDirect 作废相关缓存。
+ */
+export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<any> {
+  const s = seg(path);
+  const zone = s[2];
+  if (s[0] !== "zones" || !/^[0-9a-f]{32}$/i.test(zone || "")) {
+    throw new DirectError("badQuery", 422, null, "直连写侧只支持 /v1/zones/{32位id}/... 这四条路由");
+  }
+  if (method === "POST" && s[3] === "dns_records") {
+    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records`, { method: "POST", body }, false);
+    return r.data;
+  }
+  if (method === "PUT" && s[3] === "dns_records" && s[4]) {
+    if (!/^[0-9a-f]{32}$/i.test(s[4])) throw new DirectError("badQuery", 422, null, "record id 得是 32 位十六进制");
+    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records/${enc(s[4])}`, { method: "PUT", body }, false);
+    return r.data;
+  }
+  if (method === "DELETE" && s[3] === "dns_records" && s[4]) {
+    if (!/^[0-9a-f]{32}$/i.test(s[4])) throw new DirectError("badQuery", 422, null, "record id 得是 32 位十六进制");
+    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records/${enc(s[4])}`, { method: "DELETE" }, false);
+    return r.data;
+  }
+  if (method === "POST" && s[3] === "purge_cache") {
+    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/purge_cache`, { method: "POST", body }, false);
+    return r.data;
+  }
+  throw new DirectError("badQuery", 422, null, `直连写侧不认这条路：${method} ${path}`);
 }

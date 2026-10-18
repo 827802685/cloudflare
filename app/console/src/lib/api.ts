@@ -5,10 +5,19 @@
  * 错误处理的设计原则：网关已经把 CF 那 20 多种错误码归并成 kind（src/cf.ts 的分类表），
  * 前端只需要按 kind 决定「让用户去设置页重填」还是「这块功能灰掉」，
  * 绝对不要出现"请求失败"三个字了事——permission 和 notFound 的处置方式完全不同。
+ *
+ * ── 双模式（2026-10-17） ──
+ * 浏览器（网页 / PWA）绕不过 CORS，必须走网关；而 Capacitor 原生壳（APK）里 fetch 被
+ * native-bridge 代理到原生网络栈、不参与同源策略，可以直连 api.cloudflare.com。
+ * 于是同一份 api 面有两条 transport：
+ *   - `isNativeApp()` = true → 直连（lib/direct.ts，网关 catalog 的逐字移植）；
+ *   - 否则 → 网关（本文件原有的全部逻辑，一行未改）。
+ * 分流只发生在这一层，上面所有视图 / store / composable 无感。
  */
 import { reactive } from "vue";
 import { effectiveBase, loadConfig, type Config } from "./config";
 import { findAccount } from "./accounts";
+import { DirectError, dropDirect, gwDirect, probeTokenDirect, takeDirectCalls, writeDirect, type DirectCtx } from "./direct";
 
 export type ErrKind =
   | "auth" | "permission" | "planLimit" | "serviceDisabled" | "notFound"
@@ -42,6 +51,67 @@ const KIND_HINT: Record<ErrKind, string> = {
   timeout: "连上了但等满超时没返回（普通请求 25 秒、设置页的连接测试 8 秒）。真连不上会立刻报错、不会等到超时，所以别去查网络，先看 CF 上游是不是慢、这一档扫描行数是不是太大；稍后再刷，或把时间窗缩到 24 小时。",
   unknown: "没归类的错误，看网关响应里的 message。",
 };
+
+/* ============================================================================
+ * 双模式分流：APK 直连 / 浏览器走网关
+ * ========================================================================== */
+
+/**
+ * 是不是跑在 Capacitor 原生壳里（APK）。判定按优先级：
+ *  1. `window.Capacitor.isNativePlatform()` —— 原生运行时（native-bridge.js）注入的全局。
+ *     它存在就说明两件事都成立：这是原生壳、且 fetch 已被 patch 到原生网络栈（直连的前提）。
+ *  2. 兜底：`capacitor://` 老 scheme，或 `androidScheme:"https"` 下的 `https://localhost`
+ *     + Android WebView UA（桥注入万一晚到时的第二信号）。
+ *
+ * 为什么每次请求都现算而不是模块加载时算一次：vite 产物的脚本在页面加载早期执行，
+ * 不替我们保证原生桥那时已注入完；而所有请求都发生在用户交互之后（远晚于 onPageFinished），
+ * 懒算不会漏，也不会把"探测失败"错判成原生。
+ */
+export function isNativeApp(): boolean {
+  try {
+    const c = (globalThis as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+    if (c && typeof c.isNativePlatform === "function" && c.isNativePlatform()) return true;
+  } catch {
+    /* 探测本身抛错：按非原生走，行为与加这个函数之前完全一致 */
+  }
+  try {
+    if (typeof location !== "undefined") {
+      if (location.protocol === "capacitor:") return true;
+      if (location.protocol === "https:" && location.hostname === "localhost" && /android/i.test(navigator.userAgent)) return true;
+    }
+  } catch {
+    /* 同左 */
+  }
+  return false;
+}
+
+/**
+ * 直连上下文：选中账号的令牌 + 账号 id。返回 null = 这台设备现在没法直连
+ * （没选账号，或保险箱还没解锁）—— 调用方据此报一条说清楚的错，不静默改走网关：
+ * APK 里本来就没有网关在跑，"回落网关"在这里只会变成一条迟到的连接失败。
+ */
+function directCtx(cfg: Config, fresh: boolean): DirectCtx | null {
+  const acc = cfg.account ? findAccount(cfg.account) : null;
+  return acc ? { token: acc.token, account: acc.id, fresh } : null;
+}
+
+/** 直连不可用时的报错口径：分清"没加账号"和"加了没解锁"，两者的下一步动作不一样 */
+function noDirectCtxError(cfg: Config): GwError {
+  return new GwError(
+    "auth",
+    401,
+    null,
+    cfg.account
+      ? "选中的账号还没解锁：令牌保险箱是加密保存的，去「设置」页输入口令解锁后才能取数。"
+      : "这台设备还没有 Cloudflare 账号：APK 是直连模式（不经过网关），去「设置」页添加一把 API Token 就能用。",
+  );
+}
+
+/** DirectError 与 GwError 同形（kind/http/code/message），在边界上换成 GwError，界面那一层不用知道有两种错 */
+function asGwError(e: unknown): unknown {
+  if (e instanceof DirectError) return new GwError(e.kind, e.http, e.code, e.message);
+  return e;
+}
 
 function qs(query?: Record<string, string | number | undefined>): string {
   if (!query) return "";
@@ -131,7 +201,7 @@ export function forceFreshWindow(ms = 20_000) {
  * 必须是 reactive：这层的值在 gw() 内部就地改，普通对象不会触发 computed 重算，
  * 结果就是 BoardView 那行"数据取自 …"永远停在首次求值（fetchedAt=0 → 空串 → v-if 永远不显示，实测踩过）。
  */
-export const gwMeta = reactive({ state: "miss" as "hit" | "miss" | "mixed" | "fresh" | "local", fetchedAt: 0, cfCalls: 0 });
+export const gwMeta = reactive({ state: "miss" as "hit" | "miss" | "mixed" | "fresh" | "local" | "direct", fetchedAt: 0, cfCalls: 0 });
 
 export async function gw<T>(path: string, query?: Record<string, string | number | undefined>): Promise<T> {
   const cfg = loadConfig();
@@ -139,15 +209,39 @@ export async function gw<T>(path: string, query?: Record<string, string | number
     ...(cfg.account && !NO_ACCOUNT_PARAM.has(path) ? { account: cfg.account } : {}),
     ...(query ?? {}),
   };
-  const url = effectiveBase(cfg) + path + qs(Object.keys(merged).length ? merged : undefined);
+  const q = qs(Object.keys(merged).length ? merged : undefined);
   const fresh = Date.now() < freshUntil;
+  const native = isNativeApp();
+  /**
+   * 缓存键：网关模式就是完整 URL；直连模式没有 URL，用 `direct|` + 同一套 path/query 冒充。
+   * 仍然包含完整路径，所以 gwWrite() 里的 `dropMem("/v1/zones/" + zoneId)` 一行代码
+   * 两种模式都能命中（键里都有 `/v1/zones/{id}/...` 这一段）。
+   */
+  const url = effectiveBase(cfg) + path + q;
+  const key = native ? "direct|" + path + q : url;
   if (!fresh) {
-    const hit = mem.get(url);
+    const hit = mem.get(key);
     if (hit && Date.now() - hit.at < MEM_TTL_MS) {
       gwMeta.state = "local";
       gwMeta.fetchedAt = hit.at;
       gwMeta.cfCalls = 0;
       return hit.data as T;
+    }
+  }
+  if (native) {
+    const ctx = directCtx(cfg, fresh);
+    if (!ctx) throw noDirectCtxError(cfg);
+    try {
+      const data = await gwDirect<T>(path, merged, ctx);
+      gwMeta.state = "direct";
+      // 直连没有中间层：数据落地的时刻就是 CF 应答的时刻，直接取现在
+      gwMeta.fetchedAt = Date.now();
+      gwMeta.cfCalls = takeDirectCalls();
+      mem.set(key, { at: gwMeta.fetchedAt, data });
+      return data;
+    } catch (e) {
+      takeDirectCalls(); // 失败路径也把计数清掉：别把这次的出网漏记进下一次请求的账上
+      throw asGwError(e);
     }
   }
   const finalUrl = fresh ? url + (url.includes("?") ? "&" : "?") + "fresh=1" : url;
@@ -182,8 +276,24 @@ export async function gw<T>(path: string, query?: Record<string, string | number
   return json as T;
 }
 
-/** 设置页专用：不带令牌，判断"地址填对了吗" */
-export async function gwHealth(base: string): Promise<{ ok: boolean; service?: string; writes?: string; ranges?: string[] }> {
+/**
+ * 设置页专用：不带令牌，判断"地址填对了吗"。
+ * 直连模式（APK）里没有网关可测，这里改成测「这台设备能不能直连 CF」：
+ * 拿选中账号的令牌打一次 /accounts —— 通过就说明令牌有效、且至少看得见一个账号。
+ * writes 在直连模式恒为 enabled：写请求从本机直接发给 CF，唯一的闸门就是本机开关（设置页会明说）。
+ */
+export async function gwHealth(base: string): Promise<{ ok: boolean; service?: string; writes?: string; ranges?: string[]; direct?: boolean }> {
+  if (isNativeApp()) {
+    const cfg = loadConfig();
+    const acc = cfg.account ? findAccount(cfg.account) : null;
+    if (!acc) throw noDirectCtxError(cfg);
+    try {
+      await probeTokenDirect(acc.token);
+      return { ok: true, service: "直连 api.cloudflare.com（不经过网关）", writes: "enabled", ranges: ["24h", "7d", "30d"], direct: true };
+    } catch (e) {
+      throw asGwError(e);
+    }
+  }
   const url = (base.trim().replace(/\/+$/, "") || "/api") + "/health";
   let res: Response;
   try {
@@ -202,9 +312,16 @@ export async function gwHealth(base: string): Promise<{ ok: boolean; service?: s
 /**
  * 用一把**还没保存**的令牌去问 CF：它看得见哪些账号。添加账号时用它做验证 ——
  * 令牌对不对、有没有 `Account:Read` 权限，在这一步就说清楚，别等保存完才发现是坏的。
- * 走 `/v1/accounts`（它豁免 `?account=`），带的头与正式请求一致：`x-cf-token` 是待验证的那把。
+ * 直连模式（APK）里不经过网关：这把令牌本来就不在任何网关那边，直接问 CF 最贴近真相。
  */
 export async function probeToken(token: string): Promise<AccountsResult> {
+  if (isNativeApp()) {
+    try {
+      return await probeTokenDirect(token);
+    } catch (e) {
+      throw asGwError(e);
+    }
+  }
   const cfg = loadConfig();
   const url = effectiveBase(cfg) + "/v1/accounts";
   let res: Response;
@@ -566,6 +683,22 @@ export function dropMem(prefix: string): void {
 export async function gwWrite<T = any>(method: WritePreview["method"], path: string, body?: unknown): Promise<T> {
   if (!writesOptIn()) throw new GwError("writesDisabled", 403, null, "本机写开关没打开，这条请求没有发出");
   const cfg = loadConfig();
+  // 直连模式（APK）：没有设备令牌这一说，凭据就是选中账号的 CF 令牌；写完了两层缓存都要作废
+  if (isNativeApp()) {
+    const ctx = directCtx(cfg, false);
+    if (!ctx) throw noDirectCtxError(cfg);
+    try {
+      const data = await writeDirect(ctx, method, path, body);
+      const seg = path.split("/")[3] || "";
+      if (seg) {
+        dropMem("/v1/zones/" + seg);
+        dropDirect("/zones/" + seg);
+      }
+      return data as T;
+    } catch (e) {
+      throw asGwError(e);
+    }
+  }
   if (!cfg.deviceToken) throw new GwError("auth", 401, null, "没有设备令牌，去「设置」里填");
   const q = cfg.account && !NO_ACCOUNT_PARAM.has(path) ? { account: cfg.account } : undefined;
   const url = effectiveBase(cfg) + path + qs(q);

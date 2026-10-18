@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import UnavailableNote from "../components/board/UnavailableNote.vue";
-import { api, gwHealth, gwMeta, GwError, setWritesOptIn, writesOptIn, probeToken, type Account } from "../lib/api";
+import { api, gwHealth, gwMeta, GwError, isNativeApp, setWritesOptIn, writesOptIn, probeToken, type Account } from "../lib/api";
 import { acctState, addAccount, removeAccount, labelOf, createVault, unlockAccounts, lockAccounts, destroyAll, type CfAccount } from "../lib/accounts";
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
@@ -12,6 +12,12 @@ import { dt } from "../lib/fmt";
 import { useGatewayStore } from "../stores/gateway";
 
 const gw = useGatewayStore();
+/**
+ * 这台设备跑在哪种模式：APK（Capacitor 原生壳）= 直连，请求不经过网关；
+ * 浏览器 / PWA = 走网关。整屏文案按它切换 —— 直连模式里"网关"那套说法全是空的，
+ * 照旧显示会让人去找一个根本不存在的网关。
+ */
+const directMode = isNativeApp();
 const baseUrl = ref(gw.config.baseUrl);
 const token = ref(gw.config.deviceToken);
 /** 跟着输入框实时算：留空时会退回"打包默认"或同源 /api，界面必须说清退回到哪一级 */
@@ -27,7 +33,9 @@ const savedAccount = computed(() =>
     ? gw.config.accountName
     : gw.config.account
       ? gw.config.account.slice(0, 8) + "…（选过账号，名字没在这台设备上存下来）"
-      : "网关默认（这台设备没另选过账号）",
+      : directMode
+        ? "还没选账号（直连模式下必须选一个才能取数）"
+        : "网关默认（这台设备没另选过账号）",
 );
 const reveal = ref(false);
 const testing = ref(false);
@@ -223,6 +231,13 @@ const gwWrites = computed<string | null>(() => {
   return w === "enabled" || w === "disabled" ? w : null;
 });
 const writeGateNote = computed(() => {
+  // 直连模式（APK）：写请求从这台设备直接发给 CF，**没有网关这道闸门**，
+  // 所以"两道闸门"的说法在这里不成立 —— 只有本机开关一个。别照抄网关模式的文案。
+  if (directMode) {
+    return allowWrites.value
+      ? "直连模式：写请求会从这台设备直接发给 Cloudflare，只受上面这个本机开关管辖（没有网关第二道闸门）。每个动作发出前仍会回显完整请求并要求确认。"
+      : "直连模式：本机开关关着，写请求在这台设备上就被拦下、不会发出。直连模式没有网关那道闸门，所以这一个是唯一的闸门。";
+  }
   if (!allowWrites.value) {
     return gwWrites.value === "enabled"
       ? "本地闸门关着：写请求在本机就被拦下、不会发出。网关那侧其实已经放行（writes=enabled），但你不打开它也不起作用 —— 这是默认状态。"
@@ -259,9 +274,19 @@ const budgetRunning = computed(() => gw.budget.running);
     <!-- ============ 连接 ============ -->
     <div class="card wide">
       <h3>网关配置</h3>
+      <template v-if="directMode">
+        <div class="small" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px">
+          这台设备是 <b>APK 直连模式</b>：所有请求从本机直接发给 <code>api.cloudflare.com</code>，<b>不经过网关</b> ——
+          令牌由这台设备加密保存、每次请求现取现带，装包即用，不需要部署任何服务。<br />
+          下面这组网关配置在 APK 里<b>不生效</b>（只对浏览器 / PWA 模式有意义）。
+        </div>
+      </template>
       <!-- 这台设备现在真的走哪个网关、哪个账号：顶栏右上角那条搬来的，措辞按"生效/草稿"分开 -->
       <div class="small muted" style="margin-bottom: 10px">
-        <template v-if="gw.configured">
+        <template v-if="directMode">
+          当前生效：<b>直连 api.cloudflare.com</b> · 账号：{{ savedAccount }}
+        </template>
+        <template v-else-if="gw.configured">
           当前生效：<code>{{ savedBase.base }}</code>（来源：{{ savedBase.from }}）· 账号：{{ savedAccount }}
         </template>
         <template v-else>当前状态：<b>未配置</b> —— 这台设备还没有设备令牌，除了本页哪一屏都进不去（顶栏那个红点就是它）。</template>
@@ -281,7 +306,7 @@ const budgetRunning = computed(() => gw.budget.running);
       </div>
 
       <div class="row" style="margin-top: 12px">
-        <button class="primary" :disabled="testing" @click="test">{{ testing ? "测试中" : "保存并测试连接" }}</button>
+        <button class="primary" :disabled="testing" @click="test">{{ testing ? "测试中" : directMode ? "测试直连连接" : "保存并测试连接" }}</button>
       </div>
     </div>
 
@@ -290,7 +315,11 @@ const budgetRunning = computed(() => gw.budget.running);
       <ErrorNote :err="result.error || undefined" />
       <dl class="kv" v-if="result.health">
         <dt>服务状态</dt><dd>{{ result.health.service }}</dd>
-        <dt>写操作</dt><dd><span class="badge" :class="{ live: result.health.writes === 'enabled' }">{{ result.health.writes === 'enabled' ? '已启用' : '未启用' }}</span></dd>
+        <dt>写操作</dt>
+        <dd>
+          <template v-if="result.health.direct">只受本机开关管辖（直连模式没有网关那道闸门）</template>
+          <template v-else><span class="badge" :class="{ live: result.health.writes === 'enabled' }">{{ result.health.writes === 'enabled' ? '已启用' : '未启用' }}</span></template>
+        </dd>
         <dt>时间窗</dt><dd>{{ (result.health.ranges || []).join(" / ") }}</dd>
         <dt>账号</dt><dd>{{ result.account || "—" }}</dd>
       </dl>
@@ -353,8 +382,13 @@ const budgetRunning = computed(() => gw.budget.running);
       <h3>账号（CF 令牌）</h3>
       <div class="small muted">
         一个账号 = 一把 Cloudflare API Token。令牌由这台设备<b>用口令派生的密钥加密后</b>保存
-        （PBKDF2 + AES-256-GCM），每次请求经 HTTPS 带给网关（头 <code>x-cf-token</code>），
-        网关只在这一次请求里用它调 CF、不留副本。
+        （PBKDF2 + AES-256-GCM）。
+        <template v-if="directMode">
+          直连模式下，每次请求由本机直接带 <code>Authorization: Bearer</code> 头打 Cloudflare，不经过任何中间服务。
+        </template>
+        <template v-else>
+          每次请求经 HTTPS 带给网关（头 <code>x-cf-token</code>），网关只在这一次请求里用它调 CF、不留副本。
+        </template>
       </div>
 
       <!-- ① 还没建保险箱：设口令 -->
@@ -425,10 +459,12 @@ const budgetRunning = computed(() => gw.budget.running);
 
         <div v-if="pickStale" class="small muted" style="margin-top: 8px">
           这台设备选过「{{ gw.config.accountName || gw.config.account.slice(0, 8) + "…" }}」，但它已经不在上面这个列表里了。
-          请求会被网关 422 挡掉 —— 点任一账号的「用它」恢复。
+          <template v-if="directMode">请求会失败（这个账号不在所选令牌的可见范围里）—— 点任一账号的「用它」恢复。</template>
+          <template v-else>请求会被网关 422 挡掉 —— 点任一账号的「用它」恢复。</template>
         </div>
         <div v-else-if="!gw.config.account && accts.length" class="small muted" style="margin-top: 8px">
-          当前没选账号，请求走的是网关 env 里那把默认令牌。
+          <template v-if="directMode">当前没选账号：直连模式下必须选一个账号才能取数。</template>
+          <template v-else>当前没选账号，请求走的是网关 env 里那把默认令牌。</template>
         </div>
 
         <div class="row" style="margin-top: 12px">
@@ -454,7 +490,8 @@ const budgetRunning = computed(() => gw.budget.running);
           打开后，App 里的 <b>DNS 新增 / 修改 / 删除</b> 与 <b>清缓存</b> 会<b>真的作用于你选定的 Cloudflare 账号</b>
           （目前是「{{ gw.config.accountName || (gw.config.account ? gw.config.account.slice(0, 8) + "…" : "网关默认账号") }}」
           。每个动作发出前仍会回显完整请求（方法 / 路径 / 请求体）并要求你确认，删除类还要点名。<br />
-          这一开关只解锁本机出口；网关那侧是否放行见下面的 writes 状态，两道闸门缺一不可。
+          <template v-if="directMode">这一开关是直连模式下<b>唯一</b>的闸门：打开后写请求直接从这台设备发给 Cloudflare。</template>
+          <template v-else>这一开关只解锁本机出口；网关那侧是否放行见下面的 writes 状态，两道闸门缺一不可。</template>
           <div class="row" style="margin-top: 10px">
             <button class="primary" @click="commitOpenWrites">确认打开</button>
             <button class="ghost" @click="confirmOpenWrites = false">先不打开</button>
@@ -467,10 +504,16 @@ const budgetRunning = computed(() => gw.budget.running);
         <dd>{{ allowWrites ? "开" : "关（默认）" }}</dd>
         <dt>网关闸门</dt>
         <dd>
-          <span v-if="gwWrites === 'enabled'" class="badge live">已放行</span>
-          <span v-else-if="gwWrites === 'disabled'" class="badge">未放行</span>
-          <span v-else class="badge">没测过 —— 点上方「保存并测试连接」才知道</span>
-          <span class="small muted">（来自 /health 的 writes 字段，非猜测）</span>
+          <template v-if="directMode">
+            <span class="badge">不存在</span>
+            <span class="small muted">（直连模式没有网关这道闸门，写请求从本机直达 CF）</span>
+          </template>
+          <template v-else>
+            <span v-if="gwWrites === 'enabled'" class="badge live">已放行</span>
+            <span v-else-if="gwWrites === 'disabled'" class="badge">未放行</span>
+            <span v-else class="badge">没测过 —— 点上方「保存并测试连接」才知道</span>
+            <span class="small muted">（来自 /health 的 writes 字段，非猜测）</span>
+          </template>
         </dd>
       </dl>
       <div class="small" style="margin-top: 8px">{{ writeGateNote }}</div>
@@ -518,14 +561,20 @@ const budgetRunning = computed(() => gw.budget.running);
         所以别用全局 API Key，给每把令牌只勾它真正需要的权限，手机上加锁屏。<br /><br />
         设备令牌（<code>DEVICE_TOKENS</code>）仍然留着，但角色是「谁能用这个网关」；CF 令牌回答「用哪个账号的数据」。
         网关侧不长期保存 CF 令牌（请求自带、用完即弃），要停用某台设备就从 <code>DEVICE_TOKENS</code> 里删掉那一项。
+        <template v-if="directMode"><br />直连模式（APK）下设备令牌用不到：请求不经过网关，鉴权就是本机保存的 CF 令牌本身。</template>
       </div>
     </div>
 
     <div class="card">
       <h3>写功能与还没开放的功能</h3>
       <div class="small muted">
-        DNS 增删改、清缓存：本机契约与确认抽屉已就绪（见上面「写操作」）。实际能不能落到你的账号，取决于上面两道闸门的组合
-        —— 本机开关默认关；当前这台网关是否放行以 /health 的 writes 为准，没测过就是不知道，不猜。<br /><br />
+        DNS 增删改、清缓存：本机契约与确认抽屉已就绪（见上面「写操作」）。
+        <template v-if="directMode">
+          实际能不能落到你的账号，只取决于本机开关这一道闸门（直连模式没有网关闸门）—— 默认关；打开后写请求直接从这台设备发给 CF。
+        </template>
+        <template v-else>
+          实际能不能落到你的账号，取决于上面两道闸门的组合 —— 本机开关默认关；当前这台网关是否放行以 /health 的 writes 为准，没测过就是不知道，不猜。
+        </template><br /><br />
         版本切换 / 回滚 / 灰度、Pages 部署与回滚、写 secret、改 cron —— 这几类网关侧链路还在另一个分支实现，本 App 不提供入口；
         对只读网关发过去也会得到 <code>501 writesDisabled</code>。原因是两类问题还没解决：一是需要你明确授权对账号做变更，
         二是这些写链路的请求体形状只有反推、没有实测（docs/09 §B）。
