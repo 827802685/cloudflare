@@ -24,6 +24,12 @@ const tabs = [
 
 const activeTab = computed(() => String(route.meta.tab ?? "board"));
 const title = computed(() => String(route.meta.title ?? "CF 控制台"));
+/** 设置齿轮是开关：不在设置页就进，已经在设置页就返回上一页（看板/详情页原路返回） */
+function toggleSettings() {
+  if (activeTab.value === "settings") nav.back();
+  else nav.push("/settings");
+}
+
 const needSetup = computed(() => !gw.configured && activeTab.value !== "settings");
 
 /**
@@ -42,14 +48,14 @@ const needSetup = computed(() => !gw.configured && activeTab.value !== "settings
         <b>{{ title }}</b>
       </div>
       <!-- 设置挪到右上角（10-11 他改的口）；右上角原来那条地址/账号一起搬进设置屏，顶栏不再放副标题 -->
-      <button class="cfg" :class="{ on: activeTab === 'settings' }" title="设置" aria-label="设置" @click="nav.push('/settings')">⚙</button>
+      <button class="cfg" :class="{ on: activeTab === 'settings' }" :title="activeTab === 'settings' ? '返回' : '设置'" aria-label="设置" @click="toggleSettings">⚙</button>
     </header>
 
     <main class="body">
       <div v-if="needSetup" class="gate">
         <template v-if="native">
           <p>还没有添加 Cloudflare 账号。</p>
-          <p class="muted">APK 是直连模式（不经过网关）：去「设置」先设解锁口令，再粘一把 Cloudflare API Token 验证通过就能用。</p>
+          <p class="muted">APK 是直连模式（不经过网关）：去「设置」粘一把 Cloudflare API Token，验证通过就能用。</p>
         </template>
         <template v-else>
           <p>还没有填网关设备令牌。</p>

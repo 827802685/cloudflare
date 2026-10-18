@@ -1,18 +1,22 @@
 /**
  * 版本与更新检查（APK / 网页通用）。
  *
- * 数据源：本仓库的 GitHub Releases（latest）。国内直连 GitHub 不稳，所以下载与 API
- * 都走**加速域名**前缀（gh-proxy 形态：<accel>/<完整 GitHub URL>）；域名不写死在代码里，
- * 构建期由仓库变量 GH_ACCEL_BASE 经 `VITE_GH_ACCEL_BASE` 注入（cf-console-build.yml），
- * 以后换加速域名只改仓库变量、重出包即可。
+ * 数据源：本仓库的 GitHub Releases（latest）。国内直连 GitHub 不稳，所以走**加速域名**
+ * 前缀（gh-proxy 形态：<accel>/<完整 GitHub URL>）；域名不写死在代码里，构建期由仓库
+ * 变量 GH_ACCEL_BASE 经 `VITE_GH_ACCEL_BASE` 注入，换加速域名只改仓库变量、重出包。
  *
- * 诚实边界：加速域名只保证「尽量可达」，不保证它一直活着 —— 所以 accel 请求失败会
- * 静默退回直连 GitHub；两条都挂就报错，绝不假装"已是最新"。
+ * 四级回退（谁先出数用谁）：
+ *   ① API 经加速 → ② API 直连 → ③ releases.atom 经加速 → ④ atom 直连
+ * 为什么要有 ③：gh-proxy 系代理大多只放行 github.com 路径，api.github.com 常见 404
+ * （实测撞过），而 releases.atom 是 github.com 路径、必然在放行范围里；它没有资产清单，
+ * 兜底时下载按钮退化为"打开发行说明页"。
+ * 任何一级的 HTTP 404/5xx 都算"此路不通"继续回退（0.1.4 踩过：404 被当成终局直接报错）；
+ * 四级全空才报错 —— 绝不把"读不到"说成"已是最新"。
  */
 
 const REPO = "827802685/cloudflare";
 
-/** 打包时由 vite define 从构建环境注入（package.json 版本 or CI 算出的发布版本） */
+/** 打包时由 vite define 从构建环境注入（CI 的发布版本 or package.json 版本） */
 declare const __APP_VERSION__: string;
 export const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.0.0";
 
@@ -24,8 +28,8 @@ export interface UpdateInfo {
   version: string;
   /** 发行说明页（Releases） */
   notesUrl: string;
-  /** APK 直链：配了加速域名就走它，没有就退回 GitHub 原始下载地址 */
-  apkUrl: string;
+  /** APK 直链（带加速前缀）；atom 兜底拿不到资产清单时为 null，界面只给发行说明入口 */
+  apkUrl: string | null;
   /** APK 字节数（拿不到就不显示） */
   size?: number;
 }
@@ -59,36 +63,60 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
   });
 }
 
-async function fetchLatest(api: string): Promise<Response> {
-  const headers = { accept: "application/vnd.github+json" };
-  if (ACCEL_BASE) {
-    try {
-      return await withTimeout(fetch(`${ACCEL_BASE}/${api}`, { headers }), 10_000, "加速域名 10 秒没响应");
-    } catch {
-      /* 加速域名挂了/不支持 API：退回直连，别直接判死 */
-    }
+/** 拉文本：网络失败 / 超时 / 任何 HTTP 非 2xx 都返回 null（调用方继续走下一级回退） */
+async function fetchText(url: string): Promise<string | null> {
+  try {
+    const res = await withTimeout(fetch(url, { headers: { accept: "application/vnd.github+json" } }), 10_000, "10 秒没响应");
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
   }
-  return withTimeout(fetch(api, { headers }), 10_000, "GitHub 直连 10 秒没响应");
 }
 
-/**
- * 查最新 Release；有新版本返回 UpdateInfo，没有（本机已是最新 / 远端读不出版本）返回 null。
- * 抛错只发生在两条网络路都失败 —— 界面要把它如实显示出来，不能吞成"没有更新"。
- */
+function fromApi(text: string): UpdateInfo | null {
+  try {
+    const j = JSON.parse(text);
+    const remote = String(j?.tag_name || "").replace(/^v/i, "");
+    if (!remote) return null;
+    const assets: any[] = Array.isArray(j?.assets) ? j.assets : [];
+    const apk = assets.find((a) => String(a?.name || "").toLowerCase().endsWith(".apk"));
+    const dl = apk?.browser_download_url ? String(apk.browser_download_url) : null;
+    return {
+      version: remote,
+      notesUrl: String(j?.html_url || `https://github.com/${REPO}/releases`),
+      apkUrl: dl ? (ACCEL_BASE ? `${ACCEL_BASE}/${dl}` : dl) : null,
+      size: typeof apk?.size === "number" ? apk.size : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function fromAtom(text: string): UpdateInfo | null {
+  // releases.atom 的 entry 链接形如 …/releases/tag/v0.1.4；第一个 entry 就是最新一条
+  const m = /releases\/tag\/(v[0-9][0-9.]*)/i.exec(text);
+  if (!m) return null;
+  const remote = m[1].replace(/^v/i, "");
+  // atom 没有资产清单，预拼不出 APK 文件名 —— 下载入口退化为发行说明页
+  return { version: remote, notesUrl: `https://github.com/${REPO}/releases/tag/v${remote}`, apkUrl: null };
+}
+
+/** 查最新 Release；有新版本返回 UpdateInfo，没有返回 null；四级数据源全空才抛错 */
 export async function checkUpdate(): Promise<UpdateInfo | null> {
   const api = `https://api.github.com/repos/${REPO}/releases/latest`;
-  const res = await fetchLatest(api);
-  if (!res.ok) throw new Error(`检查更新失败：HTTP ${res.status}`);
-  const j: any = await res.json();
-  const remote = String(j?.tag_name || "").replace(/^v/i, "");
-  if (!remote || !isNewer(remote, APP_VERSION)) return null;
-  const assets: any[] = Array.isArray(j?.assets) ? j.assets : [];
-  const apk = assets.find((a) => String(a?.name || "").toLowerCase().endsWith(".apk"));
-  const dl = String(apk?.browser_download_url || `https://github.com/${REPO}/releases/latest`);
-  return {
-    version: remote,
-    notesUrl: String(j?.html_url || `https://github.com/${REPO}/releases`),
-    apkUrl: ACCEL_BASE ? `${ACCEL_BASE}/${dl}` : dl,
-    size: typeof apk?.size === "number" ? apk.size : undefined,
-  };
+  const atom = `https://github.com/${REPO}/releases.atom`;
+  const routes: Array<{ url: string; kind: "api" | "atom" }> = [];
+  if (ACCEL_BASE) routes.push({ url: `${ACCEL_BASE}/${api}`, kind: "api" });
+  routes.push({ url: api, kind: "api" });
+  if (ACCEL_BASE) routes.push({ url: `${ACCEL_BASE}/${atom}`, kind: "atom" });
+  routes.push({ url: atom, kind: "atom" });
+
+  for (const r of routes) {
+    const text = await fetchText(r.url);
+    if (!text) continue;
+    const info = r.kind === "api" ? fromApi(text) : fromAtom(text);
+    if (info) return isNewer(info.version, APP_VERSION) ? info : null;
+  }
+  throw new Error("检查更新失败：加速域名和 GitHub 直连都不通（或没读到版本号）");
 }
