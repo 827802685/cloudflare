@@ -386,21 +386,24 @@ const notesOpen = ref(false);
 
 <template>
   <div>
-    <div class="row" style="justify-content: space-between; margin-bottom: 10px">
-      <div class="row">
-        <button v-for="k in RANGES" :key="k.k" class="chip" :class="{ on: range === k.k }" @click="range = k.k">
+    <!-- 工具栏：时间窗分段控制 + 数据年龄 + 刷新，收进一张卡，读数区从它下面开始 -->
+    <div class="card toolbar">
+      <div class="seg" role="tablist" aria-label="时间窗">
+        <button v-for="k in RANGES" :key="k.k" class="seg-b" :class="{ on: range === k.k }" role="tab" :aria-selected="range === k.k" @click="range = k.k">
           {{ k.label }}
         </button>
       </div>
-      <button class="ghost" :disabled="loading" @click="refresh">{{ loading ? "加载中" : "刷新" }}</button>
+      <div class="tl">
+        <span v-if="updatedAt" class="age">{{ updatedAt }} · {{ sourceNote }}</span>
+        <button class="ghost sm" :disabled="loading" @click="refresh">{{ loading ? "加载中" : "刷新" }}</button>
+      </div>
     </div>
-    <div class="small muted" v-if="updatedAt" style="margin-bottom: 8px">数据取自 {{ updatedAt }}（{{ sourceNote }}）</div>
 
     <ErrorNote :err="err" />
 
-    <!-- §5.1 卡片第 1 行：标题 + 状态灯 + 状态文本 + 一句结论（阈值自研，规则可展开） -->
-    <div class="card hd">
-      <h3>📊 仪表盘概览 · {{ rangeLabel }}</h3>
+    <!-- 状态总览卡：左边条按灯色着色，一眼分档 -->
+    <div class="card hd" :class="'lv-' + lamp.level">
+      <h3>仪表盘概览 · {{ rangeLabel }}</h3>
       <StatusLamp :level="lamp.level" :text="lamp.text" :rules="RULES" :basis="lamp.basis" />
     </div>
 
@@ -536,6 +539,20 @@ const notesOpen = ref(false);
 </template>
 
 <style scoped>
+/* 工具栏：时间窗分段控制（一体式分段，选中实底）+ 数据年龄 + 刷新 */
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg-b { border: 0; background: none; color: var(--fg-2, inherit); font-size: 13px; padding: 6px 14px; border-radius: 8px; cursor: pointer; transition: background .12s, color .12s; }
+.seg-b:hover { color: inherit; }
+.seg-b.on { background: var(--accent); color: var(--on-accent, #fff); font-weight: 600; }
+.tl { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.age { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 状态总览卡：左边条 3px 按灯色着色（ok/warn/bad/unknown），与状态灯互证 */
+.hd { border-left-width: 3px; }
+.hd.lv-ok { border-left-color: var(--ok, #2f9e5f); }
+.hd.lv-warn { border-left-color: #d29922; }
+.hd.lv-bad { border-left-color: var(--bad, #d64545); }
+.hd.lv-unknown { border-left-color: var(--line); }
 .hd h3 { margin-bottom: 6px; }
 .picks { margin-top: 4px; }
 .tiles { margin-bottom: 4px; }

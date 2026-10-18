@@ -1,17 +1,16 @@
 /**
  * 版本与更新检查（APK / 网页通用）。
  *
- * 数据源：本仓库的 GitHub Releases（latest）。国内直连 GitHub 不稳，所以走**加速域名**
- * 前缀（gh-proxy 形态：<accel>/<完整 GitHub URL>）；域名不写死在代码里，构建期由仓库
+ * 数据源：本仓库的 GitHub Releases（latest）。国内直连 GitHub 不稳，下载与页面走**加速域名**
+ * （路径形式 <accel>/<owner>/<repo>/...，实测确认）；域名不写死在代码里，构建期由仓库
  * 变量 GH_ACCEL_BASE 经 `VITE_GH_ACCEL_BASE` 注入，换加速域名只改仓库变量、重出包。
  *
- * 四级回退（谁先出数用谁）：
- *   ① API 经加速 → ② API 直连 → ③ releases.atom 经加速 → ④ atom 直连
- * 为什么要有 ③：gh-proxy 系代理大多只放行 github.com 路径，api.github.com 常见 404
- * （实测撞过），而 releases.atom 是 github.com 路径、必然在放行范围里；它没有资产清单，
- * 兜底时下载按钮退化为"打开发行说明页"。
+ * 三级回退（谁先出数用谁）：**API 直连 → releases.atom 经加速 → atom 直连**。
+ * 为什么 API 不走加速：加速域名的路径形式是 <accel>/<owner>/<repo>/...（0.1.7 实测确认），
+ * api.github.com 没有 owner/repo 结构、代理不了；而 releases.atom 是 github.com 路径、必在放行
+ * 范围里。它没有资产清单，兜底时下载按钮退化为「打开发行说明页」。
  * 任何一级的 HTTP 404/5xx 都算"此路不通"继续回退（0.1.4 踩过：404 被当成终局直接报错）；
- * 四级全空才报错 —— 绝不把"读不到"说成"已是最新"。
+ * 三级全空才报错 —— 绝不把"读不到"说成"已是最新"。
  */
 
 const REPO = "827802685/cloudflare";
@@ -22,6 +21,15 @@ export const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__
 
 /** 加速域名（尾斜杠已剥）；空串 = 没配置，全部直连 GitHub */
 export const ACCEL_BASE = String(import.meta.env.VITE_GH_ACCEL_BASE ?? "").trim().replace(/\/+$/, "");
+
+/**
+ * 加速域名的路径形式（实测 0.1.7 撞出来的）：<accel>/<owner>/<repo>/...，
+ * **不带** https://github.com 前缀 —— 按 gh-proxy 的老拼法 <accel>/https://github.com/... 反而 404。
+ * 传进来的必须是 github.com 的 URL（API 域名没有 owner/repo 结构，加速不了，也不需要）。
+ */
+function viaAccel(ghUrl: string): string {
+  return `${ACCEL_BASE}/${ghUrl.replace(/^https:\/\/github\.com\//i, "")}`;
+}
 
 export interface UpdateInfo {
   /** 远端最新版本号（不含 v 前缀） */
@@ -84,10 +92,14 @@ function fromApi(text: string): UpdateInfo | null {
     const assets: any[] = Array.isArray(j?.assets) ? j.assets : [];
     const apk = assets.find((a) => String(a?.name || "").toLowerCase().endsWith(".apk"));
     const dl = apk?.browser_download_url ? String(apk.browser_download_url) : null;
+    // 发行说明页与下载链接都按加速域名的路径形式给（<accel>/<owner>/<repo>/...）
+    const notes = ACCEL_BASE
+      ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`)
+      : String(j?.html_url || `https://github.com/${REPO}/releases`);
     return {
       version: remote,
-      notesUrl: String(j?.html_url || `https://github.com/${REPO}/releases`),
-      apkUrl: dl && ACCEL_BASE ? `${ACCEL_BASE}/${dl}` : dl,
+      notesUrl: notes,
+      apkUrl: dl && ACCEL_BASE ? viaAccel(dl) : dl,
       apkUrlDirect: dl,
       size: typeof apk?.size === "number" ? apk.size : undefined,
     };
@@ -102,17 +114,20 @@ function fromAtom(text: string): UpdateInfo | null {
   if (!m) return null;
   const remote = m[1].replace(/^v/i, "");
   // atom 没有资产清单，拼不出 APK 文件名 —— 下载入口退化为发行说明页
-  return { version: remote, notesUrl: `https://github.com/${REPO}/releases/tag/v${remote}`, apkUrl: null, apkUrlDirect: null };
+  const notes = ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`;
+  return { version: remote, notesUrl: notes, apkUrl: null, apkUrlDirect: null };
 }
 
-/** 查最新 Release；有新版本返回 UpdateInfo，没有返回 null；四级数据源全空才抛错 */
+/** 查最新 Release；有新版本返回 UpdateInfo，没有返回 null；三级数据源全空才抛错 */
 export async function checkUpdate(): Promise<UpdateInfo | null> {
   const api = `https://api.github.com/repos/${REPO}/releases/latest`;
   const atom = `https://github.com/${REPO}/releases.atom`;
-  const routes: Array<{ url: string; kind: "api" | "atom" }> = [];
-  if (ACCEL_BASE) routes.push({ url: `${ACCEL_BASE}/${api}`, kind: "api" });
-  routes.push({ url: api, kind: "api" });
-  if (ACCEL_BASE) routes.push({ url: `${ACCEL_BASE}/${atom}`, kind: "atom" });
+  // API 域名没有 owner/repo 结构、加速域名代理不了（实测 404），所以 API 只走直连；
+  // atom 是 github.com 路径，走加速 → 直连两级
+  const routes: Array<{ url: string; kind: "api" | "atom" }> = [
+    { url: api, kind: "api" },
+  ];
+  if (ACCEL_BASE) routes.push({ url: viaAccel(atom), kind: "atom" });
   routes.push({ url: atom, kind: "atom" });
 
   for (const r of routes) {

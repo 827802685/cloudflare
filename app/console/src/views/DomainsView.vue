@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
 import DnsRecordList from "../components/dns/DnsRecordList.vue";
@@ -86,6 +86,15 @@ async function loadZone() {
 
 onMounted(async () => { await loadTop(); await loadZone(); });
 
+/* ---------- 站点下拉：展开/收起 + 点外面关闭 ---------- */
+const zopen = ref(false);
+const zddEl = ref<HTMLElement | null>(null);
+function onDocClick(e: MouseEvent) {
+  if (zopen.value && zddEl.value && !zddEl.value.contains(e.target as Node)) zopen.value = false;
+}
+onMounted(() => document.addEventListener("click", onDocClick));
+onUnmounted(() => document.removeEventListener("click", onDocClick));
+
 /** 「刷新」= 这一屏全部绕过两层缓存重来；平时进这屏只发命中的那几条 */
 async function refresh() { forceFreshWindow(); await loadTop(); await loadZone(); }
 watch(zoneId, () => { editorOpen.value = false; editorRecord.value = null; editorPreset.value = null; loadZone(); });
@@ -167,20 +176,25 @@ async function confirmSheet() {
 <template>
   <div>
     <div class="row" style="justify-content: space-between; margin-bottom: 10px; gap: 10px">
-      <!-- 站点切换器：胶囊式，active 站点亮绿点；多站点横向排，超出折行 -->
-      <div class="zsw" role="tablist" aria-label="切换站点">
-        <button
-          v-for="z in zones.data || []"
-          :key="z.id"
-          class="zpill"
-          :class="{ on: String(z.id) === zoneId }"
-          role="tab"
-          :aria-selected="String(z.id) === zoneId"
-          @click="zoneId = String(z.id)"
-        >
-          <i class="zdot" :data-s="z.status || 'unknown'" />{{ z.name }}
+      <!-- 站点切换器：折叠式下拉（跟旧版 select 一样收着），展开后带状态点与状态文字 -->
+      <div class="zdd" ref="zddEl">
+        <button class="zbtn" :aria-expanded="zopen" aria-haspopup="listbox" @click.stop="zopen = !zopen">
+          <i class="zdot" :data-s="currentZone?.status || 'unknown'" />
+          <span class="zname">{{ currentZone?.name || (zones.loading ? "加载中…" : "选择站点") }}</span>
+          <i class="chev" :class="{ up: zopen }">▾</i>
         </button>
-        <span v-if="!(zones.data || []).length && zones.loading" class="small muted" style="align-self: center">加载中…</span>
+        <div class="zpanel" v-if="zopen" role="listbox" aria-label="选择站点">
+          <button
+            v-for="z in zones.data || []" :key="z.id"
+            class="zopt" :class="{ on: String(z.id) === zoneId }"
+            role="option" :aria-selected="String(z.id) === zoneId"
+            @click="zoneId = String(z.id); zopen = false"
+          >
+            <i class="zdot" :data-s="z.status || 'unknown'" />
+            <span class="zopt-name">{{ z.name }}</span>
+            <span class="zopt-st">{{ z.status || "" }}</span>
+          </button>
+        </div>
       </div>
       <button class="ghost" @click="refresh">刷新</button>
     </div>
@@ -308,11 +322,24 @@ async function confirmSheet() {
 </template>
 
 <style scoped>
-/* 站点切换器：胶囊 + 状态点（active=绿）。窄屏折行，不横向撑破 */
-.zsw { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.zpill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: inherit; font-size: 13px; cursor: pointer; transition: border-color .12s, background .12s; }
-.zpill:hover { border-color: var(--accent); }
-.zpill.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); font-weight: 600; }
+/* 站点切换器：折叠下拉。收起 = 一个带状态点的按钮；展开 = 浮层面板（状态点 + 状态文字） */
+.zdd { position: relative; min-width: 0; }
+.zbtn { display: inline-flex; align-items: center; gap: 9px; padding: 9px 14px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel); color: inherit; font-size: 14px; cursor: pointer;
+  max-width: 70vw; transition: border-color .12s; }
+.zbtn:hover, .zbtn[aria-expanded="true"] { border-color: var(--accent); }
+.zname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.chev { font-style: normal; font-size: 10px; color: var(--muted); transition: transform .15s; }
+.chev.up { transform: rotate(180deg); }
+.zpanel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 260px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .18); }
+.zopt { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 10px; border: 0;
+  border-radius: 8px; background: none; color: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.zopt:hover { background: var(--panel-2); }
+.zopt.on { background: var(--panel-2); font-weight: 600; }
+.zopt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zopt-st { font-size: 11px; color: var(--muted); flex: none; }
 .zdot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
 .zdot[data-s="active"] { background: var(--ok, #2f9e5f); }
 .zdot[data-s="pending"] { background: #d29922; }
