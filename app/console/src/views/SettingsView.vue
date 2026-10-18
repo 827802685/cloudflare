@@ -384,7 +384,8 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
       </div>
       <div class="row" style="margin-top: 10px">
         <button class="primary" :disabled="checking" @click="doCheckUpdate">{{ checking ? "检查中…" : "检查更新" }}</button>
-        <a v-if="update?.apkUrl" class="chip" :href="update.apkUrl" target="_blank" rel="noopener">下载 v{{ update.version }} APK</a>
+        <a v-if="update?.apkUrl" class="chip" :href="update.apkUrl" target="_blank" rel="noopener">加速下载 v{{ update.version }}</a>
+        <a v-if="update?.apkUrlDirect && update.apkUrlDirect !== update.apkUrl" class="chip" :href="update.apkUrlDirect" target="_blank" rel="noopener">直连下载</a>
         <a v-if="update" class="chip" :href="update.notesUrl" target="_blank" rel="noopener">{{ update.apkUrl ? "发行说明" : "打开发行页下载" }}</a>
       </div>
       <div v-if="update" class="small" style="margin-top: 8px">

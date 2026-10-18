@@ -268,7 +268,8 @@ function routeREST(path: string, q: Record<string, string | number | undefined>,
     case "kv":
       if (s.length === 1) return { path: `${A(account)}/storage/kv/namespaces?per_page=100`, spec: { unwrap: "list" } };
       if (s.length === 3 && s[2] === "keys") {
-        const qs = new URLSearchParams({ limit: String(Math.min(500, Math.max(1, n(q.limit) || 100))) });
+        // CF 要求 limit ≥ 10（实测 10028），这里夹紧
+        const qs = new URLSearchParams({ limit: String(Math.min(1000, Math.max(10, n(q.limit) || 100))) });
         if (q.cursor) qs.set("cursor", String(q.cursor));
         return { path: `${A(account)}/storage/kv/namespaces/${enc(s[1])}/keys?${qs.toString()}`, spec: { unwrap: "list" } };
       }

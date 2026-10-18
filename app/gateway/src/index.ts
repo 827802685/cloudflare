@@ -51,6 +51,63 @@ const CORS = {
 
 app.options("*", () => new Response(null, { status: 204, headers: CORS }));
 
+/* ============================================================================
+ * 展示部署（demo）登录门。只在网关配了 DEMO_PASS 时启用；没配 = 整段等于不存在，
+ * 自用部署行为与老版本完全一致。启用后：静态资源与 API 全部要求先 POST /login
+ * （用户名 DEMO_USER、密码 DEMO_PASS），通过后发一枚 HttpOnly cookie（SHA-256 摘要，
+ * 不落明文密码）；未登录的任何请求 302 到 /login。
+ * 放在所有中间件最前面：run_worker_first=["/*"] 时静态资源也走这里，门才能真"全"。
+ * ========================================================================== */
+async function demoCookieValue(user: string, pass: string): Promise<string> {
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`cf-console-demo:${user}:${pass}`));
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
+function isDemoAuthed(c: Ctx, cv: string): boolean {
+  return (c.req.header("cookie") || "").includes(`demo_auth=${cv}`);
+}
+
+function loginPage(incorrect: boolean): string {
+  return `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CF 控制台 · 登录</title><style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1419;color:#e6edf3;font-family:system-ui,sans-serif}
+.box{width:min(340px,88vw);background:#1b2129;border:1px solid #2d3742;border-radius:14px;padding:28px}
+h1{font-size:17px;margin:0 0 4px}p{font-size:12px;color:#8b98a5;margin:0 0 18px}
+label{display:block;font-size:12px;color:#8b98a5;margin:12px 0 4px}
+input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2d3742;background:#232a33;color:#e6edf3;font-size:14px}
+button{width:100%;margin-top:18px;padding:11px;border:0;border-radius:8px;background:#2f9e5f;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.err{color:#ff7b72;font-size:12px;margin:10px 0 0}
+</style><div class="box"><h1>CF 控制台</h1><p>演示部署 · 请先登录</p>
+<form method="post" action="/login"><label>用户名</label><input name="user" autocomplete="username" required>
+<label>密码</label><input name="pass" type="password" autocomplete="current-password" required>
+${incorrect ? '<div class="err">用户名或密码不对</div>' : ""}
+<button>进入</button></form></div></html>`;
+}
+
+app.use("*", async (c, next) => {
+  const pass = c.env.DEMO_PASS;
+  if (!pass) return next();
+  const cv = await demoCookieValue(c.env.DEMO_USER || "", pass);
+  const p = new URL(c.req.url).pathname;
+  if (isDemoAuthed(c, cv)) return next();
+  if (p === "/login") {
+    if (c.req.method === "POST") {
+      const form = await c.req.parseBody();
+      if (String(form.user || "") === (c.env.DEMO_USER || "") && String(form.pass || "") === pass) {
+        const res = c.redirect("/", 302);
+        res.headers.set(
+          "set-cookie",
+          `demo_auth=${cv}; Path=/; HttpOnly; SameSite=Lax; Max-Age=1209600`,
+        );
+        return res;
+      }
+      return c.html(loginPage(true), 401);
+    }
+    return c.html(loginPage(false));
+  }
+  return c.redirect("/login", 302);
+});
+
 /**
  * 同源部署的第二种配法：静态壳和 API 挂在同一个域名上时，前端默认值 `effectiveBase()="/api"`
  * （见 console/src/lib/config.ts 的兜底）会打到这里。剥掉 `/api` 前缀再交给下面的路由表，
@@ -85,6 +142,8 @@ app.get("/health", (c) =>
     ok: true,
     service: "cf-console-gateway",
     writes: c.env.WRITE_ENABLED === "true" ? "enabled" : "disabled",
+    // 前端靠它认出展示部署：冷启动探测到 demo=true 就免配置直接出数（用网关兜底令牌）
+    demo: !!c.env.DEMO_PASS,
     ranges: Object.keys(RANGES),
     cache: { ...cacheStats(), scope: "isolate" },
   }),
@@ -101,6 +160,9 @@ app.get("/health", (c) =>
 app.use("/v1/*", async (c, next) => {
   const cfTok = (c.req.header("x-cf-token") || "").trim();
   if (cfTok) return next();
+  // 展示部署：能走到这里说明最外层的 demo 登录门已经放行（cookie 有效），
+  // 数据出口就是网关 env 的兜底 CF_API_TOKEN，访客无需自带令牌。
+  if (c.env.DEMO_PASS) return next();
   const list = (c.env.DEVICE_TOKENS || "").split(",").map((s) => s.trim()).filter(Boolean);
   const got = (c.req.header("x-device-token") || (c.req.header("authorization") || "").replace(/^Bearer\s+/i, "")).trim();
   if (!list.length) {
@@ -581,7 +643,8 @@ app.get("/v1/kv", route(async (c) => ({ result: (await reads.kvNamespaces(cf(c),
 app.get(
   "/v1/kv/:ns/keys",
   route(async (c) => {
-    const limit = Math.min(500, Math.max(1, Number(c.req.query("limit") || 100) || 100));
+    // CF 要求 limit ≥ 10（实测 10028 "limit argument must be at least 10"），catalog 里还会再夹一次
+    const limit = Math.min(1000, Math.max(10, Number(c.req.query("limit") || 100) || 100));
     const cursor = c.req.query("cursor") || undefined;
     const r = await reads.kvKeys(cf(c), E(c), param(c, "ns"), limit, cursor);
     return r.data;
@@ -607,6 +670,22 @@ app.use("/v1/*", async (c, next) => {
   if (m === "GET" || m === "HEAD") return next();
   const allowed = WRITE_ROUTES.map((r) => `${r.method} ${r.path}`).join("、");
   return c.json({ error: { kind: "writesDisabled" satisfies Kind, message: `这条写路由不在白名单里。白名单只有：${allowed}` } }, 501);
+});
+
+/**
+ * 静态资源代发：run_worker_first=["/*"] 时，没被上面 API 路由吃掉的请求（/, /assets/*,
+ * 深链）落到这里交给 ASSETS 绑定 —— SPA 兜底（not_found_handling）由 assets 配置自己负责。
+ * 登录门在最外层已经拦过未登录请求，所以走到这里的都已有会话。
+ * 没配 ASSETS 绑定（理论上不会）退回原来的 404。
+ */
+app.all("*", async (c) => {
+  if (c.env.ASSETS) {
+    // ASSETS 返回的 Response 头是只读的，CORS 中间件会对 c.res.headers.set → 直接 500。
+    // 这里重包一层可变 Response（流式透传 body）。
+    const r = await c.env.ASSETS.fetch(c.req.raw);
+    return new Response(r.body, r);
+  }
+  return c.notFound();
 });
 
 app.notFound((c) => c.json({ error: { kind: "notFound", message: "网关没有这条路由（白名单见 app/gateway/src/catalog.ts）" } }, 404));

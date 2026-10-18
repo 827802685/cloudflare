@@ -1,14 +1,34 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useGatewayStore } from "./stores/gateway";
-import { isNativeApp } from "./lib/api";
+import { gwHealth, isNativeApp } from "./lib/api";
+import { checkUpdate, type UpdateInfo } from "./lib/version";
+import UpdateDialog from "./components/UpdateDialog.vue";
 
 const route = useRoute();
 const nav = useRouter();
 const gw = useGatewayStore();
 /** APK 直连模式：没有网关，进门条件就是"保险箱里有至少一把 CF 令牌" */
 const native = isNativeApp();
+
+/* ---------- 冷启动两件静默事：识别展示部署 + 检查更新 ---------- */
+/** 发现新版本 → 弹 UpdateDialog（加速/直连双下载）；检查失败就当没有，不弹错误打扰人 */
+const updateInfo = ref<UpdateInfo | null>(null);
+onMounted(async () => {
+  // 展示部署探测：/health 报 demo=true 就免配置出数（失败静默，下次再试）
+  if (!native && !gw.demo && !gw.configured) {
+    try {
+      const h = await gwHealth("");
+      if (h?.demo) gw.setDemo(true);
+    } catch { /* 未登录（demo 门重定向）或没网：保持原状 */ }
+  }
+  // 静默检查更新：任何模式都查，出错不出声 —— 更新提示不该打扰正常使用
+  try {
+    const u = await checkUpdate();
+    if (u) updateInfo.value = u;
+  } catch { /* 静默 */ }
+});
 
 /**
  * 底栏 5 个键，顺序是他 10-11 点的：域名 / 计算 / 看板（正中）/ 数据库（D1+KV+R2 一屏三段）/ Zero Trust。
@@ -65,6 +85,8 @@ const needSetup = computed(() => !gw.configured && activeTab.value !== "settings
       </div>
       <RouterView v-else />
     </main>
+
+    <UpdateDialog v-if="updateInfo" :info="updateInfo" @close="updateInfo = null" />
 
     <nav class="tabbar" aria-label="主导航">
       <!-- 桌面档底栏转成左栏后，栏顶要有个名字压阵（不然五个键孤零零贴在浏览器边上）。

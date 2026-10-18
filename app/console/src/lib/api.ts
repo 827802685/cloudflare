@@ -257,7 +257,7 @@ export async function gw<T>(path: string, query?: Record<string, string | number
  * 拿选中账号的令牌打一次 /accounts —— 通过就说明令牌有效、且至少看得见一个账号。
  * writes 在直连模式恒为 enabled：写请求从本机直接发给 CF，唯一的闸门就是本机开关（设置页会明说）。
  */
-export async function gwHealth(base: string): Promise<{ ok: boolean; service?: string; writes?: string; ranges?: string[]; direct?: boolean }> {
+export async function gwHealth(base: string): Promise<{ ok: boolean; service?: string; writes?: string; ranges?: string[]; direct?: boolean; demo?: boolean }> {
   if (isNativeApp()) {
     const cfg = loadConfig();
     const acc = cfg.account ? findAccount(cfg.account) : null;
@@ -470,7 +470,8 @@ export const api = {
   d1Query: (id: string, sql: string) => gw<D1QueryResult>("/v1/d1/" + encodeURIComponent(id) + "/query?sql=" + encodeURIComponent(sql)),
   kvNamespaces: () => gw<R<KvNamespace[]>>("/v1/kv"),
   kvKeys: (nsId: string, limit = 100, cursor?: string) =>
-    gw<KvKeysResult>("/v1/kv/" + encodeURIComponent(nsId) + "/keys", { limit, ...(cursor ? { cursor } : {}) }),
+    // CF 要求 limit ≥ 10（实测 10028），客户端先夹紧再发
+    gw<KvKeysResult>("/v1/kv/" + encodeURIComponent(nsId) + "/keys", { limit: Math.min(1000, Math.max(10, limit)), ...(cursor ? { cursor } : {}) }),
   r2Buckets: () => gw<R<R2Bucket[]>>("/v1/r2"),
 
   /* ---------- Zero Trust（Access）只读 ---------- */

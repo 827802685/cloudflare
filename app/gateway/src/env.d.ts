@@ -19,6 +19,16 @@ interface Env {
    */
   WRITE_ENABLED?: string;
   CF_BASE?: string;
+  /**
+   * 展示部署（demo）的登录门：配置了 DEMO_PASS 才启用。所有请求（静态资源 + API）
+   * 都要求先 POST /login 通过 zjkl 式校验，拿到 HttpOnly cookie 才放行；
+   * 同时 /v1/* 的设备令牌闸门对已登录会话放行（兜底 CF_API_TOKEN 出数）。
+   * 不配这两个变量 = 完全没有登录门，行为与老版本一致。
+   */
+  DEMO_USER?: string;
+  DEMO_PASS?: string;
+  /** [assets] 绑定（run_worker_first=["/*"] 时由 Worker 代发静态资源） */
+  ASSETS?: { fetch: (req: Request) => Promise<Response> };
 }
 
 declare const process: unknown;

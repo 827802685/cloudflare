@@ -28,8 +28,10 @@ export interface UpdateInfo {
   version: string;
   /** 发行说明页（Releases） */
   notesUrl: string;
-  /** APK 直链（带加速前缀）；atom 兜底拿不到资产清单时为 null，界面只给发行说明入口 */
+  /** APK 下载（配置了加速域名就带前缀）；atom 兜底拿不到资产清单时为 null */
   apkUrl: string | null;
+  /** APK 直连下载（原始 GitHub 地址）；加速域名抽风时的备选，与 apkUrl 二选一 */
+  apkUrlDirect: string | null;
   /** APK 字节数（拿不到就不显示） */
   size?: number;
 }
@@ -85,7 +87,8 @@ function fromApi(text: string): UpdateInfo | null {
     return {
       version: remote,
       notesUrl: String(j?.html_url || `https://github.com/${REPO}/releases`),
-      apkUrl: dl ? (ACCEL_BASE ? `${ACCEL_BASE}/${dl}` : dl) : null,
+      apkUrl: dl && ACCEL_BASE ? `${ACCEL_BASE}/${dl}` : dl,
+      apkUrlDirect: dl,
       size: typeof apk?.size === "number" ? apk.size : undefined,
     };
   } catch {
@@ -94,12 +97,12 @@ function fromApi(text: string): UpdateInfo | null {
 }
 
 function fromAtom(text: string): UpdateInfo | null {
-  // releases.atom 的 entry 链接形如 …/releases/tag/v0.1.4；第一个 entry 就是最新一条
+  // releases.atom 的 entry 链接形如 …/releases/tag/v0.1.4；第一条就是最新 Release
   const m = /releases\/tag\/(v[0-9][0-9.]*)/i.exec(text);
   if (!m) return null;
   const remote = m[1].replace(/^v/i, "");
-  // atom 没有资产清单，预拼不出 APK 文件名 —— 下载入口退化为发行说明页
-  return { version: remote, notesUrl: `https://github.com/${REPO}/releases/tag/v${remote}`, apkUrl: null };
+  // atom 没有资产清单，拼不出 APK 文件名 —— 下载入口退化为发行说明页
+  return { version: remote, notesUrl: `https://github.com/${REPO}/releases/tag/v${remote}`, apkUrl: null, apkUrlDirect: null };
 }
 
 /** 查最新 Release；有新版本返回 UpdateInfo，没有返回 null；四级数据源全空才抛错 */

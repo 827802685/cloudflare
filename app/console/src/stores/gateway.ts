@@ -52,6 +52,8 @@ export const useGatewayStore = defineStore("gateway", {
   state: (): {
     config: Config;
     lastOkAt: number;
+    /** 展示部署标记（/health 的 demo 字段）：免配置直接用网关兜底令牌出数 */
+    demo: boolean;
     budget: {
       rounds: number;
       lastRoundAt: number;
@@ -68,15 +70,18 @@ export const useGatewayStore = defineStore("gateway", {
         try { useGatewayStore().attachScheduler(); } catch { /* 无 app 上下文（单测）时不硬挂 */ }
       });
     }
+    let demo = false;
+    try { demo = localStorage.getItem("cfconsole.demo.v1") === "1"; } catch { /* ignore */ }
     return {
       config: loadConfig(),
+      demo,
       lastOkAt: 0,
       budget: { rounds: 0, lastRoundAt: 0, lastRoundDoneAt: 0, last: zero(), total: zero(), running: false },
     };
   },
   getters: {
-    /** 有设备令牌、或本机存了至少一个账号令牌（自带令牌模式），才算「有资格取数」 */
-    configured: (s) => s.config.deviceToken.length > 0 || acctState.list.length > 0,
+    /** 有设备令牌、或本机存了至少一个账号令牌（自带令牌模式）、或识别为展示部署，才算「有资格取数」 */
+    configured: (s) => s.config.deviceToken.length > 0 || acctState.list.length > 0 || s.demo,
     /** 最近一次经手数据距今多久；Infinity = 这台设备还没取到过（界面不能说"0 秒前"） */
     dataAgeMs: () => gwAgeMs(),
     stale: () => gwAgeMs() >= MEM_TTL_MS,
@@ -98,6 +103,18 @@ export const useGatewayStore = defineStore("gateway", {
     },
     reload() {
       this.config = loadConfig();
+    },
+    /** 展示部署标记（App.vue 冷启动 /health 探测到 demo=true 时置位；持久化，下次冷启免探测） */
+    setDemo(v: boolean) {
+      this.demo = v;
+      try {
+        if (v) localStorage.setItem("cfconsole.demo.v1", "1");
+        else localStorage.removeItem("cfconsole.demo.v1");
+      } catch { /* ignore */ }
+      if (v) {
+        this.attachScheduler();
+        void this.round();
+      }
     },
     pinged() {
       this.lastOkAt = Date.now();

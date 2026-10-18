@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
-import FoldNote from "../components/FoldNote.vue";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
 import DnsRecordList from "../components/dns/DnsRecordList.vue";
 import DnsRecordForm from "../components/dns/DnsRecordForm.vue";
@@ -167,24 +166,33 @@ async function confirmSheet() {
 
 <template>
   <div>
-    <div class="row" style="justify-content: space-between; margin-bottom: 10px">
-      <select v-model="zoneId" class="field" style="max-width: 240px">
-        <option value="" disabled>选择站点</option>
-        <option v-for="z in zones.data || []" :key="z.id" :value="String(z.id)">{{ z.name }}</option>
-      </select>
+    <div class="row" style="justify-content: space-between; margin-bottom: 10px; gap: 10px">
+      <!-- 站点切换器：胶囊式，active 站点亮绿点；多站点横向排，超出折行 -->
+      <div class="zsw" role="tablist" aria-label="切换站点">
+        <button
+          v-for="z in zones.data || []"
+          :key="z.id"
+          class="zpill"
+          :class="{ on: String(z.id) === zoneId }"
+          role="tab"
+          :aria-selected="String(z.id) === zoneId"
+          @click="zoneId = String(z.id)"
+        >
+          <i class="zdot" :data-s="z.status || 'unknown'" />{{ z.name }}
+        </button>
+        <span v-if="!(zones.data || []).length && zones.loading" class="small muted" style="align-self: center">加载中…</span>
+      </div>
       <button class="ghost" @click="refresh">刷新</button>
     </div>
 
     <ErrorNote :err="domains.err || zones.err" />
 
-    <!-- 本机写开关：off 时下面的写操作根本不出网，on 时真发到网关（网关侧 WRITE_ENABLED 关会 501 如实显示） -->
+    <!-- 本机写开关：关时写操作根本不出网；开时真发（网关侧 WRITE_ENABLED 关会 501，原因如实显示） -->
     <label class="wsw">
       <input type="checkbox" class="switch" :checked="writesOn" @change="toggleWrites(($event.target as HTMLInputElement).checked)" />
       <span>
         <b>本机写开关：{{ writesOn ? "已打开" : "关（默认）" }}</b>
-        <span class="muted small">
-          {{ writesOn ? "变更请求会真的发到网关；这台开发网关 WRITE_ENABLED 关着时会回 501，原因会如实显示，不会假装成功。" : "关着时新增/编辑/删除/清缓存根本不出网——只是本地拦住，不发请求。要试链路请打开它。" }}
-        </span>
+        <span class="muted small">{{ writesOn ? "变更请求会真的发出，发出前逐条确认。" : "写操作在这台设备上就被拦下，不发请求。" }}</span>
       </span>
     </label>
 
@@ -231,10 +239,7 @@ async function confirmSheet() {
       <div v-else-if="!records.err && !records.loading" class="empty">没有记录</div>
       <div v-else-if="records.loading" class="empty">加载中…</div>
       <div class="whyline" v-if="doneMsg">{{ doneMsg }}</div>
-      <FoldNote label="点行会发生什么" hint="删除要手打记录名">
-        整行点击 = 编辑；删除会弹确认抽屉并要求手打记录名。写请求经 preview→ConfirmSheet→网关，
-        <strong>这台开发网关写动词一律 501</strong>（缺的是网关侧 <code>WRITE_ENABLED</code> + 逐条加白，不是你的令牌权限），拒绝原因会如实显示。
-      </FoldNote>
+      <!-- 交互说明（点行编辑 / 删除点名 / 501 原因）见 docs/14 §8 -->
     </div>
 
     <!-- 按 URL 清理缓存 -->
@@ -294,8 +299,7 @@ async function confirmSheet() {
         </div>
       </div>
       <div class="small muted" style="margin-top: 8px">
-        这条走 <code>GET /zones/{z}/rulesets/phases/{phase}/entrypoint</code>，当前令牌即可读；
-        写规则不在本包范围（docs/11 §4.4），且 GraphQL 的 WAF 事件明细 <code>firewallEventsAdaptiveGroups</code> 仍被套餐挡住，所以这里只有规则、没有命中次数。
+        只读展示，不含命中次数（原因见 docs/14 §8）。
       </div>
     </div>
 
@@ -304,6 +308,14 @@ async function confirmSheet() {
 </template>
 
 <style scoped>
+/* 站点切换器：胶囊 + 状态点（active=绿）。窄屏折行，不横向撑破 */
+.zsw { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.zpill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: inherit; font-size: 13px; cursor: pointer; transition: border-color .12s, background .12s; }
+.zpill:hover { border-color: var(--accent); }
+.zpill.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); font-weight: 600; }
+.zdot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+.zdot[data-s="active"] { background: var(--ok, #2f9e5f); }
+.zdot[data-s="pending"] { background: #d29922; }
 .hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .hd h3 { margin: 0; }
 .wsw { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; cursor: pointer; }

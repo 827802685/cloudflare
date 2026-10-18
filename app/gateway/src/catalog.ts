@@ -422,9 +422,9 @@ export const reads = {
     cf.rest(`/accounts/${ACC(env)}/d1/database/${encodeURIComponent(id)}/query`, { method: "POST", body: { sql }, unwrap: "list" }),
   /** KV 命名空间列表 */
   kvNamespaces: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/storage/kv/namespaces?per_page=100`, { unwrap: "list" }),
-  /** KV 命名空间内 keys 列表，默认 limit=100，支持 ?cursor 翻页 */
+  /** KV 命名空间内 keys 列表，默认 limit=100，支持 ?cursor 翻页。CF 要求 limit ≥ 10（实测 10028），这里统一夹紧 */
   kvKeys: (cf: CfClient, env: Env, nsId: string, limit = 100, cursor?: string) => {
-    const q = new URLSearchParams({ limit: String(limit) });
+    const q = new URLSearchParams({ limit: String(Math.min(1000, Math.max(10, Math.floor(limit)))) });
     if (cursor) q.set("cursor", cursor);
     return cf.rest(`/accounts/${ACC(env)}/storage/kv/namespaces/${encodeURIComponent(nsId)}/keys?${q.toString()}`, { unwrap: "list" });
   },
