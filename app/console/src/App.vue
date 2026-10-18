@@ -2,10 +2,13 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useGatewayStore } from "./stores/gateway";
+import { isNativeApp } from "./lib/api";
 
 const route = useRoute();
 const nav = useRouter();
 const gw = useGatewayStore();
+/** APK 直连模式：没有网关，进门条件就是"保险箱里有至少一把 CF 令牌" */
+const native = isNativeApp();
 
 /**
  * 底栏 5 个键，顺序是他 10-11 点的：域名 / 计算 / 看板（正中）/ 数据库（D1+KV+R2 一屏三段）/ Zero Trust。
@@ -44,8 +47,14 @@ const needSetup = computed(() => !gw.configured && activeTab.value !== "settings
 
     <main class="body">
       <div v-if="needSetup" class="gate">
-        <p>还没有填网关设备令牌。</p>
-        <p class="muted">开发期直接 <code>npm run dev</code>（网关 8788）就能用，令牌在 <code>app/gateway/.device-token</code> 里。</p>
+        <template v-if="native">
+          <p>还没有添加 Cloudflare 账号。</p>
+          <p class="muted">APK 是直连模式（不经过网关）：去「设置」先设解锁口令，再粘一把 Cloudflare API Token 验证通过就能用。</p>
+        </template>
+        <template v-else>
+          <p>还没有填网关设备令牌。</p>
+          <p class="muted">开发期直接 <code>npm run dev</code>（网关 8788）就能用，令牌在 <code>app/gateway/.device-token</code> 里。</p>
+        </template>
         <button class="primary" @click="nav.push('/settings')">去设置</button>
       </div>
       <RouterView v-else />

@@ -174,7 +174,9 @@ async function test() {
   testing.value = true;
   result.value = {};
   const saved = { ...gw.config };
-  gw.save({ baseUrl: baseUrl.value, deviceToken: token.value });
+  // 直连模式（APK）没有网关地址 / 设备令牌这两样东西，测试就是拿本机令牌打一次 CF，
+  // 别把空串覆盖进 config —— 那两个字段在 APK 里既不显示也不生效。
+  if (!directMode) gw.save({ baseUrl: baseUrl.value, deviceToken: token.value });
   try {
     const health = await gwHealth(baseUrl.value);
     let account: string | undefined;
@@ -197,7 +199,7 @@ async function test() {
     result.value = { health, account };
   } catch (e) {
     result.value = { error: e instanceof GwError ? e : new GwError("network", 0, null, String(e)) };
-    gw.save(saved);          // 连不上就别把坏配置留下
+    if (!directMode) gw.save(saved);          // 连不上就别把坏配置留下
   } finally {
     testing.value = false;
   }
@@ -273,41 +275,47 @@ const budgetRunning = computed(() => gw.budget.running);
   <div class="set">
     <!-- ============ 连接 ============ -->
     <div class="card wide">
-      <h3>网关配置</h3>
+      <h3>{{ directMode ? "连接（APK 直连）" : "网关配置" }}</h3>
       <template v-if="directMode">
+        <!-- APK 直连：没有网关地址、没有设备令牌。装包即用，唯一要填的是下面的 CF 令牌 -->
         <div class="small" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px">
-          这台设备是 <b>APK 直连模式</b>：所有请求从本机直接发给 <code>api.cloudflare.com</code>，<b>不经过网关</b> ——
-          令牌由这台设备加密保存、每次请求现取现带，装包即用，不需要部署任何服务。<br />
-          下面这组网关配置在 APK 里<b>不生效</b>（只对浏览器 / PWA 模式有意义）。
+          这台设备是 <b>APK 直连模式</b>：所有请求从本机直接发给 <code>api.cloudflare.com</code>，<b>不经过网关、不需要部署任何服务</b>。
+          令牌由这台设备用口令派生的密钥加密保存、每次请求现取现带 —— 在下面「账号（CF 令牌）」里粘一把 Token 就能用。
+        </div>
+        <div class="small muted" style="margin-bottom: 10px">
+          当前生效：<b>直连 api.cloudflare.com</b> · 账号：{{ savedAccount }}
+        </div>
+        <div class="row">
+          <button class="primary" :disabled="testing" @click="test">{{ testing ? "测试中" : "测试直连连接" }}</button>
+          <span class="small muted">拿选中账号的令牌打一次 /accounts，验证令牌有效、且至少看得见一个账号。</span>
         </div>
       </template>
-      <!-- 这台设备现在真的走哪个网关、哪个账号：顶栏右上角那条搬来的，措辞按"生效/草稿"分开 -->
-      <div class="small muted" style="margin-bottom: 10px">
-        <template v-if="directMode">
-          当前生效：<b>直连 api.cloudflare.com</b> · 账号：{{ savedAccount }}
-        </template>
-        <template v-else-if="gw.configured">
-          当前生效：<code>{{ savedBase.base }}</code>（来源：{{ savedBase.from }}）· 账号：{{ savedAccount }}
-        </template>
-        <template v-else>当前状态：<b>未配置</b> —— 这台设备还没有设备令牌，除了本页哪一屏都进不去（顶栏那个红点就是它）。</template>
-      </div>
-      <label class="lbl">网关地址（留空 = {{ baseInfo.from === "同源 /api" ? "同源 /api，本地开发由 vite 反代到 127.0.0.1:8788" : "用打包时写进去的默认地址" }}）</label>
-      <input v-model="baseUrl" class="field" placeholder="https://控制台域名.你的站点" spellcheck="false" />
-      <div class="small muted" style="margin-top: 6px">
-        按当前填法会走 <code>{{ baseInfo.base }}</code>（来源：{{ baseInfo.from }}；改了要先点"保存并测试连接"才生效）。<br />
-        必须填你自己的域名：实测 <code>*.workers.dev</code> 在本机网络不可达（DNS 被污染到 <code>108.160.166.148</code>），
-        而 <code>acct.example.com</code> 这类自定义域名可达（docs/09 §C1）。
-      </div>
+      <template v-else>
+        <!-- 这台设备现在真的走哪个网关、哪个账号：顶栏右上角那条搬来的，措辞按"生效/草稿"分开 -->
+        <div class="small muted" style="margin-bottom: 10px">
+          <template v-if="gw.configured">
+            当前生效：<code>{{ savedBase.base }}</code>（来源：{{ savedBase.from }}）· 账号：{{ savedAccount }}
+          </template>
+          <template v-else>当前状态：<b>未配置</b> —— 这台设备还没有设备令牌，除了本页哪一屏都进不去（顶栏那个红点就是它）。</template>
+        </div>
+        <label class="lbl">网关地址（留空 = {{ baseInfo.from === "同源 /api" ? "同源 /api，本地开发由 vite 反代到 127.0.0.1:8788" : "用打包时写进去的默认地址" }}）</label>
+        <input v-model="baseUrl" class="field" placeholder="https://控制台域名.你的站点" spellcheck="false" />
+        <div class="small muted" style="margin-top: 6px">
+          按当前填法会走 <code>{{ baseInfo.base }}</code>（来源：{{ baseInfo.from }}；改了要先点"保存并测试连接"才生效）。<br />
+          必须填你自己的域名：实测 <code>*.workers.dev</code> 在本机网络不可达（DNS 被污染到 <code>108.160.166.148</code>），
+          而 <code>acct.example.com</code> 这类自定义域名可达（docs/09 §C1）。
+        </div>
 
-      <label class="lbl">设备令牌（对应网关的 DEVICE_TOKENS；它只管「谁能用这个网关」，网关没配名单可留空）</label>
-      <div class="row">
-        <input v-model="token" class="field" style="flex: 1" :type="reveal ? 'text' : 'password'" spellcheck="false" />
-        <button class="ghost" @click="reveal = !reveal">{{ reveal ? "隐藏" : "显示" }}</button>
-      </div>
+        <label class="lbl">设备令牌（对应网关的 DEVICE_TOKENS；它只管「谁能用这个网关」，网关没配名单可留空）</label>
+        <div class="row">
+          <input v-model="token" class="field" style="flex: 1" :type="reveal ? 'text' : 'password'" spellcheck="false" />
+          <button class="ghost" @click="reveal = !reveal">{{ reveal ? "隐藏" : "显示" }}</button>
+        </div>
 
-      <div class="row" style="margin-top: 12px">
-        <button class="primary" :disabled="testing" @click="test">{{ testing ? "测试中" : directMode ? "测试直连连接" : "保存并测试连接" }}</button>
-      </div>
+        <div class="row" style="margin-top: 12px">
+          <button class="primary" :disabled="testing" @click="test">{{ testing ? "测试中" : "保存并测试连接" }}</button>
+        </div>
+      </template>
     </div>
 
     <div class="card" v-if="result.health || result.error">
