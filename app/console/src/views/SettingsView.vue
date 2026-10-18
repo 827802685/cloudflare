@@ -10,6 +10,7 @@ import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
 import FoldNote from "../components/FoldNote.vue";
 import { dt } from "../lib/fmt";
 import { useGatewayStore } from "../stores/gateway";
+import { APP_VERSION, ACCEL_BASE, checkUpdate, type UpdateInfo } from "../lib/version";
 
 const gw = useGatewayStore();
 /**
@@ -269,6 +270,27 @@ const ageText = computed(() => {
   return s < 60 ? `${s} 秒前落地` : `${Math.round(s / 60)} 分钟前落地`;
 });
 const budgetRunning = computed(() => gw.budget.running);
+
+/* ---------- 版本 / 更新检查（lib/version.ts） ---------- */
+const checking = ref(false);
+const checked = ref(false);
+const update = ref<UpdateInfo | null>(null);
+const updateErr = ref("");
+async function doCheckUpdate() {
+  checking.value = true;
+  updateErr.value = "";
+  update.value = null;
+  try {
+    update.value = await checkUpdate();
+    checked.value = true;
+  } catch (e) {
+    checked.value = false;
+    updateErr.value = String((e as Error)?.message || e);
+  } finally {
+    checking.value = false;
+  }
+}
+const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((update.value.size / 1024 / 1024) * 10) / 10} MB）` : ""));
 </script>
 
 <template>
@@ -308,7 +330,9 @@ const budgetRunning = computed(() => gw.budget.running);
 
         <label class="lbl">设备令牌（对应网关的 DEVICE_TOKENS；它只管「谁能用这个网关」，网关没配名单可留空）</label>
         <div class="row">
-          <input v-model="token" class="field" style="flex: 1" :type="reveal ? 'text' : 'password'" spellcheck="false" />
+          <!-- 不用 type=password：WebView 里它会唤起"安全键盘"，第三方输入法直接失效。
+               这里用 -webkit-text-security 做同款圆点遮罩，行为一致且输入法照常。 -->
+          <input v-model="token" class="field sec" :class="{ plain: reveal }" style="flex: 1" type="text" autocomplete="off" spellcheck="false" />
           <button class="ghost" @click="reveal = !reveal">{{ reveal ? "隐藏" : "显示" }}</button>
         </div>
 
@@ -385,7 +409,27 @@ const budgetRunning = computed(() => gw.budget.running);
       </FoldNote>
     </div>
 
-    <!-- ============ 账号（CF 令牌，加密保管）============ -->
+    <!-- ============ 版本 / 更新 ============ -->
+    <div class="card">
+      <h3>版本</h3>
+      <div class="small muted">
+        当前版本：<code>{{ APP_VERSION }}</code> ·
+        <template v-if="ACCEL_BASE">更新检查与下载走加速域名 <code>{{ ACCEL_BASE }}</code>（换加速域名：仓库变量 <code>GH_ACCEL_BASE</code>，改完重出包生效）。</template>
+        <template v-else>没配加速域名（仓库变量 <code>GH_ACCEL_BASE</code>），直连 GitHub Releases。</template>
+      </div>
+      <div class="row" style="margin-top: 10px">
+        <button class="primary" :disabled="checking" @click="doCheckUpdate">{{ checking ? "检查中…" : "检查更新" }}</button>
+        <a v-if="update" class="chip" :href="update.apkUrl" target="_blank" rel="noopener">下载 v{{ update.version }} APK</a>
+        <a v-if="update" class="chip" :href="update.notesUrl" target="_blank" rel="noopener">发行说明</a>
+      </div>
+      <div v-if="update" class="small" style="margin-top: 8px">
+        发现新版本 <b>v{{ update.version }}</b>{{ apkSizeText }} —— 下载链接已带加速前缀；加速域名打不开时用「发行说明」页里的原始直链。
+      </div>
+      <div v-else-if="checked" class="small muted" style="margin-top: 8px">已是最新版本。</div>
+      <div v-if="updateErr" class="small" style="color: var(--bad); margin-top: 8px">{{ updateErr }}</div>
+    </div>
+
+    <!-- ============ 账号（CF 令牌，本机保管）============ -->
     <div class="card wide">
       <h3>账号（CF 令牌）</h3>
       <div class="small muted">
@@ -438,7 +482,8 @@ const budgetRunning = computed(() => gw.budget.running);
           <input v-model="newAlias" class="field" placeholder="例如：主账号 / 备用号" spellcheck="false" />
           <label class="lbl" style="margin-top: 8px">Cloudflare API Token</label>
           <div class="row">
-            <input v-model="newToken" class="field" style="flex: 1" :type="revealNew ? 'text' : 'password'" placeholder="粘一把 API Token" spellcheck="false" />
+            <!-- 同上：type=password 的"安全键盘"在 WebView 里弊大于利，改用 CSS 圆点遮罩 -->
+            <input v-model="newToken" class="field sec" :class="{ plain: revealNew }" style="flex: 1" type="text" placeholder="粘一把 API Token" autocomplete="off" spellcheck="false" />
             <button class="ghost" @click="revealNew = !revealNew">{{ revealNew ? "隐藏" : "显示" }}</button>
           </div>
           <div class="row" style="margin-top: 10px">
@@ -619,4 +664,9 @@ const budgetRunning = computed(() => gw.budget.running);
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgb(0 0 0 / .18); }
 .dot[data-a="orange"] { background: #a8480a; }
 .dot[data-a="blue"] { background: #1e5cc8; }
+/* 令牌输入的圆点遮罩：type=password 会唤起 WebView 的"安全键盘"（第三方输入法失效、
+   粘贴被拦），所以输入框永远是 type=text，遮罩用 -webkit-text-security 实现。
+   浏览器不支持这个属性时输入会显示明文 —— 有"显示/隐藏"按钮兜底，可接受。 */
+.sec { -webkit-text-security: disc; }
+.sec.plain { -webkit-text-security: none; }
 </style>

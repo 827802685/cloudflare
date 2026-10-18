@@ -50,6 +50,10 @@ on:
 # Capacitor WebView 的 origin 是 https://localhost，相对 /api 打不通（见 app/console/src/lib/config.ts）。
 env:
   VITE_GATEWAY_BASE: ${{ github.event.inputs.gateway_base }}
+  # 更新检查用的 GitHub 加速域名（gh-proxy 形态）。放在**仓库变量**（Settings → Secrets and
+  # variables → Actions → Variables，名 GH_ACCEL_BASE）而不是 secrets：它不是凭据，只是个
+  # 前缀地址；放变量里以后换加速域名改一处、重出包即可，代码不用动。留空 = 全部直连 GitHub。
+  VITE_GH_ACCEL_BASE: ${{ vars.GH_ACCEL_BASE }}
 
 # 发布 Release 要写权限，但只有 apk job 需要 —— 全局仍锁只读，只在 apk job 上开 contents: write。
 permissions:
@@ -111,8 +115,20 @@ jobs:
         working-directory: app/console
         run: npm ci
 
+      # 版本号与 apk job 同口径（最新 tag），打进包里给「检查更新」当本机版本比对用
+      - name: 算当前版本号
+        id: ver
+        shell: bash
+        run: |
+          latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+          base="${latest#v}"; base="${base%%-*}"
+          echo "version=${base:-0.1.0}" >> "$GITHUB_OUTPUT"
+          echo "本机版本 = ${base:-0.1.0}（最新 tag：${latest:-无}）"
+
       - name: 出静态包
         working-directory: app/console
+        env:
+          VITE_APP_VERSION: ${{ steps.ver.outputs.version }}
         run: npm run build
 
       - name: 记录打进包里的网关地址
@@ -204,6 +220,10 @@ jobs:
       # 重新 build 一次多花一分钟，少一个只有出包时才暴露的坑。
       - name: 装依赖并出静态包
         working-directory: app/console
+        env:
+          # 本机版本 = 本次要发的版本（steps.ver 算的"最新 tag +1"），与 Release tag 对齐，
+          # 「检查更新」才能正确判定"已是最新"
+          VITE_APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           npm ci
           npm run build

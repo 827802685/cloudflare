@@ -7,6 +7,11 @@ import vue from "@vitejs/plugin-vue";
  */
 declare const process: { env: Record<string, string | undefined> };
 
+import pkg from "./package.json";
+
+/** 当前版本：CI 出包时用 VITE_APP_VERSION（与 Release tag 同口径），本地 dev 退回 package.json */
+const APP_VERSION = String(process.env.VITE_APP_VERSION || pkg.version);
+
 /**
  * 开发期把 /api 反代到本地网关（wrangler dev 默认 8787，我们固定 8788 以免和别的 Worker 撞）。
  * 为什么必须走代理而不是直连 api.cloudflare.com：实测官方 API 不发任何 CORS 头，
@@ -44,5 +49,9 @@ export default defineConfig(() => {
     server: { host, port: uiPort, strictPort: true, proxy },
     preview: { host, port: previewPort, strictPort: true, proxy },
     build: { target: "es2022", sourcemap: false },
+    define: {
+      // 版本检查（lib/version.ts）用：编译期替换成字面量，运行时不用再发请求
+      __APP_VERSION__: JSON.stringify(APP_VERSION),
+    },
   };
 });
