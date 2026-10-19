@@ -129,6 +129,7 @@ export const WRITE_ROUTES = [
   { method: "PUT", path: "/v1/zones/:zone/dns_records/:id" },
   { method: "DELETE", path: "/v1/zones/:zone/dns_records/:id" },
   { method: "POST", path: "/v1/zones/:zone/purge_cache" },
+  { method: "POST", path: "/v1/workers/:s/deployments" },
 ] as const;
 
 /** 写端点表：全部走 cf.rest，不进缓存层（cf.ts 的 isReadCall 只认 GET / graphql / sql） */
@@ -142,6 +143,13 @@ export const writes = {
   /** 只发 files，永不发 `purge_everything`：那条是全站清空，白名单里没有它的位置 */
   purge: (cf: CfClient, zone: string, files: string[]) =>
     cf.rest(`/zones/${encodeURIComponent(zone)}/purge_cache`, { method: "POST", body: { files } }),
+  /**
+   * 版本切换 / 回滚 / 灰度。形状 2026-10-19 在 rin-server 上实测敲定（docs/14 §7）：
+   * `POST …/deployments`，body `{strategy:"percentage", versions:[{version_id, percentage}], annotations?}`
+   * —— annotations 与灰度分流（两版本占比合计 100）都被 CF 接受。
+   */
+  workerDeploy: (cf: CfClient, env: Env, s: string, body: Record<string, unknown>) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/deployments`, { method: "POST", body }),
 };
 
 /* ---------- 写侧校验（第三道闸门） ----------
@@ -325,6 +333,59 @@ export function assertPurgeHostsInZone(files: string[], zoneName: string): void 
     const host = new URL(f).hostname.toLowerCase().replace(/\.+$/, "");
     if (!(host === z || host.endsWith("." + z))) bad(`URL 的主机名 ${host} 不属于这个 zone（${z}）`);
   }
+}
+
+/**
+ * 版本切换 / 回滚 / 灰度的请求体校验。形状来自 2026-10-19 的 rin-server 实测（上面 writes.workerDeploy）：
+ * 客户端只发 `{version_id, percentage?, annotations?}`，strategy 与 versions[] 由这里构造 ——
+ * strategy 永远是 percentage，versions 数组形状 CF 才认。
+ */
+const VERSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface DeployDraft {
+  version_id: string;
+  percentage: number;
+  annotations?: Record<string, string>;
+  payload: Record<string, unknown>;
+}
+
+export function validateDeployBody(raw: Record<string, unknown>): DeployDraft {
+  const allowed = ["version_id", "percentage", "annotations"];
+  const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+
+  const version_id = textField(raw.version_id, "version_id").trim();
+  if (!VERSION_ID_RE.test(version_id)) bad(`version_id 得是 36 位 UUID（从版本列表里复制，现在是 ${version_id || "空"}）`);
+
+  let percentage = 100;
+  if (raw.percentage !== undefined) {
+    percentage = numberField(raw.percentage, "percentage");
+    if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100) bad("percentage 得是 1–100 的整数");
+  }
+
+  let annotations: Record<string, string> | undefined;
+  if (raw.annotations !== undefined) {
+    if (typeof raw.annotations !== "object" || raw.annotations === null || Array.isArray(raw.annotations)) bad("annotations 必须是对象");
+    const entries = Object.entries(raw.annotations as Record<string, unknown>);
+    if (entries.length > 5) bad("annotations 最多 5 个键");
+    annotations = {};
+    for (const [k, v] of entries) {
+      if (typeof k !== "string" || k.length > 64) bad("annotations 的键过长");
+      if (typeof v !== "string" || v.length > 200) bad("annotations 的值必须是 ≤200 字符的字符串");
+      annotations[k] = v;
+    }
+  }
+
+  return {
+    version_id,
+    percentage,
+    annotations,
+    payload: {
+      strategy: "percentage",
+      versions: [{ version_id, percentage }],
+      ...(annotations ? { annotations } : {}),
+    },
+  };
 }
 
 /**

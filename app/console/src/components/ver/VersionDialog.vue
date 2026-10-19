@@ -156,9 +156,11 @@ function cancelDelete() {
   sheetErr.value = "";
 }
 
-/* ---------- 回滚 / 灰度：只合成请求预览，明确标注"未接通"，不发（docs/13 §9、红线三） ---------- */
+/* ---------- 回滚 / 灰度：形状已在 rin-server 实测（docs/14 §7），走 gwWrite 真发 ---------- */
 const showRollback = ref(false);
 const canary = ref(100);
+const rolling = ref(false);
+const rbErr = ref<GwError | null>(null);
 const rollbackBody = computed(() => {
   const id = String(detail.value?.id ?? openId.value ?? "");
   const p = Math.min(100, Math.max(1, Number(canary.value) || 100));
@@ -167,6 +169,26 @@ const rollbackBody = computed(() => {
   if (p < 100 && other) versions.push({ version_id: other, percentage: 100 - p });
   return { versions, strategy: "percentage", annotations: { "workers/message": "从手机发起" } };
 });
+async function confirmRollback() {
+  const id = String(detail.value?.id ?? openId.value ?? "");
+  if (!id || rolling.value) return;
+  rolling.value = true;
+  rbErr.value = null;
+  try {
+    await gwWrite("POST", `/v1/workers/${encodeURIComponent(props.name)}/deployments`, rollbackBody.value);
+    log.value.unshift({
+      text: `已切换：#${dash(detail.value?.number)} ${shortId(id, 8)} → ${canary.value}%（200 确认）`,
+      ok: true,
+    });
+    dropMem("/v1/workers/" + encodeURIComponent(props.name));
+    emit("changed");
+    showRollback.value = false;
+  } catch (e) {
+    rbErr.value = e instanceof GwError ? e : new GwError("unknown", 0, null, String(e));
+  } finally {
+    rolling.value = false;
+  }
+}
 
 /* ---------- 复制 ---------- */
 const copied = ref("");
@@ -288,17 +310,23 @@ function strategyText(v: unknown): string {
               <h4>回滚 / 灰度到这一版</h4>
               <p class="small muted" v-if="rowState(detail.id).on && (detailPct === null || detailPct >= 100)">这一版已经在跑{{ detailPct === null ? "" : "且占 " + detailPct + "%" }}，不需要回滚到它自己。</p>
               <template v-else>
-                <button class="ghost" type="button" @click="showRollback = !showRollback">{{ showRollback ? "收起" : "查看将发送的请求（未接通）" }}</button>
+                <button class="ghost" type="button" @click="showRollback = !showRollback">{{ showRollback ? "收起" : "合成请求预览" }}</button>
                 <div v-if="showRollback" class="rb">
                   <label class="lbl">切给这一版的流量：{{ canary }}%
                     <input v-model.number="canary" class="field" type="range" min="1" max="100" />
                   </label>
                   <div class="mono cmd">POST /v1/workers/{{ encodeURIComponent(name) }}/deployments</div>
                   <pre class="mono body">{{ JSON.stringify(rollbackBody, null, 2) }}</pre>
-                  <p class="small muted">
-                    这里**不发请求**：网关没有 POST /v1/workers/:s/deployments（待补路由清单第 5 条），请求体形状也只按 10210 的报错语义反推过、没实测（docs/09 §B2）。
-                    放出来是让人看清「接通后要发什么」，不是「点了就能切流量」。
+                  <p class="small muted" v-if="canary < 100">
+                    灰度：剩下的 {{ 100 - canary }}% 自动留给当前承接流量的版本（两版本合计 100，形状已在 rin-server 实测，docs/14 §7）。
                   </p>
+                  <p class="small muted" v-else>回滚 = 把 100% 流量切到这一版（形状已在 rin-server 实测，docs/14 §7）。</p>
+                  <div class="row" style="margin-top: 10px">
+                    <button class="primary" type="button" :disabled="rolling" @click="confirmRollback">{{ rolling ? "发送中…" : "确认切换" }}</button>
+                    <button class="ghost" type="button" @click="showRollback = false">先不切</button>
+                  </div>
+                  <ErrorNote v-if="rbErr" :err="rbErr" style="margin-top: 8px" />
+                  <p class="small muted" v-if="rbErr?.kind === 'writesDisabled'">网关模式的写闸门没开（本机开关 + 网关 WRITE_ENABLED 两道）；直连模式只受本机开关管辖。</p>
                 </div>
               </template>
 

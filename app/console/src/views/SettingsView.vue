@@ -559,8 +559,8 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
     <div class="card">
       <h3>已就绪与未开放</h3>
       <div class="small muted">
-        已就绪：DNS 增删改、清缓存（见「写操作」的本机开关，默认关）。<br />
-        未开放：版本切换 / 回滚 / 灰度、Pages 部署、写 secret、改 cron、实时日志（Tail）—— 原因与实测依据见 <code>docs/14</code> §7。
+        已就绪：DNS 增删改、清缓存、版本切换 / 回滚 / 灰度（见「写操作」的本机开关，默认关）。<br />
+        未开放：版本删除、Pages 部署、写 secret、改 cron、实时日志（Tail）—— 原因与实测依据见 <code>docs/14</code> §7。
       </div>
     </div>
   </div>

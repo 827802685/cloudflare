@@ -463,6 +463,13 @@ export const api = {
   updateDnsRecord: (zone: string, id: string, r: DnsRecordInput) => gwWrite<any>("PUT", "/v1/zones/" + encodeURIComponent(zone) + "/dns_records/" + encodeURIComponent(id), dnsBody(r)),
   deleteDnsRecord: (zone: string, id: string) => gwWrite<any>("DELETE", "/v1/zones/" + encodeURIComponent(zone) + "/dns_records/" + encodeURIComponent(id)),
   purgeUrls: (zone: string, files: string[]) => gwWrite<any>("POST", "/v1/zones/" + encodeURIComponent(zone) + "/purge_cache", { files }),
+  /** 版本切换 / 回滚 / 灰度：percentage 缺省 100（回滚/全量切换）；形状已在 rin-server 实测（docs/14 §7） */
+  switchWorkerVersion: (s: string, versionId: string, percentage?: number) =>
+    gwWrite<any>(
+      "POST",
+      "/v1/workers/" + encodeURIComponent(s) + "/deployments",
+      { version_id: versionId, ...(percentage !== undefined && percentage !== 100 ? { percentage } : {}) },
+    ),
 
   /* ---------- 数据库（D1 + KV） ---------- */
   d1Databases: () => gw<R<D1Database[]>>("/v1/d1"),

@@ -225,22 +225,28 @@ function routeREST(path: string, q: Record<string, string | number | undefined>,
   const n = (v: string | number | undefined) => (v === undefined ? 0 : Number(v));
   switch (s[0]) {
     case "workers":
+      // /v1/workers/usage（账户级）与 /v1/workers/subdomain（账户级前缀）在更早的分支接掉；
+      // 这里只剩脚本级：/v1/workers/{s}/{action}（3 段）与 /v1/workers/{s}/versions/{v}（4 段）。
+      // 段位曾经错位（把 s[2] 当脚本名、要求 4 段），导致详情页全部子接口 DIRECT_UNSUPPORTED 好几个版本。
       if (s.length === 2 && s[1] === "subdomain") return { path: `${A(account)}/workers/subdomain`, spec: {} };
-      if (s.length >= 3) {
-        const svc = enc(s[2]);
+      if (s.length >= 3 && s[1] !== "usage" && s[1] !== "subdomain") {
+        const svc = enc(s[1]);
         const base = `${A(account)}/workers/scripts/${svc}`;
-        if (s.length === 4 && s[3] === "versions") {
-          const per = Math.min(50, Math.max(1, n(q.per_page) || 25));
-          const page = Math.min(1000, Math.max(1, n(q.page) || 1));
-          return { path: `${base}/versions?per_page=${per}&page=${page}`, spec: { unwrap: "list" } };
+        const act = s[2];
+        if (s.length === 3) {
+          if (act === "versions") {
+            const per = Math.min(50, Math.max(1, n(q.per_page) || 25));
+            const page = Math.min(1000, Math.max(1, n(q.page) || 1));
+            return { path: `${base}/versions?per_page=${per}&page=${page}`, spec: { unwrap: "list" } };
+          }
+          if (act === "deployments") return { path: `${base}/deployments?environment=production&per_page=50`, spec: { unwrap: "list" } };
+          if (act === "settings") return { path: `${base}/settings`, spec: {} };
+          if (act === "script-settings") return { path: `${base}/script-settings`, spec: {} };
+          if (act === "subdomain") return { path: `${base}/subdomain`, spec: {} };
+          if (act === "secrets") return { path: `${base}/secrets`, spec: {} };
+          if (act === "crons") return { path: `${base}/schedules`, spec: {} };
         }
-        if (s.length === 5 && s[3] === "versions") return { path: `${base}/versions/${enc(s[4])}`, spec: {} };
-        if (s.length === 4 && s[3] === "deployments") return { path: `${base}/deployments?environment=production&per_page=50`, spec: { unwrap: "list" } };
-        if (s.length === 4 && s[3] === "settings") return { path: `${base}/settings`, spec: {} };
-        if (s.length === 4 && s[3] === "script-settings") return { path: `${base}/script-settings`, spec: {} };
-        if (s.length === 4 && s[3] === "subdomain") return { path: `${base}/subdomain`, spec: {} };
-        if (s.length === 4 && s[3] === "secrets") return { path: `${base}/secrets`, spec: {} };
-        if (s.length === 4 && s[3] === "crons") return { path: `${base}/schedules`, spec: {} };
+        if (s.length === 4 && act === "versions") return { path: `${base}/versions/${enc(s[3])}`, spec: {} };
       }
       return null;
     case "zones":
@@ -714,16 +720,50 @@ export async function probeTokenDirect(token: string): Promise<{ result: any[] }
 }
 
 /**
- * 写侧直连：DNS 增删改 + 按 URL 清缓存（与网关 WRITE_ROUTES 同一张白名单，一条不多）。
+ * 写侧直连：DNS 增删改 + 按 URL 清缓存 + 版本切换/回滚/灰度（与网关 WRITE_ROUTES 同一张白名单，一条不多）。
  * 校验在 api.ts 的 gwWrite() 里已经做过（validateDns / validatePurgeFiles），
  * 这里只负责按白名单发出去；写完由调用方 dropDirect 作废相关缓存。
  */
 export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<any> {
   const s = seg(path);
-  const zone = s[2];
-  if (s[0] !== "zones" || !/^[0-9a-f]{32}$/i.test(zone || "")) {
-    throw new DirectError("badQuery", 422, null, "直连写侧只支持 /v1/zones/{32位id}/... 这四条路由");
+  // ---- 版本切换 / 回滚 / 灰度：形状 2026-10-19 在 rin-server 实测敲定（docs/14 §7）----
+  // 直连没有网关挡着，网关 validateDeployBody 的那套校验在这里逐字复刻，一条都不能少。
+  if (method === "POST" && s[0] === "workers" && s[2] === "deployments") {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+    const allowed = ["version_id", "percentage", "annotations"];
+    const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+    const versionId = String(raw.version_id ?? "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(versionId)) bad(`version_id 得是 36 位 UUID（现在是 ${versionId || "空"}）`);
+    let percentage = 100;
+    if (raw.percentage !== undefined) {
+      percentage = Number(raw.percentage);
+      if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100) bad("percentage 得是 1–100 的整数");
+    }
+    let annotations: Record<string, string> | undefined;
+    if (raw.annotations !== undefined) {
+      if (typeof raw.annotations !== "object" || raw.annotations === null || Array.isArray(raw.annotations)) bad("annotations 必须是对象");
+      const entries = Object.entries(raw.annotations as Record<string, unknown>);
+      if (entries.length > 5) bad("annotations 最多 5 个键");
+      annotations = {};
+      for (const [k, v] of entries) {
+        if (typeof v !== "string" || v.length > 200) bad("annotations 的值必须是 ≤200 字符的字符串");
+        annotations[k] = v as string;
+      }
+    }
+    const svc = s[1];
+    if (!svc) bad("缺少脚本名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/deployments`, {
+      method: "POST",
+      body: { strategy: "percentage", versions: [{ version_id: versionId, percentage }], ...(annotations ? { annotations } : {}) },
+    }, false);
+    return r.data;
   }
+  if (s[0] !== "zones" || !/^[0-9a-f]{32}$/i.test((s[2] as string) || "")) {
+    throw new DirectError("badQuery", 422, null, "直连写侧只支持 /v1/zones/{32位id}/... 四条 DNS/缓存路由，以及 /v1/workers/{s}/deployments");
+  }
+  const zone = s[2] as string;
   if (method === "POST" && s[3] === "dns_records") {
     const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records`, { method: "POST", body }, false);
     return r.data;

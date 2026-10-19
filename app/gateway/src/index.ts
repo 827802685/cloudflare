@@ -28,6 +28,7 @@ import {
   dnsPayload,
   validateDnsBody,
   validatePurgeBody,
+  validateDeployBody,
   assertPurgeHostsInZone,
   noteCreatedRecord,
   canDeleteRecord,
@@ -604,6 +605,23 @@ app.post(
     const z = await writeZone(c);
     assertPurgeHostsInZone(files, z.name);
     const r = await writes.purge(cf(c), z.id, files);
+    return { result: r.data };
+  }),
+);
+
+// ---------- 版本切换 / 回滚 / 灰度（2026-10-19 实测接通，docs/14 §7） ----------
+/*
+ * 顺序与 DNS 写一致：① 请求体逐字段校验（version_id 形状/占比/annotations，不依赖 CF）
+ * → ② 目标版本存在性检查（GET versions/{id}，404 就是 422，一次写都不发）
+ * → ③ 才真的 POST deployments。切到正在跑的版本是合法的 no-op（CF 会记一条新部署），不拦。
+ */
+app.post(
+  "/v1/workers/:s/deployments",
+  route(async (c) => {
+    const s = param(c, "s");
+    const draft = validateDeployBody(await jsonBody(c));
+    await reads.workerVersion(cf(c), E(c), s, draft.version_id);
+    const r = await writes.workerDeploy(cf(c), E(c), s, draft.payload);
     return { result: r.data };
   }),
 );

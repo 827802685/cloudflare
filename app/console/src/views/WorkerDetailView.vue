@@ -293,24 +293,9 @@ const bindingKinds = computed(() => {
   return [...m.entries()].map(([k, n]) => `${k} ×${n}`);
 });
 
-/* ---- 待放行的写操作：只展示命令，绝不在这里执行 ---- */
-// 请求体形状来自 docs/02 §4.1（按 10210 报错语义 + 部署记录反推），**还没实测过**，
-// 所以这里明确标"待核实"，不要让用户以为照抄就能用。
-const rollbackCmd = computed(() => {
-  const vid = currentVersions.value[0]?.version_id;
-  if (!vid) return "";
-  const body = JSON.stringify(
-    { versions: [{ version_id: vid, percentage: 100 }], annotations: [{ type: "workers/message", value: "从手机回滚" }], strategy: "percentage" },
-    null,
-    2,
-  );
-  return [
-    `curl -X POST \\`,
-    `  "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT>/workers/scripts/${name.value}/deployments" \\`,
-    `  -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \\`,
-    `  -d '${body.replace(/\n\s*/g, " ")}'`,
-  ].join("\n");
-});
+/* ---- 版本切换 / 回滚：已接通（2026-10-19 在 rin-server 实测形状，docs/14 §7）----
+   入口在版本历史弹窗的版本详情里（「回滚 / 灰度到这一版」），走 gwWrite 真发：
+   直连模式即时生效；网关模式还需网关侧 WRITE_ENABLED 放行，关着会如实报 501。 */
 const showCmd = ref(false);
 </script>
 
@@ -497,14 +482,13 @@ const showCmd = ref(false);
     </div>
 
     <div class="card" id="c-switch">
-      <h3>版本切换（未开放）</h3>
-      <FoldNote label="为什么这里还按不动" hint="网关把写请求挡在 501">
-        网关第一版把所有写请求挡在 501。要做"切换/回滚/灰度"，需要你明确放行，并把这条路由逐项加白；
-        同时 docs/09 §B2 里的分流语义还没实测过。
-      </FoldNote>
-      <button class="ghost" @click="showCmd = !showCmd">{{ showCmd ? "收起命令" : "查看待放行的调用" }}</button>
-      <pre v-if="showCmd" style="white-space: pre-wrap; font-size: 11px; color: var(--muted); margin: 10px 0 0">{{ rollbackCmd }}</pre>
-      <div class="small muted" v-if="showCmd">注意：这个请求体是按 10210 报错语义反推的，还没真发过有效写请求（docs/09 §B2）。真要上线得先在测试 Worker 上验。</div>
+      <h3>版本切换 / 回滚</h3>
+      <div class="small muted">
+        已接通（2026-10-19 实测，docs/14 §7）：点「版本历史」→ 进某个版本的详情 →
+        「回滚 / 灰度到这一版」，滑杆选流量占比、确认后真发 <code>POST …/deployments</code>。
+        直连模式（APK）即时生效；网关模式还需网关侧 <code>WRITE_ENABLED</code> 放行，
+        关着会如实报 <code>501 writesDisabled</code>，不会假装成功。
+      </div>
     </div>
   </div>
 </template>
