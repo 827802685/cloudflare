@@ -572,11 +572,20 @@ async function pagedListDirect(ctx: DirectCtx, base: string, perPage: number, ma
 /**
  * Pages 的列表分页跟 REST 其它接口不是一套（网关 catalog.pagesList 的逐字移植）：
  * 实测 `per_page>10` 直接 400 `code 8000024 Invalid list options`，所以固定每页 10 条、
- * 逐页循环拿满（上限 10 页），在哪页断了就停 —— 不做这条循环，直连模式下项目/部署
- * 超过 10 条会静默截断，界面毫无提示。
+ * 逐页循环拿满（上限 10 页），在哪页断了就停。参数顺序也是 page 在前，与网关逐字一致
+ * （否则 tools/check-direct-parity.mjs 的 URL 断言会红）。
  */
-function pagesListDirect(ctx: DirectCtx, base: string, maxPages = 10): Promise<{ data: any[]; total?: number }> {
-  return pagedListDirect(ctx, base, 10, maxPages);
+async function pagesListDirect(ctx: DirectCtx, base: string, maxPages = 10): Promise<{ data: any[]; total?: number }> {
+  const out: any[] = [];
+  let total: number | undefined;
+  for (let page = 1; page <= maxPages; page++) {
+    const r = await rest<any[]>(ctx.token, `${base}?page=${page}&per_page=10`, { unwrap: "list" }, ctx.fresh);
+    const items = r.data || [];
+    out.push(...items);
+    if (typeof r.total === "number") total = r.total;
+    if (items.length < 10) break;
+  }
+  return { data: out, total };
 }
 
 /**
@@ -654,6 +663,11 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
       ? `${A(ctx.account)}/pages/projects/${enc(pagesHit[1])}/deployments`
       : `${A(ctx.account)}/pages/projects`;
     return { result: (await pagesListDirect(ctx, base)).data } as unknown as T;
+  }
+  // ZT 组织信息：result 是对象不是列表，不能走 unwrap（网关 catalog.ztOrganization 同口径）
+  if (path === "/v1/zt/organization") {
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/access/organizations`, {}, ctx.fresh);
+    return { result: r.data } as unknown as T;
   }
   // 其余列表端点：单页有硬上限（/accounts 默认 20、/zones 50、其余 100），全部逐页拿满，
   // 与网关 catalog.pagedList 同口径 —— 不然条数超限就静默截断
@@ -760,25 +774,28 @@ export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELE
     }, false);
     return r.data;
   }
-  if (s[0] !== "zones" || !/^[0-9a-f]{32}$/i.test((s[2] as string) || "")) {
+  // 段位（2026-10-19 修正，与 routeREST 同一处错位）：/v1/zones/{zone}/{action}[/id]
+  // → s[1]=zone、s[2]=动作、s[3]=record id。旧代码取 s[2] 当 zone、s[3] 当动作，
+  //   DNS 写四条在直连模式从上线起就没通过（tools/check-direct-parity.mjs 抓的第二个 off-by-one）。
+  const zone = s[1];
+  if (s[0] !== "zones" || !/^[0-9a-f]{32}$/i.test(zone)) {
     throw new DirectError("badQuery", 422, null, "直连写侧只支持 /v1/zones/{32位id}/... 四条 DNS/缓存路由，以及 /v1/workers/{s}/deployments");
   }
-  const zone = s[2] as string;
-  if (method === "POST" && s[3] === "dns_records") {
+  if (method === "POST" && s[2] === "dns_records") {
     const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records`, { method: "POST", body }, false);
     return r.data;
   }
-  if (method === "PUT" && s[3] === "dns_records" && s[4]) {
-    if (!/^[0-9a-f]{32}$/i.test(s[4])) throw new DirectError("badQuery", 422, null, "record id 得是 32 位十六进制");
-    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records/${enc(s[4])}`, { method: "PUT", body }, false);
+  if (method === "PUT" && s[2] === "dns_records" && s[3]) {
+    if (!/^[0-9a-f]{32}$/i.test(s[3])) throw new DirectError("badQuery", 422, null, "record id 得是 32 位十六进制");
+    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records/${enc(s[3])}`, { method: "PUT", body }, false);
     return r.data;
   }
-  if (method === "DELETE" && s[3] === "dns_records" && s[4]) {
-    if (!/^[0-9a-f]{32}$/i.test(s[4])) throw new DirectError("badQuery", 422, null, "record id 得是 32 位十六进制");
-    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records/${enc(s[4])}`, { method: "DELETE" }, false);
+  if (method === "DELETE" && s[2] === "dns_records" && s[3]) {
+    if (!/^[0-9a-f]{32}$/i.test(s[3])) throw new DirectError("badQuery", 422, null, "record id 得是 32 位十六进制");
+    const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/dns_records/${enc(s[3])}`, { method: "DELETE" }, false);
     return r.data;
   }
-  if (method === "POST" && s[3] === "purge_cache") {
+  if (method === "POST" && s[2] === "purge_cache") {
     const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/purge_cache`, { method: "POST", body }, false);
     return r.data;
   }

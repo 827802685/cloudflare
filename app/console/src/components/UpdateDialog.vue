@@ -1,29 +1,24 @@
 <script setup lang="ts">
 /**
- * 冷启动静默检查到新版本后的弹窗。下载给两条路：加速（构建时注入的域名前缀）
- * 和直连（GitHub 原始地址）—— 加速域名偶尔抽风，双通道二选一，别把人堵死在一条路上。
+ * 冷启动静默检查到新版本后的弹窗。下载入口就一个按钮：打开 Releases 页面让人挑包 ——
+ * 不再直链 APK 文件（文件名带 sha，直链拼错一次就是 404，0.1.7/0.1.8 各栽过一次）。
  * 「稍后」只关本次，下次冷启动有更新还会再弹（不记忆忽略，版本提示不该被永久静音）。
  */
 import type { UpdateInfo } from "../lib/version";
 
-const props = defineProps<{ info: UpdateInfo }>();
+defineProps<{ info: UpdateInfo }>();
 defineEmits<{ close: [] }>();
-const sizeText = props.info.size ? `${Math.round((props.info.size / 1024 / 1024) * 10) / 10} MB` : "";
 </script>
 
 <template>
   <div class="upd-mask" role="dialog" aria-modal="true" aria-label="发现新版本">
     <div class="upd">
       <h3>发现新版本 v{{ info.version }}</h3>
-      <p class="small muted">
-        当前版本较旧{{ sizeText ? ` · 新包 ${sizeText}` : "" }}。下载后覆盖安装即可（同签名密钥，数据不丢）。
-      </p>
+      <p class="small muted">当前版本较旧。打开下载页挑最新的 APK 装上即可（同签名密钥覆盖安装，数据不丢）。</p>
       <div class="btns">
-        <a v-if="info.apkUrl" class="primary" :href="info.apkUrl" target="_blank" rel="noopener">加速下载</a>
-        <a v-if="info.apkUrlDirect" class="ghost" :href="info.apkUrlDirect" target="_blank" rel="noopener">直连下载</a>
+        <a class="primary" :href="info.downloadUrl" target="_blank" rel="noopener">打开下载页</a>
         <a class="ghost" :href="info.notesUrl" target="_blank" rel="noopener">发行说明</a>
       </div>
-      <p v-if="!info.apkUrl" class="small muted">资产清单没读到（atom 兜底），从发行说明页手动下载。</p>
       <button class="later" @click="$emit('close')">稍后再说</button>
     </div>
   </div>

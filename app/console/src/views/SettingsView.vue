@@ -278,7 +278,6 @@ async function doCheckUpdate() {
     checking.value = false;
   }
 }
-const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((update.value.size / 1024 / 1024) * 10) / 10} MB）` : ""));
 </script>
 
 <template>
@@ -384,12 +383,11 @@ const apkSizeText = computed(() => (update.value?.size ? `（${Math.round((updat
       </div>
       <div class="row" style="margin-top: 10px">
         <button class="primary" :disabled="checking" @click="doCheckUpdate">{{ checking ? "检查中…" : "检查更新" }}</button>
-        <a v-if="update?.apkUrl" class="chip" :href="update.apkUrl" target="_blank" rel="noopener">加速下载 v{{ update.version }}</a>
-        <a v-if="update?.apkUrlDirect && update.apkUrlDirect !== update.apkUrl" class="chip" :href="update.apkUrlDirect" target="_blank" rel="noopener">直连下载</a>
-        <a v-if="update" class="chip" :href="update.notesUrl" target="_blank" rel="noopener">{{ update.apkUrl ? "发行说明" : "打开发行页下载" }}</a>
+        <a v-if="update" class="chip" :href="update.downloadUrl" target="_blank" rel="noopener">打开下载页</a>
+        <a v-if="update" class="chip" :href="update.notesUrl" target="_blank" rel="noopener">发行说明</a>
       </div>
       <div v-if="update" class="small" style="margin-top: 8px">
-        发现新版本 <b>v{{ update.version }}</b>{{ apkSizeText }}<template v-if="!update.apkUrl"> —— 资产清单没读到（atom 兜底），从发行页手动下载</template>。
+        发现新版本 <b>v{{ update.version }}</b> —— 下载页已带加速前缀，进去挑最新的 APK 装上即可。
       </div>
       <div v-else-if="checked" class="small muted" style="margin-top: 8px">已是最新版本。</div>
       <div v-if="updateErr" class="small" style="color: var(--bad); margin-top: 8px">{{ updateErr }}</div>

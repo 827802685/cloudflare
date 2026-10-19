@@ -34,14 +34,10 @@ function viaAccel(ghUrl: string): string {
 export interface UpdateInfo {
   /** 远端最新版本号（不含 v 前缀） */
   version: string;
-  /** 发行说明页（Releases） */
+  /** 发行说明页（该版本的 tag 页） */
   notesUrl: string;
-  /** APK 下载（配置了加速域名就带前缀）；atom 兜底拿不到资产清单时为 null */
-  apkUrl: string | null;
-  /** APK 直连下载（原始 GitHub 地址）；加速域名抽风时的备选，与 apkUrl 二选一 */
-  apkUrlDirect: string | null;
-  /** APK 字节数（拿不到就不显示） */
-  size?: number;
+  /** 下载入口：就开 Releases 页面让人挑包，不再直链 APK 文件（文件名含 sha，拼错一次就是 404） */
+  downloadUrl: string;
 }
 
 /** 只认 x.y.z 三段数字；比较不了（空/乱码）一律当"没有新版本"，宁可漏报不误报 */
@@ -89,19 +85,10 @@ function fromApi(text: string): UpdateInfo | null {
     const j = JSON.parse(text);
     const remote = String(j?.tag_name || "").replace(/^v/i, "");
     if (!remote) return null;
-    const assets: any[] = Array.isArray(j?.assets) ? j.assets : [];
-    const apk = assets.find((a) => String(a?.name || "").toLowerCase().endsWith(".apk"));
-    const dl = apk?.browser_download_url ? String(apk.browser_download_url) : null;
-    // 发行说明页与下载链接都按加速域名的路径形式给（<accel>/<owner>/<repo>/...）
-    const notes = ACCEL_BASE
-      ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`)
-      : String(j?.html_url || `https://github.com/${REPO}/releases`);
     return {
       version: remote,
-      notesUrl: notes,
-      apkUrl: dl && ACCEL_BASE ? viaAccel(dl) : dl,
-      apkUrlDirect: dl,
-      size: typeof apk?.size === "number" ? apk.size : undefined,
+      notesUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`,
+      downloadUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/`) : `https://github.com/${REPO}/releases/`,
     };
   } catch {
     return null;
@@ -113,9 +100,11 @@ function fromAtom(text: string): UpdateInfo | null {
   const m = /releases\/tag\/(v[0-9][0-9.]*)/i.exec(text);
   if (!m) return null;
   const remote = m[1].replace(/^v/i, "");
-  // atom 没有资产清单，拼不出 APK 文件名 —— 下载入口退化为发行说明页
-  const notes = ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`;
-  return { version: remote, notesUrl: notes, apkUrl: null, apkUrlDirect: null };
+  return {
+    version: remote,
+    notesUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`,
+    downloadUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/`) : `https://github.com/${REPO}/releases/`,
+  };
 }
 
 /** 查最新 Release；有新版本返回 UpdateInfo，没有返回 null；三级数据源全空才抛错 */
