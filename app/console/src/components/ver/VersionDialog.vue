@@ -161,23 +161,31 @@ const showRollback = ref(false);
 const canary = ref(100);
 const rolling = ref(false);
 const rbErr = ref<GwError | null>(null);
+const rbTarget = computed(() => String(detail.value?.id ?? openId.value ?? ""));
+const rbOther = computed(() => run.value.ids.find((i) => i !== rbTarget.value) || "");
 const rollbackBody = computed(() => {
-  const id = String(detail.value?.id ?? openId.value ?? "");
+  const id = rbTarget.value;
   const p = Math.min(100, Math.max(1, Number(canary.value) || 100));
-  const versions: any[] = [{ version_id: id, percentage: p }];
-  const other = run.value.ids.find((i) => i !== id);
-  if (p < 100 && other) versions.push({ version_id: other, percentage: 100 - p });
-  return { versions, strategy: "percentage", annotations: { "workers/message": "从手机发起" } };
+  // 与两层校验同契约（0.2.1 修正）：strategy 由后端构造，客户端不传。
+  // 全量 = 单版本形状 {version_id}；灰度 = 双版本数组、占比合计 100（50/50 已实测）。
+  if (p >= 100 || !rbOther.value) return { version_id: id, annotations: { "workers/message": "从手机发起" } };
+  return {
+    versions: [
+      { version_id: id, percentage: p },
+      { version_id: rbOther.value, percentage: 100 - p },
+    ],
+    annotations: { "workers/message": "从手机发起" },
+  };
 });
 async function confirmRollback() {
-  const id = String(detail.value?.id ?? openId.value ?? "");
+  const id = rbTarget.value;
   if (!id || rolling.value) return;
   rolling.value = true;
   rbErr.value = null;
   try {
     await gwWrite("POST", `/v1/workers/${encodeURIComponent(props.name)}/deployments`, rollbackBody.value);
     log.value.unshift({
-      text: `已切换：#${dash(detail.value?.number)} ${shortId(id, 8)} → ${canary.value}%（200 确认）`,
+      text: `已切换：#${dash(detail.value?.number)} ${shortId(id, 8)} → ${canary.value >= 100 || !rbOther.value ? "100" : canary.value}%（200 确认）`,
       ok: true,
     });
     dropMem("/v1/workers/" + encodeURIComponent(props.name));
@@ -312,15 +320,18 @@ function strategyText(v: unknown): string {
               <template v-else>
                 <button class="ghost" type="button" @click="showRollback = !showRollback">{{ showRollback ? "收起" : "合成请求预览" }}</button>
                 <div v-if="showRollback" class="rb">
-                  <label class="lbl">切给这一版的流量：{{ canary }}%
-                    <input v-model.number="canary" class="field" type="range" min="1" max="100" />
-                  </label>
+                  <template v-if="rbOther">
+                    <label class="lbl">切给这一版的流量：{{ canary }}%
+                      <input v-model.number="canary" class="field" type="range" min="1" max="100" />
+                    </label>
+                    <p class="small muted">
+                      {{ canary >= 100 ? "回滚 = 把 100% 流量切到这一版" : `灰度：剩下的 ${100 - canary}% 自动给当前承接流量的版本 ${shortId(rbOther, 8)}` }}
+                      （两种形状都已在 rin-server 实测，docs/14 §7）。
+                    </p>
+                  </template>
+                  <p v-else class="small muted">这个脚本只有一个版本，没有可分流的对象 —— 只能整版切换（100%）。想灰度请先部署出新版本。</p>
                   <div class="mono cmd">POST /v1/workers/{{ encodeURIComponent(name) }}/deployments</div>
                   <pre class="mono body">{{ JSON.stringify(rollbackBody, null, 2) }}</pre>
-                  <p class="small muted" v-if="canary < 100">
-                    灰度：剩下的 {{ 100 - canary }}% 自动留给当前承接流量的版本（两版本合计 100，形状已在 rin-server 实测，docs/14 §7）。
-                  </p>
-                  <p class="small muted" v-else>回滚 = 把 100% 流量切到这一版（形状已在 rin-server 实测，docs/14 §7）。</p>
                   <div class="row" style="margin-top: 10px">
                     <button class="primary" type="button" :disabled="rolling" @click="confirmRollback">{{ rolling ? "发送中…" : "确认切换" }}</button>
                     <button class="ghost" type="button" @click="showRollback = false">先不切</button>

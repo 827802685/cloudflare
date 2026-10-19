@@ -192,10 +192,30 @@ expectOne("GET overview（GraphQL + SQL 合成）", `/analytics/sql`, { method: 
 
 // ---- 写侧 ----
 await runWrite("POST", "/v1/workers/hello/deployments", { version_id: "a531f564-3080-4c07-84a2-98cb7b9ea0e5", percentage: 100 });
-expectOne("POST 版本切换（形状实测 2026-10-19）", `/accounts/${ACC}/workers/scripts/hello/deployments`, {
+expectOne("POST 版本切换·单版本形状（回滚/全量）", `/accounts/${ACC}/workers/scripts/hello/deployments`, {
   method: "POST",
   bodyIncludes: `"strategy":"percentage"`,
 });
+
+// 灰度形状：UI 滑杆 <100 时发双版本数组（50/50 已实测），客户端不传 strategy
+await runWrite("POST", "/v1/workers/hello/deployments", {
+  versions: [
+    { version_id: "a531f564-3080-4c07-84a2-98cb7b9ea0e5", percentage: 30 },
+    { version_id: "5e310b27-4a39-4324-8f49-681f36184a30", percentage: 70 },
+  ],
+  annotations: { "workers/message": "从手机发起" },
+});
+expectOne("POST 版本切换·灰度形状（双版本合计 100）", `/accounts/${ACC}/workers/scripts/hello/deployments`, {
+  method: "POST",
+  bodyIncludes: `"percentage":30`,
+});
+
+// 旧 UI 预览形状（versions+strategy 混传）必须被拒 —— 0.2.0 的回滚失败就是它
+let rejected = false;
+try {
+  await runWrite("POST", "/v1/workers/hello/deployments", { versions: [{ version_id: "a531f564-3080-4c07-84a2-98cb7b9ea0e5", percentage: 100 }], strategy: "percentage" });
+} catch { rejected = true; }
+if (!rejected) { console.error("❌ 旧形状 {versions,strategy} 应被拒绝（单版本数组+strategy 属于未实测形状）"); fail = true; } else { pass++; console.log("✅ 旧形状 {versions,strategy} 被拒绝"); }
 
 await runWrite("POST", "/v1/zones/" + ZONE + "/dns_records", { name: "x", type: "A", content: "1.2.3.4", ttl: 1, proxied: false });
 expectOne("POST dns_records", `/zones/${ZONE}/dns_records`, { method: "POST" });

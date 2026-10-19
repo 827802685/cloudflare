@@ -620,7 +620,9 @@ app.post(
   route(async (c) => {
     const s = param(c, "s");
     const draft = validateDeployBody(await jsonBody(c));
-    await reads.workerVersion(cf(c), E(c), s, draft.version_id);
+    // 版本存在性：GET versions/{id}，404 就是 422，一次写都不发（灰度形状两个都要验）
+    const ids = draft.versions ? draft.versions.map((v) => v.version_id) : [draft.version_id as string];
+    for (const vid of ids) await reads.workerVersion(cf(c), E(c), s, vid);
     const r = await writes.workerDeploy(cf(c), E(c), s, draft.payload);
     return { result: r.data };
   }),

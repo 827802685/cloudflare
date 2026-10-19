@@ -740,38 +740,58 @@ export async function probeTokenDirect(token: string): Promise<{ result: any[] }
  */
 export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<any> {
   const s = seg(path);
-  // ---- 版本切换 / 回滚 / 灰度：形状 2026-10-19 在 rin-server 实测敲定（docs/14 §7）----
+  // ---- 版本切换 / 回滚 / 灰度：两种形状都经 rin-server 实测（docs/14 §7）----
   // 直连没有网关挡着，网关 validateDeployBody 的那套校验在这里逐字复刻，一条都不能少。
+  // ① 单版本（回滚/全量）：{version_id, percentage?(=100), annotations?}
+  // ② 灰度分流：{versions: [两项，占比合计 100], annotations?}
   if (method === "POST" && s[0] === "workers" && s[2] === "deployments") {
     const raw = (body ?? {}) as Record<string, unknown>;
     const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
-    const allowed = ["version_id", "percentage", "annotations"];
-    const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
-    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
-    const versionId = String(raw.version_id ?? "").trim();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(versionId)) bad(`version_id 得是 36 位 UUID（现在是 ${versionId || "空"}）`);
-    let percentage = 100;
-    if (raw.percentage !== undefined) {
-      percentage = Number(raw.percentage);
-      if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100) bad("percentage 得是 1–100 的整数");
-    }
-    let annotations: Record<string, string> | undefined;
-    if (raw.annotations !== undefined) {
+    const cleanAnn = (): Record<string, string> | undefined => {
+      if (raw.annotations === undefined) return undefined;
       if (typeof raw.annotations !== "object" || raw.annotations === null || Array.isArray(raw.annotations)) bad("annotations 必须是对象");
       const entries = Object.entries(raw.annotations as Record<string, unknown>);
       if (entries.length > 5) bad("annotations 最多 5 个键");
-      annotations = {};
+      const out: Record<string, string> = {};
       for (const [k, v] of entries) {
         if (typeof v !== "string" || v.length > 200) bad("annotations 的值必须是 ≤200 字符的字符串");
-        annotations[k] = v as string;
+        out[k] = v as string;
       }
+      return out;
+    };
+    const annotations = cleanAnn();
+    let payload: Record<string, unknown>;
+    if (raw.versions !== undefined) {
+      const unknown = Object.keys(raw).filter((k) => !["versions", "annotations"].includes(k));
+      if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。灰度请只传 versions / annotations`);
+      if (!Array.isArray(raw.versions) || raw.versions.length !== 2) bad("versions 必须恰好两项（灰度分流是两个版本合计 100；单项回滚请用 version_id 字段）");
+      const versions = (raw.versions as unknown[]).map((v, i) => {
+        if (typeof v !== "object" || v === null) bad(`versions[${i}] 必须是对象`);
+        const o = v as Record<string, unknown>;
+        const vid = String(o.version_id ?? "").trim();
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vid)) bad(`versions[${i}].version_id 得是 36 位 UUID`);
+        const p = Number(o.percentage);
+        if (!Number.isInteger(p) || p < 0 || p > 100) bad(`versions[${i}].percentage 得是 0–100 的整数`);
+        return { version_id: vid, percentage: p };
+      });
+      if (versions[0].percentage + versions[1].percentage !== 100) bad("两个版本的占比必须合计 100");
+      payload = { strategy: "percentage", versions, ...(annotations ? { annotations } : {}) };
+    } else {
+      const allowed = ["version_id", "percentage", "annotations"];
+      const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+      if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}（灰度请传 versions 数组）`);
+      const versionId = String(raw.version_id ?? "").trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(versionId)) bad(`version_id 得是 36 位 UUID（现在是 ${versionId || "空"}）`);
+      let percentage = 100;
+      if (raw.percentage !== undefined) {
+        percentage = Number(raw.percentage);
+        if (percentage !== 100) bad("单版本占比只允许 100；想灰度请传 versions 数组（两个版本合计 100）");
+      }
+      payload = { strategy: "percentage", versions: [{ version_id: versionId, percentage }], ...(annotations ? { annotations } : {}) };
     }
     const svc = s[1];
     if (!svc) bad("缺少脚本名");
-    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/deployments`, {
-      method: "POST",
-      body: { strategy: "percentage", versions: [{ version_id: versionId, percentage }], ...(annotations ? { annotations } : {}) },
-    }, false);
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/deployments`, { method: "POST", body: payload }, false);
     return r.data;
   }
   // 段位（2026-10-19 修正，与 routeREST 同一处错位）：/v1/zones/{zone}/{action}[/id]

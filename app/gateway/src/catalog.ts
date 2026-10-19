@@ -336,23 +336,61 @@ export function assertPurgeHostsInZone(files: string[], zoneName: string): void 
 }
 
 /**
- * 版本切换 / 回滚 / 灰度的请求体校验。形状来自 2026-10-19 的 rin-server 实测（上面 writes.workerDeploy）：
- * 客户端只发 `{version_id, percentage?, annotations?}`，strategy 与 versions[] 由这里构造 ——
- * strategy 永远是 percentage，versions 数组形状 CF 才认。
+ * 版本切换 / 回滚 / 灰度的请求体校验。两种形状都来自 2026-10-19 的 rin-server 实测（writes.workerDeploy）：
+ * ① 单版本（回滚/全量切换）：`{version_id, percentage?, annotations?}` —— percentage 只允许 100，
+ *    单版本占比 <100 的语义没实测过，不猜；
+ * ② 灰度分流：`{versions: [{version_id, percentage}, {version_id, percentage}], annotations?}` ——
+ *    恰好两个版本、占比合计 100（50/50 已实测）。strategy 与上游体由这里构造，客户端不传。
  */
 const VERSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function cleanDeployAnnotations(raw: unknown): Record<string, string> | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) bad("annotations 必须是对象");
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > 5) bad("annotations 最多 5 个键");
+  const out: Record<string, string> = {};
+  for (const [k, v] of entries) {
+    if (typeof k !== "string" || k.length > 64) bad("annotations 的键过长");
+    if (typeof v !== "string" || v.length > 200) bad("annotations 的值必须是 ≤200 字符的字符串");
+    out[k] = v;
+  }
+  return out;
+}
+
 export interface DeployDraft {
-  version_id: string;
-  percentage: number;
+  version_id?: string;
+  percentage?: number;
+  versions?: Array<{ version_id: string; percentage: number }>;
   annotations?: Record<string, string>;
   payload: Record<string, unknown>;
 }
 
 export function validateDeployBody(raw: Record<string, unknown>): DeployDraft {
+  const annotations = cleanDeployAnnotations(raw.annotations);
+
+  if (raw.versions !== undefined) {
+    // ② 灰度形状：versions 数组，恰好 2 项、合计 100
+    const unknown = Object.keys(raw).filter((k) => !["versions", "annotations"].includes(k));
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。灰度请只传 versions / annotations`);
+    if (!Array.isArray(raw.versions) || raw.versions.length !== 2) bad("versions 必须恰好两项（灰度分流是两个版本合计 100；单项回滚请用 version_id 字段）");
+    const versions = (raw.versions as unknown[]).map((v, i) => {
+      if (typeof v !== "object" || v === null) bad(`versions[${i}] 必须是对象`);
+      const o = v as Record<string, unknown>;
+      const vid = textField(o.version_id, `versions[${i}].version_id`).trim();
+      if (!VERSION_ID_RE.test(vid)) bad(`versions[${i}].version_id 得是 36 位 UUID（现在是 ${vid || "空"}）`);
+      const p = numberField(o.percentage, `versions[${i}].percentage`);
+      if (!Number.isInteger(p) || p < 0 || p > 100) bad(`versions[${i}].percentage 得是 0–100 的整数`);
+      return { version_id: vid, percentage: p };
+    });
+    if (versions[0].percentage + versions[1].percentage !== 100) bad(`两个版本的占比必须合计 100（现在是 ${versions[0].percentage} + ${versions[1].percentage}）`);
+    return { versions, annotations, payload: { strategy: "percentage", versions, ...(annotations ? { annotations } : {}) } };
+  }
+
+  // ① 单版本形状：version_id 必填，percentage 缺省 100、只允许 100
   const allowed = ["version_id", "percentage", "annotations"];
   const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
-  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}（灰度请传 versions 数组）`);
 
   const version_id = textField(raw.version_id, "version_id").trim();
   if (!VERSION_ID_RE.test(version_id)) bad(`version_id 得是 36 位 UUID（从版本列表里复制，现在是 ${version_id || "空"}）`);
@@ -360,31 +398,14 @@ export function validateDeployBody(raw: Record<string, unknown>): DeployDraft {
   let percentage = 100;
   if (raw.percentage !== undefined) {
     percentage = numberField(raw.percentage, "percentage");
-    if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100) bad("percentage 得是 1–100 的整数");
-  }
-
-  let annotations: Record<string, string> | undefined;
-  if (raw.annotations !== undefined) {
-    if (typeof raw.annotations !== "object" || raw.annotations === null || Array.isArray(raw.annotations)) bad("annotations 必须是对象");
-    const entries = Object.entries(raw.annotations as Record<string, unknown>);
-    if (entries.length > 5) bad("annotations 最多 5 个键");
-    annotations = {};
-    for (const [k, v] of entries) {
-      if (typeof k !== "string" || k.length > 64) bad("annotations 的键过长");
-      if (typeof v !== "string" || v.length > 200) bad("annotations 的值必须是 ≤200 字符的字符串");
-      annotations[k] = v;
-    }
+    if (percentage !== 100) bad("单版本占比只允许 100；想灰度请传 versions 数组（两个版本合计 100）");
   }
 
   return {
     version_id,
     percentage,
     annotations,
-    payload: {
-      strategy: "percentage",
-      versions: [{ version_id, percentage }],
-      ...(annotations ? { annotations } : {}),
-    },
+    payload: { strategy: "percentage", versions: [{ version_id, percentage }], ...(annotations ? { annotations } : {}) },
   };
 }
 
