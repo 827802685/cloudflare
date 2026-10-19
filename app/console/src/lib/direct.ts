@@ -223,21 +223,8 @@ function seg(path: string): string[] {
 function routeREST(path: string, q: Record<string, string | number | undefined>, account: string): Hit {
   const s = seg(path);
   const n = (v: string | number | undefined) => (v === undefined ? 0 : Number(v));
-  const per50 = "?per_page=50";
   switch (s[0]) {
-    case "accounts":
-      return { path: "/accounts", spec: {} };
-    case "account":
-      return { path: "/accounts", spec: {} };
-    case "subscriptions":
-      return { path: `${A(account)}/subscriptions`, spec: {} };
-    case "zones":
-      if (s.length === 1) return { path: `/zones${per50}`, spec: {} };
-      if (s.length === 3 && s[2] === "dns_records") return { path: `/zones/${enc(s[1])}/dns_records?per_page=100`, spec: { unwrap: "list" } };
-      if (s.length === 3 && s[2] === "routes") return { path: `/zones/${enc(s[1])}/workers/routes?per_page=100`, spec: { unwrap: "list" } };
-      return null;
     case "workers":
-      if (s.length === 1) return { path: `${A(account)}/workers/scripts?per_page=100`, spec: {} };
       if (s.length === 2 && s[1] === "subdomain") return { path: `${A(account)}/workers/subdomain`, spec: {} };
       if (s.length >= 3) {
         const svc = enc(s[2]);
@@ -256,18 +243,10 @@ function routeREST(path: string, q: Record<string, string | number | undefined>,
         if (s.length === 4 && s[3] === "crons") return { path: `${base}/schedules`, spec: {} };
       }
       return null;
-    case "domains":
-      return { path: `${A(account)}/workers/domains?per_page=100`, spec: { unwrap: "list" } };
-    case "pages":
-      // Pages 列表分页走 pagesListDirect（多页循环），不在 routeREST 里单页取（见 gwDirect 的 pages 分支）
-      return null;
-    case "d1":
-      if (s.length === 1) return { path: `${A(account)}/d1/database?per_page=100`, spec: { unwrap: "list" } };
-      if (s.length === 2) return { path: `${A(account)}/d1/database/${enc(s[1])}`, spec: {} };
-      if (s.length === 3 && s[2] === "query") return null; // 走 POST，见 routeWrite/queryD1
+    case "zones":
+      if (s.length === 3 && s[2] === "routes") return { path: `/zones/${enc(s[1])}/workers/routes?per_page=100`, spec: { unwrap: "list" } };
       return null;
     case "kv":
-      if (s.length === 1) return { path: `${A(account)}/storage/kv/namespaces?per_page=100`, spec: { unwrap: "list" } };
       if (s.length === 3 && s[2] === "keys") {
         // CF 要求 limit ≥ 10（实测 10028），这里夹紧
         const qs = new URLSearchParams({ limit: String(Math.min(1000, Math.max(10, n(q.limit) || 100))) });
@@ -275,13 +254,9 @@ function routeREST(path: string, q: Record<string, string | number | undefined>,
         return { path: `${A(account)}/storage/kv/namespaces/${enc(s[1])}/keys?${qs.toString()}`, spec: { unwrap: "list" } };
       }
       return null;
-    case "r2":
-      return { path: `${A(account)}/r2/bucket?per_page=100`, spec: { unwrap: "list" } };
-    case "zt":
-      if (s.length === 2 && s[1] === "organization") return { path: `${A(account)}/access/organizations`, spec: {} };
-      if (s.length === 2 && s[1] === "apps") return { path: `${A(account)}/access/apps?per_page=100`, spec: { unwrap: "list" } };
-      if (s.length === 2 && s[1] === "groups") return { path: `${A(account)}/access/groups?per_page=100`, spec: { unwrap: "list" } };
-      if (s.length === 2 && s[1] === "policies") return { path: `${A(account)}/access/policies?per_page=100`, spec: { unwrap: "list" } };
+    case "d1":
+      if (s.length === 2) return { path: `${A(account)}/d1/database/${enc(s[1])}`, spec: {} };
+      if (s.length === 3 && s[2] === "query") return null; // 走 POST，见 routeWrite/queryD1
       return null;
     default:
       return null;
@@ -571,22 +546,31 @@ export async function wafDirect(ctx: DirectCtx, zone: string) {
 /* ---------- 账号 / 订阅 / zones（网关同款的字段处理） ---------- */
 
 /**
+ * 通用逐页拉取（网关 catalog.pagedList 的逐字移植）：CF 的列表端点都有每页上限
+ * （/accounts 默认 20、/zones 50、dns_records 100…），单页取法在条数超限时**静默截断**。
+ * 按每页上限逐页拿满（在哪页断就停），total 照 result_info 透传。
+ */
+async function pagedListDirect(ctx: DirectCtx, base: string, perPage: number, maxPages = 10): Promise<{ data: any[]; total?: number }> {
+  const out: any[] = [];
+  let total: number | undefined;
+  for (let page = 1; page <= maxPages; page++) {
+    const r = await rest<any[]>(ctx.token, `${base}${base.includes("?") ? "&" : "?"}per_page=${perPage}&page=${page}`, { unwrap: "list" }, ctx.fresh);
+    const items = r.data || [];
+    out.push(...items);
+    if (typeof r.total === "number") total = r.total;
+    if (items.length < perPage) break;
+  }
+  return { data: out, total };
+}
+
+/**
  * Pages 的列表分页跟 REST 其它接口不是一套（网关 catalog.pagesList 的逐字移植）：
  * 实测 `per_page>10` 直接 400 `code 8000024 Invalid list options`，所以固定每页 10 条、
  * 逐页循环拿满（上限 10 页），在哪页断了就停 —— 不做这条循环，直连模式下项目/部署
  * 超过 10 条会静默截断，界面毫无提示。
  */
-async function pagesListDirect(ctx: DirectCtx, base: string, maxPages = 10): Promise<{ data: any[]; total?: number }> {
-  const out: any[] = [];
-  let total: number | undefined;
-  for (let page = 1; page <= maxPages; page++) {
-    const r = await rest<any[]>(ctx.token, `${base}?page=${page}&per_page=10`, { unwrap: "list" }, ctx.fresh);
-    const items = r.data || [];
-    out.push(...items);
-    if (typeof r.total === "number") total = r.total;
-    if (items.length < 10) break;
-  }
-  return { data: out, total };
+function pagesListDirect(ctx: DirectCtx, base: string, maxPages = 10): Promise<{ data: any[]; total?: number }> {
+  return pagedListDirect(ctx, base, 10, maxPages);
 }
 
 /**
@@ -596,7 +580,7 @@ async function pagesListDirect(ctx: DirectCtx, base: string, maxPages = 10): Pro
  *   applied   —— 那个选择是否还在令牌可见集合里
  */
 export async function accountsDirect(ctx: DirectCtx, requested?: string) {
-  const r = await rest<any[]>(ctx.token, "/accounts", {}, ctx.fresh);
+  const r = await pagedListDirect(ctx, "/accounts", 50);
   const list = Array.isArray(r.data) ? r.data : [];
   const req = (requested || "").trim();
   return {
@@ -616,7 +600,7 @@ export async function subscriptionsDirect(ctx: DirectCtx) {
 
 /** Zone 列表按当前账号过滤：CF 每条都带 account.id，缺失的保留（"没返回"≠"不属于"） */
 export async function zonesDirect(ctx: DirectCtx) {
-  const r = await rest<any[]>(ctx.token, "/zones?per_page=50", {}, ctx.fresh);
+  const r = await pagedListDirect(ctx, "/zones", 50);
   const all = Array.isArray(r.data) ? r.data : [];
   return { result: all.filter((z: any) => !z?.account?.id || String(z.account.id) === ctx.account) };
 }
@@ -664,6 +648,24 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
       ? `${A(ctx.account)}/pages/projects/${enc(pagesHit[1])}/deployments`
       : `${A(ctx.account)}/pages/projects`;
     return { result: (await pagesListDirect(ctx, base)).data } as unknown as T;
+  }
+  // 其余列表端点：单页有硬上限（/accounts 默认 20、/zones 50、其余 100），全部逐页拿满，
+  // 与网关 catalog.pagedList 同口径 —— 不然条数超限就静默截断
+  const LIST_ROUTES: Array<{ re: RegExp; base: (m: RegExpMatchArray) => string; per: number; pages?: number }> = [
+    { re: /^\/v1\/account$/, base: () => "/accounts", per: 50 },
+    { re: /^\/v1\/zones\/([0-9a-f]{32})\/dns_records$/i, base: (m) => `/zones/${enc(m[1])}/dns_records`, per: 100, pages: 50 },
+    { re: /^\/v1\/workers$/, base: () => `${A(ctx.account)}/workers/scripts`, per: 100 },
+    { re: /^\/v1\/domains$/, base: () => `${A(ctx.account)}/workers/domains`, per: 100 },
+    { re: /^\/v1\/d1$/, base: () => `${A(ctx.account)}/d1/database`, per: 100 },
+    { re: /^\/v1\/kv$/, base: () => `${A(ctx.account)}/storage/kv/namespaces`, per: 100 },
+    { re: /^\/v1\/r2$/, base: () => `${A(ctx.account)}/r2/bucket`, per: 100 },
+    { re: /^\/v1\/zt\/apps$/, base: () => `${A(ctx.account)}/access/apps`, per: 100 },
+    { re: /^\/v1\/zt\/groups$/, base: () => `${A(ctx.account)}/access/groups`, per: 100 },
+    { re: /^\/v1\/zt\/policies$/, base: () => `${A(ctx.account)}/access/policies`, per: 100 },
+  ];
+  for (const lr of LIST_ROUTES) {
+    const m = purePath.match(lr.re);
+    if (m) return { result: (await pagedListDirect(ctx, lr.base(m), lr.per, lr.pages ?? 10)).data } as unknown as T;
   }
 
   const direct = routeREST(path, query, ctx.account);

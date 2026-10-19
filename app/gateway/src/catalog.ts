@@ -53,7 +53,8 @@ const accountsCache = new Map<string, { at: number; ids: string[] }>();
 export async function visibleAccountIds(cf: CfClient, token: string): Promise<string[]> {
   const hit = accountsCache.get(token);
   if (hit && Date.now() - hit.at < 300_000) return hit.ids;
-  const r = await cf.rest<any>("/accounts");
+  // 逐页拿满：/accounts 默认每页 20，超过 20 个账号时单页取法会让合法 id 被闸门误拒（422）
+  const r = await pagedList(cf, `/accounts`, 50);
   const ids = ((r.data as any[]) || []).map((a) => String(a?.id || "")).filter(Boolean);
   accountsCache.set(token, { at: Date.now(), ids });
   return ids;
@@ -80,7 +81,8 @@ const zonesCache = new Map<string, { at: number; zones: VisibleZone[] }>();
 export async function visibleZones(cf: CfClient, token: string): Promise<VisibleZone[]> {
   const hit = zonesCache.get(token);
   if (hit && Date.now() - hit.at < 300_000) return hit.zones;
-  const r = await cf.rest<any>("/zones?per_page=50");
+  // 逐页拿满（/zones 每页 50）：写闸门必须看到完整的可见集合，不然超页的 zone 会被误 422
+  const r = await pagedList(cf, `/zones`, 50);
   const zones = ((r.data as any[]) || [])
     .map((z) => ({ id: String(z?.id || ""), name: String(z?.name || "").toLowerCase(), accountId: String(z?.account?.id || "") }))
     .filter((z) => z.id && z.name);
@@ -326,6 +328,24 @@ export function assertPurgeHostsInZone(files: string[], zoneName: string): void 
 }
 
 /**
+ * 通用逐页拉取：CF 的列表端点都有每页上限（/accounts 默认 20、/zones 50、dns_records 100…），
+ * 单页取法在条数超限时**静默截断**，界面上毫无提示。这里按每页上限逐页拿满（在哪页断就停），
+ * total 照 result_info 透传。Pages 那条有自己的怪癖（per_page>10 直接 400），仍走 pagesList。
+ */
+async function pagedList<T = any>(cf: CfClient, base: string, perPage: number, maxPages = 10): Promise<{ data: any[]; total?: number }> {
+  const out: any[] = [];
+  let total: number | undefined;
+  for (let page = 1; page <= maxPages; page++) {
+    const r = await cf.rest<any[]>(`${base}${base.includes("?") ? "&" : "?"}per_page=${perPage}&page=${page}`, { unwrap: "list" });
+    const items = r.data || [];
+    out.push(...items);
+    if (typeof r.total === "number") total = r.total;
+    if (items.length < perPage) break;
+  }
+  return { data: out, total };
+}
+
+/**
  * Pages 的列表分页跟 REST 其它接口不是一套：
  * 实测 `per_page>10` 直接 400 `code 8000024 Invalid list options`（per_page=10/8/6 通过，12/15/20/24 拒绝），
  * 而且账号里 0 个项目，deployments 的真实信封无法确认，所以统一走 unwrap:"list"（cf.listify 兼容数组与嵌套）。
@@ -344,11 +364,11 @@ async function pagesList(cf: CfClient, base: string, maxPages = 10): Promise<{ d
   return { data: out, total };
 }
 
-/** 只读端点表：name → 具体 CF 调用 */
+/** 只读端点表：name → 具体 CF 调用。所有列表端点都走 pagedList 逐页拿满，单页超限不再静默截断 */
 export const reads = {
-  account: (cf: CfClient, env: Env) => cf.rest(`/accounts`),
-  zones: (cf: CfClient, env: Env) => cf.rest(`/zones?per_page=50`),
-  workerScripts: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/workers/scripts?per_page=100`),
+  account: (cf: CfClient, env: Env) => pagedList(cf, `/accounts`, 50),
+  zones: (cf: CfClient, env: Env) => pagedList(cf, `/zones`, 50),
+  workerScripts: (cf: CfClient, env: Env) => pagedList(cf, `/accounts/${ACC(env)}/workers/scripts`, 100),
   workerSettings: (cf: CfClient, env: Env, s: string) => cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/settings`),
   /**
    * 与 `settings` 是**两条不同路由、字段几乎不重叠**（docs/08 §6.1 实测）：
@@ -407,11 +427,11 @@ export const reads = {
     cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/deployments?environment=production&per_page=50`, { unwrap: "list" }),
   workerSecrets: (cf: CfClient, env: Env, s: string) => cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/secrets`),
   workerCrons: (cf: CfClient, env: Env, s: string) => cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/schedules`),
-  workerDomains: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/workers/domains?per_page=100`, { unwrap: "list" }),
+  workerDomains: (cf: CfClient, env: Env) => pagedList(cf, `/accounts/${ACC(env)}/workers/domains`, 100),
   pagesProjects: (cf: CfClient, env: Env) => pagesList(cf, `/accounts/${ACC(env)}/pages/projects`),
   pagesDeployments: (cf: CfClient, env: Env, p: string) =>
     pagesList(cf, `/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments`),
-  dnsRecords: (cf: CfClient, env: Env, zone: string) => cf.rest(`/zones/${encodeURIComponent(zone)}/dns_records?per_page=100`, { unwrap: "list" }),
+  dnsRecords: (cf: CfClient, env: Env, zone: string) => pagedList(cf, `/zones/${encodeURIComponent(zone)}/dns_records`, 100, 50),
   zoneRoutes: (cf: CfClient, env: Env, zone: string) => cf.rest(`/zones/${encodeURIComponent(zone)}/workers/routes?per_page=100`, { unwrap: "list" }),
   /** D1 数据库列表：fields 来自 docs/evidence/responses.sample.json「d1/database」实测 */
   d1Databases: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/d1/database?per_page=100`, { unwrap: "list" }),
@@ -421,7 +441,7 @@ export const reads = {
   d1Query: (cf: CfClient, env: Env, id: string, sql: string) =>
     cf.rest(`/accounts/${ACC(env)}/d1/database/${encodeURIComponent(id)}/query`, { method: "POST", body: { sql }, unwrap: "list" }),
   /** KV 命名空间列表 */
-  kvNamespaces: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/storage/kv/namespaces?per_page=100`, { unwrap: "list" }),
+  kvNamespaces: (cf: CfClient, env: Env) => pagedList(cf, `/accounts/${ACC(env)}/storage/kv/namespaces`, 100),
   /** KV 命名空间内 keys 列表，默认 limit=100，支持 ?cursor 翻页。CF 要求 limit ≥ 10（实测 10028），这里统一夹紧 */
   kvKeys: (cf: CfClient, env: Env, nsId: string, limit = 100, cursor?: string) => {
     const q = new URLSearchParams({ limit: String(Math.min(1000, Math.max(10, Math.floor(limit)))) });
@@ -435,7 +455,7 @@ export const reads = {
    * CF 换了报错口径）。路由照注册：开通后不改代码就出数，没开通时界面拿到的是 CF 原样报错，
    * 绝不能因为 404 就显示"0 个桶"（`09` §E16）。
    */
-  r2Buckets: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/r2/bucket?per_page=100`, { unwrap: "list" }),
+  r2Buckets: (cf: CfClient, env: Env) => pagedList(cf, `/accounts/${ACC(env)}/r2/bucket`, 100),
   /**
    * Zero Trust（Access）组织信息。2026-10-11 实测这个账号**是有 ZT 组织的**：
    * `GET /accounts/{a}/access/organizations` → 200，result 是**对象**（auth_domain / name /
@@ -445,9 +465,9 @@ export const reads = {
    */
   ztOrganization: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/access/organizations`),
   /** Access 应用 / 用户组 / 访问策略：三条都是 200 + 空数组（账号确实一条没配，不是读不到） */
-  ztApps: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/access/apps?per_page=100`, { unwrap: "list" }),
-  ztGroups: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/access/groups?per_page=100`, { unwrap: "list" }),
-  ztPolicies: (cf: CfClient, env: Env) => cf.rest(`/accounts/${ACC(env)}/access/policies?per_page=100`, { unwrap: "list" }),
+  ztApps: (cf: CfClient, env: Env) => pagedList(cf, `/accounts/${ACC(env)}/access/apps`, 100),
+  ztGroups: (cf: CfClient, env: Env) => pagedList(cf, `/accounts/${ACC(env)}/access/groups`, 100),
+  ztPolicies: (cf: CfClient, env: Env) => pagedList(cf, `/accounts/${ACC(env)}/access/policies`, 100),
 };
 
 /* ---------- Rulesets / WAF：只读，三种失败形状必须分开 ---------- */
