@@ -647,7 +647,9 @@ app.get(
     const limit = Math.min(1000, Math.max(10, Number(c.req.query("limit") || 100) || 100));
     const cursor = c.req.query("cursor") || undefined;
     const r = await reads.kvKeys(cf(c), E(c), param(c, "ns"), limit, cursor);
-    return r.data;
+    // 信封必须是 { result, cursor }：KvPanel 读 r.result 渲染、r.cursor 判断"加载下一页"。
+    // 以前这里返回裸数组，网关模式下 Key 列表整个是空的（直连层反而是对的）。
+    return { result: r.data, ...(r.cursor ? { cursor: r.cursor } : {}) };
   }),
 );
 /**

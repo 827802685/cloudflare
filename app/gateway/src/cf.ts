@@ -104,7 +104,7 @@ function okOf(status: number) { return status >= 200 && status < 300; }
  *   result: { data: [...] }                → Pages deployments 未验（账号里 0 个项目），按同名规则兜住
  * "list" 就是把这几种在网关侧一次性拉平，前端只面对数组。
  */
-export function listify(result: any, envelope?: any): { items: any[]; total?: number } {
+export function listify(result: any, envelope?: any): { items: any[]; total?: number; cursor?: string } {
   if (Array.isArray(result)) return { items: result };
   const nested = result?.items ?? result?.deployments ?? result?.schedules ?? result?.data;
   const items = Array.isArray(nested) ? nested : [];
@@ -113,7 +113,9 @@ export function listify(result: any, envelope?: any): { items: any[]; total?: nu
   // 于是 versions/domains 这些列表的"共 N 条"会静默变成 undefined（实测 rin-server versions 顶层 result_info.total_count=148）。
   const ri = envelope?.result_info ?? result?.result_info;
   const total = ri?.total_count ?? result?.total_count;
-  return { items, total: typeof total === "number" ? total : undefined };
+  // 游标翻页同层：KV keys 的 result_info 里是 cursor 而不是 total_count，丢了它 App 的"加载下一页"就是死的
+  const cursor = ri?.cursor ?? result?.cursor;
+  return { items, total: typeof total === "number" ? total : undefined, cursor: typeof cursor === "string" && cursor ? cursor : undefined };
 }
 
 export interface CallSpec {
@@ -189,7 +191,7 @@ export class CfClient {
   }
 
   /** REST：{ success, result } 或 { success, result:{items} } */
-  async rest<T = any>(path: string, spec: CallSpec = {}): Promise<{ data: T; total?: number }> {
+  async rest<T = any>(path: string, spec: CallSpec = {}): Promise<{ data: T; total?: number; cursor?: string }> {
     const { res, json, text } = await this.send(path, spec);
     if (!json) {
       if (!res.ok) throw new CfError(classify(res.status, null, text), res.status, null, text.slice(0, 200));
@@ -202,8 +204,8 @@ export class CfClient {
       throw new CfError(classify(res.status, code, message), res.status, code, message || `HTTP ${res.status}`, json);
     }
     if (spec.unwrap === "items" || spec.unwrap === "list") {
-      const { items, total } = listify(json.result, json);
-      return { data: (spec.unwrap === "items" ? (json.result?.items ?? json.result) : items) as T, total };
+      const { items, total, cursor } = listify(json.result, json);
+      return { data: (spec.unwrap === "items" ? (json.result?.items ?? json.result) : items) as T, total, cursor };
     }
     return { data: json.result as T };
   }

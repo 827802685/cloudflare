@@ -48,14 +48,16 @@ export function classify(http: number, code: string | null, message: string): Er
 }
 
 /** CF 的"列表"有 4 种信封（result / result.items / result.deployments / result.data），这里一次性拉平 */
-export function listify(result: any, envelope?: any): { items: any[]; total?: number } {
+export function listify(result: any, envelope?: any): { items: any[]; total?: number; cursor?: string } {
   if (Array.isArray(result)) return { items: result };
   const nested = result?.items ?? result?.deployments ?? result?.schedules ?? result?.data;
   const items = Array.isArray(nested) ? nested : [];
   // 分页总数有两种位置：多数在顶层 result_info.total_count，少数在 result.total_count
   const ri = envelope?.result_info ?? result?.result_info;
   const total = ri?.total_count ?? result?.total_count;
-  return { items, total: typeof total === "number" ? total : undefined };
+  // 游标同层：KV keys 的 result_info 里是 cursor 不是 total_count，丢了它"加载下一页"就是死的（与网关 cf.ts 逐字同口径）
+  const cursor = ri?.cursor ?? result?.cursor;
+  return { items, total: typeof total === "number" ? total : undefined, cursor: typeof cursor === "string" && cursor ? cursor : undefined };
 }
 
 /* ============================================================================
@@ -162,7 +164,7 @@ async function send(token: string, path: string, spec: Spec, fresh: boolean): Pr
 }
 
 /** REST：`{ success, result }` 或 `{ success, result:{items} }` */
-async function rest<T = any>(token: string, path: string, spec: Spec = {}, fresh = false): Promise<{ data: T; total?: number }> {
+async function rest<T = any>(token: string, path: string, spec: Spec = {}, fresh = false): Promise<{ data: T; total?: number; cursor?: string }> {
   const { status, text, json } = await send(token, path, spec, fresh);
   if (!json) {
     if (status < 200 || status >= 300) throw new DirectError(classify(status, null, text), status, null, text.slice(0, 200));
@@ -175,8 +177,8 @@ async function rest<T = any>(token: string, path: string, spec: Spec = {}, fresh
     throw new DirectError(classify(status, code, message), status, code, message || `HTTP ${status}`);
   }
   if (spec.unwrap === "items" || spec.unwrap === "list") {
-    const { items, total } = listify(json.result, json);
-    return { data: (spec.unwrap === "items" ? (json.result?.items ?? json.result) : items) as T, total };
+    const { items, total, cursor } = listify(json.result, json);
+    return { data: (spec.unwrap === "items" ? (json.result?.items ?? json.result) : items) as T, total, cursor };
   }
   return { data: json.result as T };
 }
@@ -257,8 +259,7 @@ function routeREST(path: string, q: Record<string, string | number | undefined>,
     case "domains":
       return { path: `${A(account)}/workers/domains?per_page=100`, spec: { unwrap: "list" } };
     case "pages":
-      if (s.length === 1) return { path: `${A(account)}/pages/projects?page=1&per_page=10`, spec: { unwrap: "list" } };
-      if (s.length === 3 && s[2] === "deployments") return { path: `${A(account)}/pages/projects/${enc(s[1])}/deployments?page=1&per_page=10`, spec: { unwrap: "list" } };
+      // Pages 列表分页走 pagesListDirect（多页循环），不在 routeREST 里单页取（见 gwDirect 的 pages 分支）
       return null;
     case "d1":
       if (s.length === 1) return { path: `${A(account)}/d1/database?per_page=100`, spec: { unwrap: "list" } };
@@ -570,6 +571,25 @@ export async function wafDirect(ctx: DirectCtx, zone: string) {
 /* ---------- 账号 / 订阅 / zones（网关同款的字段处理） ---------- */
 
 /**
+ * Pages 的列表分页跟 REST 其它接口不是一套（网关 catalog.pagesList 的逐字移植）：
+ * 实测 `per_page>10` 直接 400 `code 8000024 Invalid list options`，所以固定每页 10 条、
+ * 逐页循环拿满（上限 10 页），在哪页断了就停 —— 不做这条循环，直连模式下项目/部署
+ * 超过 10 条会静默截断，界面毫无提示。
+ */
+async function pagesListDirect(ctx: DirectCtx, base: string, maxPages = 10): Promise<{ data: any[]; total?: number }> {
+  const out: any[] = [];
+  let total: number | undefined;
+  for (let page = 1; page <= maxPages; page++) {
+    const r = await rest<any[]>(ctx.token, `${base}?page=${page}&per_page=10`, { unwrap: "list" }, ctx.fresh);
+    const items = r.data || [];
+    out.push(...items);
+    if (typeof r.total === "number") total = r.total;
+    if (items.length < 10) break;
+  }
+  return { data: out, total };
+}
+
+/**
  * 账号列表 + 三个状态字段的直连版合成：
  *   active    —— 直连模式没有"网关默认账号"，就是当前选中的账号（没选 = null）
  *   requested —— 设备存储里选的（原样回显）
@@ -637,6 +657,14 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
   if (wafHit) return wafDirect(ctx, wafHit[1]) as unknown as T;
   const d1q = /^\/v1\/d1\/([^/]+)\/query$/i.exec(purePath);
   if (d1q) return d1QueryDirect(d1q[1], new URLSearchParams(qsPart || "").get("sql") || "", ctx) as unknown as T;
+  // Pages 两条走多页循环（per_page 硬限 10），与网关 catalog.pagesList 同口径
+  const pagesHit = /^\/v1\/pages(?:\/([^/]+)\/deployments)?$/i.exec(purePath);
+  if (pagesHit) {
+    const base = pagesHit[1]
+      ? `${A(ctx.account)}/pages/projects/${enc(pagesHit[1])}/deployments`
+      : `${A(ctx.account)}/pages/projects`;
+    return { result: (await pagesListDirect(ctx, base)).data } as unknown as T;
+  }
 
   const direct = routeREST(path, query, ctx.account);
   if (!direct) {
@@ -648,9 +676,14 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
     );
   }
   const r = await rest<any>(ctx.token, direct.path, direct.spec, ctx.fresh);
-  // 网关对 /v1/workers/versions 这类会额外包一层 { result, total }，这里保持同形
-  if (direct.spec.unwrap === "list" && r.total !== undefined) {
-    return { result: r.data, total: r.total } as unknown as T;
+  // 网关对 unwrap 列表额外包 { result, total, cursor? }，这里保持同形：
+  // total 是 versions/domains 的"共 N 条"，cursor 是 KV keys 的"加载下一页"凭据
+  if (direct.spec.unwrap === "list") {
+    return {
+      result: r.data,
+      ...(r.total !== undefined ? { total: r.total } : {}),
+      ...(r.cursor ? { cursor: r.cursor } : {}),
+    } as unknown as T;
   }
   return { result: r.data } as unknown as T;
 }
