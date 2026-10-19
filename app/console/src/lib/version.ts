@@ -22,13 +22,20 @@ export const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__
 /** 加速域名（尾斜杠已剥）；空串 = 没配置，全部直连 GitHub */
 export const ACCEL_BASE = String(import.meta.env.VITE_GH_ACCEL_BASE ?? "").trim().replace(/\/+$/, "");
 
+/** 全部候选（GH_ACCEL_BASE 支持逗号分隔，按序回退；0.2.2 起）：首选给下载页按钮，检查更新逐个试 */
+export const ACCEL_BASES = String(import.meta.env.VITE_GH_ACCEL_BASE ?? "")
+  .split(",")
+  .map((s) => s.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
 /**
- * 加速域名的路径形式（实测 0.1.7 撞出来的）：<accel>/<owner>/<repo>/...，
- * **不带** https://github.com 前缀 —— 按 gh-proxy 的老拼法 <accel>/https://github.com/... 反而 404。
+ * gh-proxy 的**完整 URL 前缀**拼法（0.2.2 换公共加速站时定的）：<accel>/https://github.com/...。
+ * 公共实例（ghproxy.link 等）只认这个形式；自建 gh-proxy Worker 在入口把两种形式都归一化，同样兼容。
+ * 0.1.7 用的裸路径拼法 <accel>/<owner>/<repo>/... 只有自建认，公共站全 404，弃。
  * 传进来的必须是 github.com 的 URL（API 域名没有 owner/repo 结构，加速不了，也不需要）。
  */
-function viaAccel(ghUrl: string): string {
-  return `${ACCEL_BASE}/${ghUrl.replace(/^https:\/\/github\.com\//i, "")}`;
+function viaAccel(base: string, ghUrl: string): string {
+  return `${base}/${ghUrl}`;
 }
 
 export interface UpdateInfo {
@@ -87,42 +94,42 @@ function fromApi(text: string): UpdateInfo | null {
     if (!remote) return null;
     return {
       version: remote,
-      notesUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`,
-      downloadUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/`) : `https://github.com/${REPO}/releases/`,
+      notesUrl: ACCEL_BASE ? viaAccel(ACCEL_BASE, `https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`,
+      downloadUrl: ACCEL_BASE ? viaAccel(ACCEL_BASE, `https://github.com/${REPO}/releases/`) : `https://github.com/${REPO}/releases/`,
     };
   } catch {
     return null;
   }
 }
 
-function fromAtom(text: string): UpdateInfo | null {
+function fromAtom(text: string, base: string): UpdateInfo | null {
   // releases.atom 的 entry 链接形如 …/releases/tag/v0.1.4；第一条就是最新 Release
   const m = /releases\/tag\/(v[0-9][0-9.]*)/i.exec(text);
   if (!m) return null;
   const remote = m[1].replace(/^v/i, "");
   return {
     version: remote,
-    notesUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`,
-    downloadUrl: ACCEL_BASE ? viaAccel(`https://github.com/${REPO}/releases/`) : `https://github.com/${REPO}/releases/`,
+    notesUrl: base ? viaAccel(base, `https://github.com/${REPO}/releases/tag/v${remote}`) : `https://github.com/${REPO}/releases/tag/v${remote}`,
+    downloadUrl: base ? viaAccel(base, `https://github.com/${REPO}/releases/`) : `https://github.com/${REPO}/releases/`,
   };
 }
 
-/** 查最新 Release；有新版本返回 UpdateInfo，没有返回 null；三级数据源全空才抛错 */
+/** 查最新 Release；有新版本返回 UpdateInfo，没有返回 null；全部数据源都空才抛错 */
 export async function checkUpdate(): Promise<UpdateInfo | null> {
   const api = `https://api.github.com/repos/${REPO}/releases/latest`;
   const atom = `https://github.com/${REPO}/releases.atom`;
-  // API 域名没有 owner/repo 结构、加速域名代理不了（实测 404），所以 API 只走直连；
-  // atom 是 github.com 路径，走加速 → 直连两级
-  const routes: Array<{ url: string; kind: "api" | "atom" }> = [
-    { url: api, kind: "api" },
+  // API 域名没有 owner/repo 结构、加速域名代理不了（实测 404），所以 API 只走直连（链接仍走首选加速）；
+  // atom 是 github.com 路径：首选加速 → 备用加速逐个试 → 直连
+  const routes: Array<{ url: string; kind: "api" | "atom"; base: string }> = [
+    { url: api, kind: "api", base: ACCEL_BASE },
   ];
-  if (ACCEL_BASE) routes.push({ url: viaAccel(atom), kind: "atom" });
-  routes.push({ url: atom, kind: "atom" });
+  for (const b of ACCEL_BASES) routes.push({ url: viaAccel(b, atom), kind: "atom", base: b });
+  routes.push({ url: atom, kind: "atom", base: "" });
 
   for (const r of routes) {
     const text = await fetchText(r.url);
     if (!text) continue;
-    const info = r.kind === "api" ? fromApi(text) : fromAtom(text);
+    const info = r.kind === "api" ? fromApi(text) : fromAtom(text, r.base);
     if (info) return isNewer(info.version, APP_VERSION) ? info : null;
   }
   throw new Error("检查更新失败：加速域名和 GitHub 直连都不通（或没读到版本号）");

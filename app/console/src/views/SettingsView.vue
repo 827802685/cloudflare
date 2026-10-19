@@ -9,7 +9,7 @@ import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPT
 import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
 import { dt } from "../lib/fmt";
 import { useGatewayStore } from "../stores/gateway";
-import { APP_VERSION, ACCEL_BASE, checkUpdate, type UpdateInfo } from "../lib/version";
+import { APP_VERSION, ACCEL_BASES, checkUpdate, type UpdateInfo } from "../lib/version";
 
 const gw = useGatewayStore();
 /**
@@ -379,7 +379,7 @@ async function doCheckUpdate() {
     <div class="card">
       <h3>版本</h3>
       <div class="small muted">
-        当前版本：<code>{{ APP_VERSION }}</code> · 检查更新{{ ACCEL_BASE ? `走加速域名 ${ACCEL_BASE}` : "直连 GitHub" }}。
+        当前版本：<code>{{ APP_VERSION }}</code> · 检查更新{{ ACCEL_BASES.length ? `走加速域名 ${ACCEL_BASES.join(" → ")}${ACCEL_BASES.length > 1 ? "（坏了自动换下一个）" : ""}` : "直连 GitHub" }}。
       </div>
       <div class="row" style="margin-top: 10px">
         <button class="primary" :disabled="checking" @click="doCheckUpdate">{{ checking ? "检查中…" : "检查更新" }}</button>
