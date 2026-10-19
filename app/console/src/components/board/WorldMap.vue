@@ -133,27 +133,74 @@ function onDblClick(e: MouseEvent) {
 }
 let drag: { sx: number; sy: number; ox: number; oy: number; a: number; d: number } | null = null;
 let suppressClick = false;
+/* ---------- 多点触控：单指平移、双指捏合缩放（手机上双指是主入口） ---------- */
+/** 当前按着的所有指针；≥2 个进入捏合，1 个走单指平移 */
+const pointers = new Map<number, { x: number; y: number }>();
+/** 捏合上一帧的状态：指间距（缩放比）、指间中点（锚点 + 平移量）、屏幕→viewBox 比例 */
+let pinch: { d: number; mx: number; my: number; a: number; dd: number } | null = null;
+
 function onDown(e: PointerEvent) {
-  if (e.button !== 0) return;
-  const at = clientToView(e.clientX, e.clientY);
-  if (!at) return;
-  drag = { sx: e.clientX, sy: e.clientY, ox: view.value.x, oy: view.value.y, a: at.a, d: at.d };
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
   suppressClick = false;
+  if (pointers.size === 1) {
+    const at = clientToView(e.clientX, e.clientY);
+    if (!at) return;
+    drag = { sx: e.clientX, sy: e.clientY, ox: view.value.x, oy: view.value.y, a: at.a, d: at.d };
+    dragging.value = true;
+    smooth.value = false;
+  } else {
+    // 第二根手指落下：单指平移立刻让位给捏合
+    drag = null;
+    startPinch();
+  }
+}
+function startPinch() {
+  const [p1, p2] = [...pointers.values()].slice(0, 2);
+  const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+  const at = clientToView(mx, my);
+  if (!at) return;
+  pinch = { d: Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1, mx, my, a: at.a, dd: at.d };
   dragging.value = true;
   smooth.value = false;
-  (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
 }
 function onMove(e: PointerEvent) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size >= 2) {
+    const [p1, p2] = [...pointers.values()].slice(0, 2);
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    if (pinch) {
+      suppressClick = true; // 捏合不是"点了这个国家"
+      // ① 以指间中点为锚缩放（中点下的数据点不动）；② 再把中点位移补成平移 —— 两步合起来 = 内容跟着手指走
+      zoomAt(mx, my, dist / pinch.d, false);
+      const v = view.value;
+      view.value = { k: v.k, ...clampXY(v.k, v.x + (mx - pinch.mx) / pinch.a, v.y + (my - pinch.my) / pinch.dd) };
+    }
+    pinch = { d: dist, mx, my, a: pinch?.a ?? 1, dd: pinch?.dd ?? 1 };
+    return;
+  }
   if (!drag) return;
   const dx = (e.clientX - drag.sx) / drag.a, dy = (e.clientY - drag.sy) / drag.d;
   if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) suppressClick = true;
   view.value = { k: view.value.k, ...clampXY(view.value.k, drag.ox + dx, drag.oy + dy) };
 }
 function onUp(e: PointerEvent) {
-  if (!drag) return;
-  drag = null;
-  dragging.value = false;
+  pointers.delete(e.pointerId);
   (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+  if (pointers.size === 1) {
+    // 捏合中抬走一根手指：无缝切回单指平移，以剩下那根为新的锚
+    pinch = null;
+    const [p] = [...pointers.values()];
+    const at = clientToView(p.x, p.y);
+    drag = at ? { sx: p.x, sy: p.y, ox: view.value.x, oy: view.value.y, a: at.a, d: at.d } : null;
+  } else if (pointers.size === 0) {
+    drag = null;
+    pinch = null;
+    dragging.value = false;
+  }
 }
 function pick(id: string) {
   if (suppressClick) return; // 刚拖过一下，别把平移误判成"点了这个国家"
@@ -243,7 +290,7 @@ const unmatched = computed(() => {
       </div>
 
       <div class="sel small" v-if="selLine">{{ selLine }}</div>
-      <div class="small muted cap" v-else>点一个国家看它的数 · 滚轮/双击缩放、按住拖动平移（地图是采样面，跟下面那条排行条同源）</div>
+      <div class="small muted cap" v-else>点一个国家看它的数 · 双指捏合/滚轮缩放、单指按住拖动平移（地图是采样面，跟下面那条排行条同源）</div>
       <div class="small muted cap" v-if="unmatched.length">地图上没有这些码，只在条里出现：{{ unmatched.join("、") }}</div>
     </template>
   </div>
