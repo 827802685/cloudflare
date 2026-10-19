@@ -23,3 +23,21 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
     /* 注册失败不影响使用，最坏情况就是没有离线缓存 */
   });
 }
+
+/* ---------- 安卓返回键：不直接退出应用（2026-10-19） ----------
+ * 默认行为是「能回退就回退，到根就 activity 退出」，到首页手一滑就整个退出去，太脆。
+ * 接 @capacitor/app 的 backButton：能回退走路由历史；到根改成最小化到后台
+ * （minimizeApp 不杀进程，回来还是原状态），真正想关就从最近任务里划掉。
+ * 只在 APK 原生壳里注册；网页 / PWA 没有实体返回键，不引入这段。
+ */
+if (import.meta.env.PROD) {
+  import("@capacitor/core").then(({ Capacitor }) => {
+    if (!Capacitor.isNativePlatform()) return;
+    import("@capacitor/app").then(({ App: CapApp }) => {
+      CapApp.addListener("backButton", ({ canGoBack }) => {
+        if (canGoBack) window.history.back();
+        else CapApp.minimizeApp().catch(() => CapApp.exitApp());
+      });
+    }).catch(() => { /* 插件没装上就退回系统默认行为 */ });
+  }).catch(() => { /* 同上 */ });
+}

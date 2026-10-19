@@ -44,6 +44,11 @@ on:
         required: false
         default: true
         type: boolean
+      version_override:
+        description: "手动指定版本号（例 0.2.0）。默认按最新 tag +1 只进 patch —— 想跳 minor 就在这里写"
+        required: false
+        default: ""
+        type: string
 
 # 打进 APK 的静态壳连的是**你部署好的网关**。所以这条流水线真正可用之前，docs/11 §4.1/§4.2
 # （部署 Worker + 绑自己的域名）必须先做完；否则装出来的是一个连不上任何东西的空壳：
@@ -115,15 +120,21 @@ jobs:
         working-directory: app/console
         run: npm ci
 
-      # 版本号与 apk job 同口径（最新 tag），打进包里给「检查更新」当本机版本比对用
+      # 版本号与 apk job 同口径：优先手动指定（version_override），否则取最新 tag
       - name: 算当前版本号
         id: ver
         shell: bash
         run: |
-          latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
-          base="${latest#v}"; base="${base%%-*}"
-          echo "version=${base:-0.1.0}" >> "$GITHUB_OUTPUT"
-          echo "本机版本 = ${base:-0.1.0}（最新 tag：${latest:-无}）"
+          override="${{ github.event.inputs.version_override }}"
+          if [ -n "$override" ]; then
+            echo "version=${override}" >> "$GITHUB_OUTPUT"
+            echo "本机版本 = ${override}（手动指定）"
+          else
+            latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+            base="${latest#v}"; base="${base%%-*}"
+            echo "version=${base:-0.1.0}" >> "$GITHUB_OUTPUT"
+            echo "本机版本 = ${base:-0.1.0}（最新 tag：${latest:-无}）"
+          fi
 
       - name: 出静态包
         working-directory: app/console
@@ -168,27 +179,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 算这个包的版本号（在上一个 tag 上自动 +1）
+      - name: 算这个包的版本号（手动指定优先，否则最新 tag +1）
         id: ver
         shell: bash
         run: |
           set -euo pipefail
-          # 最新语义化 tag（v0.1.1）；历史的 v0.1.0-<sha> 也认 —— 先剥掉 -sha 后缀再解析
-          latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
-          if [ -z "$latest" ]; then
-            base="0.1.0"
+          override="${{ github.event.inputs.version_override }}"
+          if [ -n "$override" ]; then
+            base="$override"
           else
-            base="${latest#v}"; base="${base%%-*}"
+            # 最新语义化 tag（v0.1.1）；历史的 v0.1.0-<sha> 也认 —— 先剥掉 -sha 后缀再解析
+            latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+            if [ -z "$latest" ]; then
+              base="0.1.0"
+            else
+              base="${latest#v}"; base="${base%%-*}"
+            fi
+            IFS=. read -r MA MI PA <<<"$base"
+            MA="${MA:-0}"; MI="${MI:-0}"; PA="${PA:-0}"
+            base="${MA}.${MI}.$((PA + 1))"
           fi
           IFS=. read -r MA MI PA <<<"$base"
           MA="${MA:-0}"; MI="${MI:-0}"; PA="${PA:-0}"
-          NEXT="${MA}.${MI}.$((PA + 1))"
           # Android 的 versionCode 必须是单调递增的整数，否则系统拒绝当成"升级"装上去。
-          # 编码规则：major*10000 + minor*100 + patch。
+          # 编码规则：major*10000 + minor*100 + patch + 1（0.2.0 = 201，单调大于 0.1.x 的 1xx）。
           CODE=$((MA * 10000 + MI * 100 + PA + 1))
-          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "version=$base" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          echo "上一个 tag = ${latest:-（无）} → 本次 $NEXT（versionCode $CODE）"
+          echo "本次版本 = $base（versionCode $CODE）"
 
       - uses: actions/setup-node@v4
         with:
