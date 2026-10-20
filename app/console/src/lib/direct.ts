@@ -108,6 +108,8 @@ interface Spec {
   body?: unknown;
   /** 请求体是裸 SQL 文本（analytics_engine/sql 那一族），不是 JSON */
   rawText?: boolean;
+  /** multipart/form-data 请求体（PATCH settings 更新 bindings 必须，JSON 415）。content-type 交给 fetch 生成 */
+  formData?: FormData;
   unwrap?: "result" | "items" | "list" | "text";
 }
 
@@ -119,17 +121,15 @@ async function send(token: string, path: string, spec: Spec, fresh: boolean): Pr
 
   const run = async (): Promise<Entry> => {
     directCalls++; // 记账：只有真的出网才 +1（缓存命中与 inflight 合并不走这里）
-    const headers: Record<string, string> = {
-      authorization: "Bearer " + token,
-      "content-type": spec.rawText ? "text/plain;charset=UTF-8" : "application/json",
-    };
+    const headers: Record<string, string> = { authorization: "Bearer " + token };
+    if (!spec.formData) headers["content-type"] = spec.rawText ? "text/plain;charset=UTF-8" : "application/json";
     let res: Response;
     try {
       res = await withTimeout(
         fetch(DIRECT_BASE + path, {
           method,
           headers,
-          body: spec.body === undefined ? undefined : spec.rawText ? String(spec.body) : JSON.stringify(spec.body),
+          body: spec.formData ?? (spec.body === undefined ? undefined : spec.rawText ? String(spec.body) : JSON.stringify(spec.body)),
         }),
         30_000,
       );
@@ -794,6 +794,98 @@ export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELE
     const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/deployments`, { method: "POST", body: payload }, false);
     return r.data;
   }
+  // ---- cron 保存（PUT 全量覆盖）。上游实测：PUT …/schedules 要**裸数组 [{cron}]**，
+  // 包一层 {schedules:…} 直接 400 "Could not parse request body"；客户端体与网关一致，这里拆包。
+  if (method === "PUT" && s[0] === "workers" && s[2] === "crons") {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+    const unknown = Object.keys(raw).filter((k) => k !== "schedules");
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。cron 保存只接受 {schedules:[{cron}]}`);
+    const schedulesIn = raw.schedules as unknown[];
+    if (!Array.isArray(schedulesIn)) bad("schedules 必须是数组（空数组 = 清空全部定时触发）");
+    if (schedulesIn.length > 50) bad(`一次最多 50 条 cron（现在是 ${schedulesIn.length} 条）`);
+    const schedules = schedulesIn.map((item, i) => {
+      if (typeof item !== "object" || item === null) bad(`schedules[${i}] 必须是对象`);
+      const cron = String((item as Record<string, unknown>).cron ?? "").trim();
+      const fields = cron.split(/\s+/);
+      if (fields.length !== 5 || fields.some((f) => !f.length || f.length > 32 || !/^[0-9*/,-]+$|^[A-Za-z][A-Za-z0-9-]*$/.test(f))) {
+        bad(`schedules[${i}] 得是标准 5 字段 cron，例如 "0 1 * * *"（现在是 ${cron || "空"}）`);
+      }
+      return { cron };
+    });
+    const svc = s[1];
+    if (!svc) bad("缺少脚本名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/schedules`, { method: "PUT", body: schedules }, false);
+    return r.data;
+  }
+
+  // ---- Secret 增改（客户端 POST → 上游 PUT，201 实测）/ 删除（DELETE 200 实测）----
+  if (method === "POST" && s[0] === "workers" && s[2] === "secrets" && !s[3]) {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+    const allowed = ["name", "text", "type"];
+    const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+    const name = String(raw.name ?? "").trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name.length > 64) bad("Secret 名得是环境变量形状（字母/数字/下划线、数字不打头、≤64 字符）");
+    const text = raw.text as string;
+    if (typeof text !== "string" || !text.length) bad("text 不能为空（要清空请删除这个 Secret）");
+    if (text.length > 32768) bad(`text 超过 32768 字符（现在是 ${text.length}）`);
+    if (raw.type !== "secret_text") bad('type 只支持 "secret_text"（其他绑定类型走「变量/绑定」面板）');
+    const svc = s[1];
+    if (!svc) bad("缺少脚本名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/secrets`, { method: "PUT", body: { name, text, type: "secret_text" } }, false);
+    return r.data;
+  }
+  if (method === "DELETE" && s[0] === "workers" && s[2] === "secrets" && s[3]) {
+    const name = s[3];
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name.length > 64) throw new DirectError("badQuery", 422, null, "Secret 名得是环境变量形状");
+    const svc = s[1];
+    if (!svc) throw new DirectError("badQuery", 422, null, "缺少脚本名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/secrets/${enc(name)}`, { method: "DELETE" }, false);
+    return r.data;
+  }
+
+  // ---- 绑定/变量保存。上游实测：PATCH …/settings 必须 multipart/form-data（JSON 415），
+  // part 名 `settings`、值 JSON {"bindings":[…]}（part 名不对 400 "Missing settings part"）。
+  // 客户端动词 PUT（与面板文案一致），这里转 PATCH + multipart；只做结构校验，绑定原样透传。
+  if (method === "PUT" && s[0] === "workers" && s[2] === "settings") {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+    const unknown = Object.keys(raw).filter((k) => k !== "bindings");
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只接受 {bindings:[…]}（PUT 全量覆盖，漏掉的绑定会被删）`);
+    const list = raw.bindings as unknown[];
+    if (!Array.isArray(list)) bad("bindings 必须是数组");
+    if (list.length > 64) bad(`bindings 最多 64 项（现在是 ${list.length} 项）`);
+    for (const [i, b] of list.entries()) {
+      if (typeof b !== "object" || b === null) bad(`bindings[${i}] 必须是对象`);
+      const o = b as Record<string, unknown>;
+      if (typeof o.type !== "string" || !o.type) bad(`bindings[${i}].type 缺失`);
+      if (typeof o.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(o.name) || o.name.length > 64) bad(`bindings[${i}].name 得是环境变量形状`);
+      if (o.type === "plain_text" && typeof o.text !== "string") bad(`bindings[${i}] 是 plain_text，必须有 text 字段`);
+    }
+    const svc = s[1];
+    if (!svc) bad("缺少脚本名");
+    const fd = new FormData();
+    fd.append("settings", JSON.stringify({ bindings: list }));
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/settings`, { method: "PATCH", formData: fd }, false);
+    return r.data;
+  }
+
+  // ---- 删版本 / 删部署记录。删版本 ⚠️ CF 对 API Token 一律 405（只认 Global Key，实测 3 次），
+  // 照实透传把 405 上屏；删部署记录 API Token 可用（实测 200），清理面板走这条。
+  if (method === "DELETE" && s[0] === "workers" && (s[2] === "versions" || s[2] === "deployments") && s[3]) {
+    const kind = s[2];
+    const id = s[3];
+    if (!/^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      throw new DirectError("badQuery", 422, null, `${kind === "versions" ? "version" : "deployment"} id 得是 32 位 hex 或 36 位 UUID`);
+    }
+    const svc = s[1];
+    if (!svc) throw new DirectError("badQuery", 422, null, "缺少脚本名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/${kind}/${enc(id)}`, { method: "DELETE" }, false);
+    return r.data;
+  }
+
   // 段位（2026-10-19 修正，与 routeREST 同一处错位）：/v1/zones/{zone}/{action}[/id]
   // → s[1]=zone、s[2]=动作、s[3]=record id。旧代码取 s[2] 当 zone、s[3] 当动作，
   //   DNS 写四条在直连模式从上线起就没通过（tools/check-direct-parity.mjs 抓的第二个 off-by-one）。

@@ -29,6 +29,11 @@ import {
   validateDnsBody,
   validatePurgeBody,
   validateDeployBody,
+  validateCronBody,
+  validateSecretBody,
+  validateSecretName,
+  validateBindingsBody,
+  validateWorkerObjId,
   assertPurgeHostsInZone,
   noteCreatedRecord,
   canDeleteRecord,
@@ -624,6 +629,73 @@ app.post(
     const ids = draft.versions ? draft.versions.map((v) => v.version_id) : [draft.version_id as string];
     for (const vid of ids) await reads.workerVersion(cf(c), E(c), s, vid);
     const r = await writes.workerDeploy(cf(c), E(c), s, draft.payload);
+    return { result: r.data };
+  }),
+);
+
+// ---------- 闸门二之外的 Worker 设置写路由（形状 2026-10-19 真机实测，见 catalog.ts 注释） ----------
+
+/** cron 保存：客户端 {schedules:[{cron}]} → 上游 PUT schedules 裸数组（包信封 400，实测） */
+app.put(
+  "/v1/workers/:s/crons",
+  route(async (c) => {
+    const s = param(c, "s");
+    const schedules = validateCronBody(await jsonBody(c));
+    const r = await writes.cronPut(cf(c), E(c), s, schedules);
+    return { result: r.data };
+  }),
+);
+
+/** Secret 增改：客户端 POST → 上游 PUT（201，实测自清理验证） */
+app.post(
+  "/v1/workers/:s/secrets",
+  route(async (c) => {
+    const s = param(c, "s");
+    const body = validateSecretBody(await jsonBody(c));
+    const r = await writes.secretPut(cf(c), E(c), s, body);
+    return { result: r.data };
+  }),
+);
+
+app.delete(
+  "/v1/workers/:s/secrets/:id",
+  route(async (c) => {
+    const s = param(c, "s");
+    const name = validateSecretName(param(c, "id"));
+    const r = await writes.secretDelete(cf(c), E(c), s, name);
+    return { result: r.data };
+  }),
+);
+
+/** 绑定/变量保存：客户端 PUT {bindings} → 上游 PATCH settings 且 multipart（JSON 415，实测） */
+app.put(
+  "/v1/workers/:s/settings",
+  route(async (c) => {
+    const s = param(c, "s");
+    const bindings = validateBindingsBody(await jsonBody(c));
+    const r = await writes.settingsPatch(cf(c), E(c), s, bindings);
+    return { result: r.data };
+  }),
+);
+
+/** 删版本：API Token 会被 CF 拒 405（只认 Global Key），照实透传 —— 用什么令牌是用户的选择 */
+app.delete(
+  "/v1/workers/:s/versions/:id",
+  route(async (c) => {
+    const s = param(c, "s");
+    const id = validateWorkerObjId(param(c, "id"), "version id");
+    const r = await writes.versionDelete(cf(c), E(c), s, id);
+    return { result: r.data };
+  }),
+);
+
+/** 删部署记录：API Token 可用（实测 200），清理面板的「不碰版本本体」瘦身 */
+app.delete(
+  "/v1/workers/:s/deployments/:id",
+  route(async (c) => {
+    const s = param(c, "s");
+    const id = validateWorkerObjId(param(c, "id"), "deployment id");
+    const r = await writes.deploymentDelete(cf(c), E(c), s, id);
     return { result: r.data };
   }),
 );

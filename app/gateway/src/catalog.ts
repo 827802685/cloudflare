@@ -122,7 +122,7 @@ export function forgetCreatedRecord(id: string): void {
 
 /**
  * 第二道闸门的内容：method + 路径必须逐条命中，命不上的非 GET 在 index.ts 末尾照样 501。
- * 开写没有松动"不做通用透传"这条硬规则 —— 这四条之外一条都没有。
+ * 开写没有松动"不做通用透传"这条硬规则 —— 表里之外的路径一条都没有。
  */
 export const WRITE_ROUTES = [
   { method: "POST", path: "/v1/zones/:zone/dns_records" },
@@ -130,6 +130,12 @@ export const WRITE_ROUTES = [
   { method: "DELETE", path: "/v1/zones/:zone/dns_records/:id" },
   { method: "POST", path: "/v1/zones/:zone/purge_cache" },
   { method: "POST", path: "/v1/workers/:s/deployments" },
+  { method: "PUT", path: "/v1/workers/:s/crons" },
+  { method: "POST", path: "/v1/workers/:s/secrets" },
+  { method: "DELETE", path: "/v1/workers/:s/secrets/:name" },
+  { method: "PUT", path: "/v1/workers/:s/settings" },
+  { method: "DELETE", path: "/v1/workers/:s/versions/:id" },
+  { method: "DELETE", path: "/v1/workers/:s/deployments/:id" },
 ] as const;
 
 /** 写端点表：全部走 cf.rest，不进缓存层（cf.ts 的 isReadCall 只认 GET / graphql / sql） */
@@ -150,6 +156,40 @@ export const writes = {
    */
   workerDeploy: (cf: CfClient, env: Env, s: string, body: Record<string, unknown>) =>
     cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/deployments`, { method: "POST", body }),
+  /**
+   * cron 保存（PUT 全量覆盖）。上游形状 2026-10-19 实测（cf-console-gateway 空表回写 + domain-alert 非空原样回写，均 200）：
+   * 上游是 PUT …/schedules、**裸数组 [{cron}]** —— 包一层 {schedules:…} 反而 400 "Could not parse request body"。
+   * 客户端发 {schedules:[{cron}]}（与读取信封一致），这里拆包。
+   */
+  cronPut: (cf: CfClient, env: Env, s: string, schedules: Array<{ cron: string }>) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/schedules`, { method: "PUT", body: schedules }),
+  /**
+   * Secret 增改。上游实测：PUT …/secrets 同体 {name, text, type:"secret_text"} → 201（建了就删自清理验证）。
+   * 客户端动词是 POST（新增/更新二合一），上游动词是 PUT。
+   */
+  secretPut: (cf: CfClient, env: Env, s: string, body: Record<string, string>) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/secrets`, { method: "PUT", body }),
+  secretDelete: (cf: CfClient, env: Env, s: string, name: string) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  /**
+   * 绑定/变量保存。上游实测（gateway 自己的 6 个绑定原样回写，200，bindings 与 observability 逐字节不变）：
+   * **PATCH …/settings 且必须 multipart/form-data**，part 名 `settings`，值是 JSON `{"bindings":[…]}`；
+   * 发 JSON 或 part 名不对分别 415 / 400 "Missing settings part"。客户端动词是 PUT，这里转 PATCH + multipart。
+   */
+  settingsPatch: (cf: CfClient, env: Env, s: string, bindings: unknown[]) => {
+    const fd = new FormData();
+    fd.append("settings", JSON.stringify({ bindings }));
+    return cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/settings`, { method: "PATCH", multipart: fd });
+  },
+  /**
+   * 删版本。⚠️ CF 对 **API Token 一律 405 "Method not allowed for this authentication scheme"**（实测 3 次），
+   * 这条端点只认 Global API Key —— 路由照实透传，用什么令牌是用户的选择，405 原样上屏。
+   */
+  versionDelete: (cf: CfClient, env: Env, s: string, id: string) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/versions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** 删部署记录：API Token 可用（实测 200，删的是最老的非活跃部署记录）。清理面板用这条做「不碰版本本体」的瘦身 */
+  deploymentDelete: (cf: CfClient, env: Env, s: string, id: string) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/deployments/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 /* ---------- 写侧校验（第三道闸门） ----------
@@ -407,6 +447,80 @@ export function validateDeployBody(raw: Record<string, unknown>): DeployDraft {
     annotations,
     payload: { strategy: "percentage", versions: [{ version_id, percentage }], ...(annotations ? { annotations } : {}) },
   };
+}
+
+/* ---------- Worker 设置写侧的三组校验（形状全部 2026-10-19 真机实测，注释里写明出处） ---------- */
+
+/** cron 表达式：标准 5 字段；字段字符集覆盖数字/星号/列表/范围/步进，月份英文缩写留给上游判（免费版配额错误也原样上屏） */
+const CRON_FIELD = /^[0-9*/,-]+$|^[A-Za-z][A-Za-z0-9-]*$/;
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export function validateCronBody(raw: Record<string, unknown>): Array<{ cron: string }> {
+  const unknown = Object.keys(raw).filter((k) => k !== "schedules");
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。cron 保存只接受 {schedules:[{cron}]}`);
+  if (!Array.isArray(raw.schedules)) bad("schedules 必须是数组（空数组 = 清空全部定时触发）");
+  const list = raw.schedules as unknown[];
+  if (list.length > 50) bad(`一次最多 50 条 cron（现在是 ${list.length} 条）`);
+  const out: Array<{ cron: string }> = [];
+  for (const [i, item] of list.entries()) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) bad(`schedules[${i}] 必须是对象`);
+    const cron = textField((item as Record<string, unknown>).cron, `schedules[${i}].cron`).trim();
+    const fields = cron.split(/\s+/);
+    if (fields.length !== 5 || fields.some((f) => !CRON_FIELD.test(f) || f.length > 32)) {
+      bad(`schedules[${i}] 得是标准 5 字段 cron（分 时 日 月 周），例如 "0 1 * * *"（现在是 ${cron || "空"}）`);
+    }
+    out.push({ cron });
+  }
+  return out;
+}
+
+export function validateSecretBody(raw: Record<string, unknown>): Record<string, string> {
+  const allowed = ["name", "text", "type"];
+  const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+  const name = textField(raw.name, "name").trim();
+  if (!ENV_NAME_RE.test(name) || name.length > 64) bad("Secret 名得是环境变量形状（字母/数字/下划线、数字不打头、≤64 字符）");
+  const text = raw.text;
+  if (typeof text !== "string" || !text.length) bad("text 不能为空（要清空请删除这个 Secret）");
+  if (text.length > 32768) bad(`text 超过 32768 字符（现在是 ${text.length}）`);
+  const type = textField(raw.type, "type");
+  if (type !== "secret_text") bad(`type 只支持 "secret_text"（其他绑定类型走「变量/绑定」面板）`);
+  return { name, text, type };
+}
+
+export function validateSecretName(raw: string): string {
+  const name = String(raw ?? "").trim();
+  if (!ENV_NAME_RE.test(name) || name.length > 64) bad("Secret 名得是环境变量形状（字母/数字/下划线、数字不打头、≤64 字符）");
+  return name;
+}
+
+/** 版本/部署记录 id：32 位 hex 或 36 位 UUID 两种都见过（实测两种形状都出现） */
+const OBJ_ID_RE = /^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function validateWorkerObjId(raw: string, what: string): string {
+  const id = String(raw ?? "").trim();
+  if (!OBJ_ID_RE.test(id)) bad(`${what} 得是 32 位 hex 或 36 位 UUID（现在是 ${id || "空"}）`);
+  return id;
+}
+
+/**
+ * 绑定/变量保存体：客户端（变量/绑定面板）发 `{bindings:[…]}`，内容来自 GET settings 的原样数组
+ * 加改动的 plain_text —— 所以这里只做结构校验不重排，原样转成 multipart 的 settings part。
+ */
+export function validateBindingsBody(raw: Record<string, unknown>): unknown[] {
+  const unknown = Object.keys(raw).filter((k) => k !== "bindings");
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只接受 {bindings:[…]}（PUT 全量覆盖，漏掉的绑定会被删）`);
+  if (!Array.isArray(raw.bindings)) bad("bindings 必须是数组");
+  const list = raw.bindings as unknown[];
+  if (list.length > 64) bad(`bindings 最多 64 项（现在是 ${list.length} 项）`);
+  for (const [i, b] of list.entries()) {
+    if (typeof b !== "object" || b === null || Array.isArray(b)) bad(`bindings[${i}] 必须是对象`);
+    const o = b as Record<string, unknown>;
+    if (typeof o.type !== "string" || !o.type) bad(`bindings[${i}].type 缺失`);
+    if (typeof o.name !== "string" || !ENV_NAME_RE.test(o.name) || o.name.length > 64) bad(`bindings[${i}].name 得是环境变量形状`);
+    if (o.type === "plain_text" && typeof o.text !== "string") bad(`bindings[${i}] 是 plain_text，必须有 text 字段`);
+  }
+  return list;
 }
 
 /**

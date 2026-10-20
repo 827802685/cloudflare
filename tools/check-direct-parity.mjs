@@ -217,6 +217,43 @@ try {
 } catch { rejected = true; }
 if (!rejected) { console.error("❌ 旧形状 {versions,strategy} 应被拒绝（单版本数组+strategy 属于未实测形状）"); fail = true; } else { pass++; console.log("✅ 旧形状 {versions,strategy} 被拒绝"); }
 
+// cron 保存：客户端 {schedules:[{cron}]} → 上游 PUT schedules **裸数组**（实测：包信封 400）
+await runWrite("PUT", "/v1/workers/hello/crons", { schedules: [{ cron: "0 1 * * *" }] });
+expectOne("PUT crons（拆成上游裸数组）", `/accounts/${ACC}/workers/scripts/hello/schedules`, {
+  method: "PUT",
+  bodyIncludes: `"cron":"0 1 * * *"`,
+});
+{
+  const hit = captured.find((c) => c.url.endsWith("/schedules") && c.method === "PUT");
+  if (hit && String(hit.body).includes("schedules")) { console.error("❌ cron 上游体不该带 {schedules:…} 信封"); fail = true; }
+}
+
+// Secret 增删：客户端 POST → 上游 PUT（201 实测）；DELETE 原样
+await runWrite("POST", "/v1/workers/hello/secrets", { name: "FOO", text: "bar", type: "secret_text" });
+expectOne("POST secrets（上游 PUT 动词）", `/accounts/${ACC}/workers/scripts/hello/secrets`, {
+  method: "PUT",
+  bodyIncludes: `"type":"secret_text"`,
+});
+await runWrite("DELETE", "/v1/workers/hello/secrets/FOO");
+expectOne("DELETE secrets/FOO", `/accounts/${ACC}/workers/scripts/hello/secrets/FOO`, { method: "DELETE" });
+
+// 绑定保存：客户端 PUT {bindings} → 上游 PATCH settings + multipart part=settings（JSON 415 实测）
+await runWrite("PUT", "/v1/workers/hello/settings", { bindings: [{ type: "plain_text", name: "A", text: "b" }] });
+{
+  const hit = captured.find((c) => c.url.endsWith("/settings") && c.method === "PATCH");
+  const fd = hit?.body;
+  const part = fd instanceof FormData ? fd.get("settings") : null;
+  if (!(typeof part === "string" && part.includes('"bindings"') && part.includes("plain_text"))) {
+    console.error("❌ settings 上游必须是 PATCH + FormData 且 part 名 settings（实测 JSON 415）"); fail = true;
+  } else { pass++; console.log("✅ PUT settings（上游 PATCH + multipart part=settings）"); }
+}
+
+// 删版本 / 删部署记录（后者 API Token 可用实测 200；前者 Token 405 但照实透传）
+await runWrite("DELETE", "/v1/workers/hello/versions/" + "d".repeat(32));
+expectOne("DELETE versions/vid", `/accounts/${ACC}/workers/scripts/hello/versions/${"d".repeat(32)}`, { method: "DELETE" });
+await runWrite("DELETE", "/v1/workers/hello/deployments/5e310b27-4a39-4324-8f49-681f36184a30");
+expectOne("DELETE deployments/depId", `/accounts/${ACC}/workers/scripts/hello/deployments/5e310b27-4a39-4324-8f49-681f36184a30`, { method: "DELETE" });
+
 await runWrite("POST", "/v1/zones/" + ZONE + "/dns_records", { name: "x", type: "A", content: "1.2.3.4", ttl: 1, proxied: false });
 expectOne("POST dns_records", `/zones/${ZONE}/dns_records`, { method: "POST" });
 

@@ -124,6 +124,11 @@ export interface CallSpec {
   unwrap?: Unwrap;
   /** 请求体是裸 SQL 文本（/analytics_engine/sql 那一族），不是 JSON */
   rawText?: boolean;
+  /**
+   * multipart/form-data 请求体（PATCH settings 更新 bindings 要这个，JSON 会 415 —— 2026-10-19 实测）。
+   * 不要手动设 content-type：fetch 会自动带上带 boundary 的头。
+   */
+  multipart?: FormData;
 }
 
 export class CfClient {
@@ -139,11 +144,15 @@ export class CfClient {
 
   private async fetchUpstream(key: string, path: string, spec: CallSpec): Promise<Entry> {
     const headers: Record<string, string> = { authorization: "Bearer " + this.token };
-    headers["content-type"] = spec.rawText ? "text/plain;charset=UTF-8" : "application/json";
+    if (spec.multipart) {
+      // multipart：content-type（含 boundary）交给 fetch 生成，手动设会把 boundary 弄丢
+    } else {
+      headers["content-type"] = spec.rawText ? "text/plain;charset=UTF-8" : "application/json";
+    }
     const res = await fetch(this.base + path, {
       method: spec.method || "GET",
       headers,
-      body: spec.body === undefined ? undefined : spec.rawText ? String(spec.body) : JSON.stringify(spec.body),
+      body: spec.multipart ?? (spec.body === undefined ? undefined : spec.rawText ? String(spec.body) : JSON.stringify(spec.body)),
       signal: AbortSignal.timeout(30000),
     });
     const e: Entry = { at: Date.now(), status: res.status, text: await res.text() };

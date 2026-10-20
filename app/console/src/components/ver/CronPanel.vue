@@ -132,7 +132,7 @@ function ask(a: { next: string[]; title: string; desc: string }) {
       { k: "覆盖后完整列表", v: a.next.length ? a.next.join(" ｜ ") : "空（这个 Worker 将没有任何定时触发）" },
       { k: "语义", v: "CF 这个接口是 PUT 全量覆盖，没有「单条删除」的动词 —— 上面这份列表会整体替换现有配置" },
       { k: "时区", v: "提交的是 UTC；界面按 UTC+8（北京）理解你的输入" },
-      { k: "路由状态", v: "网关还没有 PUT /v1/workers/:s/crons（待补路由清单第 3 条）；有效请求体形状只验到空 body 的 400（docs/10），未实测" },
+      { k: "路由状态", v: "上游形状 2026-10-19 实测（crons 原样回写 200）：上游是 PUT schedules 裸数组 [{cron}]，包 {schedules:…} 信封会被 400 —— 拆包在两层里做，客户端只发 {schedules:[{cron}]}" },
     ],
     danger: "normal",
   };

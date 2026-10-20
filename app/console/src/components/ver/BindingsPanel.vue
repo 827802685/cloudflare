@@ -134,7 +134,7 @@ function askSave() {
       { k: "语义", v: "CF 这个接口是 PUT 全量覆盖：下面这份 bindings 就是保存后的最终状态，漏掉的绑定会被删除" },
       { k: "覆盖后绑定", v: draft.value.length ? draft.value.map(draftSignature).join(" ｜ ") : "空（这个 Worker 将不再有任何绑定）" },
       { k: "请求体", v: JSON.stringify({ bindings: draft.value.map((b) => b.binding ?? b.name) }) },
-      { k: "路由状态", v: "网关还没有 PUT /v1/workers/:s/settings（待补路由清单第 4 条）；请求体形状未实测，被拒时 kind 原样显示" },
+      { k: "路由状态", v: "上游形状 2026-10-19 实测（6 个绑定原样回写 200）：上游是 PATCH settings 且必须 multipart（JSON 415），part 名 settings —— 转换在两层里做，客户端只发 PUT {bindings}" },
     ],
     danger: "normal",
   };

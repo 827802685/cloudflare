@@ -119,7 +119,7 @@ function askDelete(v: any) {
       { k: "创建时间", v: dt(v?.metadata?.created_on) },
       { k: "当前流量", v: "不在最新部署的 versions[] 里（0%）" },
       { k: "后果", v: "版本删除不可恢复：脚本本体与其它版本不受影响，但这一版再也部署不回来。" },
-      { k: "路由状态", v: "网关还没有 DELETE /v1/workers/:s/versions/:v 这条路由，大概率被 501 拒掉；拒了会把网关返回的 kind 原样显示在这里。" },
+      { k: "路由状态", v: "⚠️ 2026-10-19 实测：CF 对 API Token 删版本一律 405（这条端点只认 Global API Key）。路由会照实把请求发上去；用普通 Token 会收到 405，想删版本请换 Global Key 或去 Dashboard 操作。删部署记录不受限（清理面板那条可用）。" },
     ],
     danger: "irreversible",
   };

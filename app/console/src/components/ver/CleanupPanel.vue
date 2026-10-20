@@ -1,16 +1,18 @@
 <script lang="ts">
 /**
- * 批量清理旧版本（docs/13 §6.3、§2.5「管理版本」那一行）。
+ * 批量清理旧**部署记录**（docs/13 §6.3、§2.5「管理版本」那一行）。
  * 竞品的形状：单选模式 + 「保留 N 个」输入（默认 10）+ 结果按脚本逐行输出。
  *
  * 三处我们故意和竞品不一样：
- *  1. **默认不勾选任何版本**（任务要求，也比"默认全选"更难误删）；
- *  2. 「运行中」的判定不抄 `versions.firstOrNull()`，用 RunningBadge 导出的 runningModel()，
- *     承接流量的版本一律排除并写明原因（docs/13 §8.1）；
- *  3. 每条删除都 `await` 真结果，失败把网关返回的 kind 留在行上，不做 delay(500) 假成功（§8.2）。
+ *  1. **默认不勾选任何候选**（任务要求，也比"默认全选"更难误删）；
+ *  2. 包含承接流量版本的部署记录一律排除并写明原因（docs/13 §8.1）；
+ *  3. 每条删除都 `await` 真结果，失败把返回的 kind 留在行上，不做 delay(500) 假成功（§8.2）。
  *
- * 这条写路由（DELETE /v1/workers/:s/versions/:v）网关现在没有：交互做完、请求真发，
- * 被网关拒掉时界面如实显示 `kind=writesDisabled`，不伪装成已生效。
+ * 为什么删的是部署记录而不是版本本体（2026-10-19 真机实测定型）：
+ *  - DELETE …/deployments/{id}：API Token **可用**，实测 200 —— 这条是清理的正路；
+ *  - DELETE …/versions/{id}：CF 对 API Token 一律 405 "Method not allowed for this authentication
+ *    scheme"（实测 3 次），只认 Global API Key —— 路由两层都留了透传，用户换 Global Key 也能用，
+ *    但本面板默认走部署记录这条路，保证普通 Token 就能真清理。
  */
 export default { name: "VerCleanupPanel" };
 </script>
@@ -18,8 +20,8 @@ export default { name: "VerCleanupPanel" };
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import ConfirmSheet from "../ConfirmSheet.vue";
-import type { Candidate, RunningModel } from "./RunningBadge.vue";
-import { cleanupCandidates, runningModel } from "./RunningBadge.vue";
+import type { RunningModel } from "./RunningBadge.vue";
+import { runningModel } from "./RunningBadge.vue";
 import { api, dropMem, GwError, gwWrite, setWritesOptIn, writesOptIn, type WritePreview } from "../../lib/api";
 import { dt, shortId } from "../../lib/fmt";
 
@@ -42,6 +44,29 @@ type WState = {
   candidates: Candidate[];
   checked: Record<string, boolean>;
 };
+
+/** 候选 = 部署记录：CF 的 deployments 接口 id 形状（32 hex 或 UUID），删的是部署历史条目、不碰版本本体 */
+type Candidate = { id: string; number: number; created_on: string; pct: number | null; deletable: boolean; reason: string };
+
+/** 从部署记录算候选：最新 keepN 条保留；其余里凡是包含承接流量版本的排除（实测：删部署记录 200，版本本体 405） */
+function deploymentCandidates(deps: any[], keepN: number, run: RunningModel | null): Candidate[] {
+  const list: Candidate[] = [];
+  const n = deps.length;
+  deps.forEach((d, i) => {
+    const vs: any[] = d.versions || [];
+    const pct = vs.reduce((sum: number, v: any) => sum + (Number(v?.percentage) || 0), 0);
+    const touchesActive = !!run && vs.some((v: any) => (Number(v?.percentage) || 0) > 0 && run.ids.includes(String(v.version_id)));
+    list.push({
+      id: String(d.id ?? ""),
+      number: n - i,
+      created_on: String(d.created_on ?? ""),
+      pct: pct || null,
+      deletable: i >= keepN && !touchesActive,
+      reason: i < keepN ? `在保留窗口内（最新 ${keepN} 条）` : touchesActive ? "包含承接流量的版本" : "超出保留窗口的旧部署记录",
+    });
+  });
+  return list;
+}
 
 const states = reactive<WState[]>([]);
 const keep = ref(10);
@@ -97,7 +122,7 @@ async function analyze() {
         const rawDep: any = deployments.result;
         const deps: any[] = Array.isArray(rawDep) ? rawDep : (rawDep?.deployments ?? []);
         s.run = runningModel(deps);
-        s.candidates = cleanupCandidates(s.versions, k, s.run).candidates;
+        s.candidates = deploymentCandidates(deps, k, s.run);
         s.checked = {};
         s.phase = "ready";
       } catch (e) {
@@ -141,7 +166,7 @@ const chosen = computed(() => {
   for (const s of states) {
     for (const c of s.candidates) {
       if (c.deletable && s.checked[c.id]) {
-        out.push({ worker: s.worker, cand: c, path: `/v1/workers/${encodeURIComponent(s.worker)}/versions/${encodeURIComponent(c.id)}` });
+        out.push({ worker: s.worker, cand: c, path: `/v1/workers/${encodeURIComponent(s.worker)}/deployments/${encodeURIComponent(c.id)}` });
       }
     }
   }
@@ -165,16 +190,16 @@ function askBatch() {
   sheetErr.value = "";
   preview.value = {
     method: "DELETE",
-    path: "/v1/workers/{worker}/versions/{version_id}",
+    path: "/v1/workers/{worker}/deployments/{deployment_id}",
     body: undefined,
-    title: `批量删除 ${list.length} 个版本`,
+    title: `批量删除 ${list.length} 条旧部署记录`,
     lines: [
-      { k: "保留策略", v: `每个 Worker 保留最新 ${keep.value} 个；承接流量的版本已全部排除（共 ${blockedCount.value} 条不给勾）` },
+      { k: "保留策略", v: `每个 Worker 保留最新 ${keep.value} 条部署记录；包含承接流量版本的记录已全部排除（共 ${blockedCount.value} 条不给勾）` },
       { k: "执行方式", v: `按下面顺序逐条发送 ${list.length} 个 DELETE，一条失败不中断其余，结果逐行输出` },
-      { k: "请求路径模板", v: "DELETE /v1/workers/{worker}/versions/{version_id}（无请求体）" },
-      ...list.map((x, i) => ({ k: `${i + 1}/${list.length}`, v: `${x.worker} · #${x.cand.number} · ${shortId(x.cand.id, 8)} · ${dt(x.cand.created_on)}` })),
-      { k: "后果", v: "版本删除不可恢复：脚本本体、正在运行的版本都不受影响，但删掉的版本再也部署不回来。" },
-      { k: "路由状态", v: "网关还没有 DELETE /v1/workers/:s/versions/:v 这条路由（待补路由清单第 2 条），这一版大概率被 501 拒掉；被拒时 kind 会原样显示，不假装成功。" },
+      { k: "请求路径模板", v: "DELETE /v1/workers/{worker}/deployments/{deployment_id}（无请求体）" },
+      ...list.map((x, i) => ({ k: `${i + 1}/${list.length}`, v: `${x.worker} · 记录 #${x.cand.number} · ${shortId(x.cand.id, 8)} · ${dt(x.cand.created_on)}` })),
+      { k: "后果", v: "删的是部署历史条目：不影响版本本体与运行中的服务，但删掉的记录找不回来。" },
+      { k: "路由状态", v: "上游形状 2026-10-19 实测：删部署记录 API Token 可用（200）；删版本本体 CF 只认 Global Key（Token 一律 405，实测 3 次），版本本体想删得换 Global Key 令牌。" },
     ],
     danger: "normal",
   };
@@ -302,9 +327,9 @@ function cancelBatch() {
     <div class="batchbar" v-if="states.some((s) => s.phase === 'ready')">
       <label class="row" style="gap: 8px" v-if="chosen.length">
         <input type="checkbox" :checked="armed" @change="armed = ($event.target as HTMLInputElement).checked" />
-        <span class="small">我已逐条核对以上 {{ chosen.length }} 个版本（{{ states.filter((s) => s.phase === 'ready').length }} 个 Worker，共排除 {{ blockedCount }} 条不给勾）</span>
+        <span class="small">我已逐条核对以上 {{ chosen.length }} 条部署记录（{{ states.filter((s) => s.phase === 'ready').length }} 个 Worker，共排除 {{ blockedCount }} 条不给勾）</span>
       </label>
-      <button class="ghost danger" type="button" :disabled="!chosen.length || !armed || busy" @click="askBatch">清理这 {{ chosen.length }} 个版本</button>
+      <button class="ghost danger" type="button" :disabled="!chosen.length || !armed || busy" @click="askBatch">清理这 {{ chosen.length }} 条旧部署记录</button>
     </div>
     <p class="small muted" v-if="chosen.length && !armed">勾完候选还要打勾确认「已逐条核对」，按钮才会亮。删除不给一键全选的捷径。</p>
 

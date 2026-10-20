@@ -117,7 +117,7 @@ function askAddSecret() {
       { k: "Secret 名", v: n },
       { k: "值", v: previewValue(secVal.value) + "（完整值见下方请求体）" },
       { k: "读取说明", v: "CF 的 Secret 读接口只返回名字与类型、从不返回值，所以这一屏无法显示它当前的值，也无法回显对比；这是 API 的限制，不是没读到" },
-      { k: "路由状态", v: "网关还没有 POST /v1/workers/:s/secrets（待补路由清单第 5 条）；形状未实测，被拒时 kind 原样显示" },
+      { k: "路由状态", v: "上游形状 2026-10-19 实测（真建真删自清理）：客户端 POST → 上游 PUT secrets {name,text,type}，201 确认" },
     ],
     danger: "normal",
   };
@@ -135,7 +135,7 @@ function askDeleteSecret(name: string) {
       { k: "Worker", v: props.name },
       { k: "要删除的记录", v: name },
       { k: "后果", v: `删除后脚本里对 secret_text「${name}」的读取会得到 undefined，可能导致运行时报错` },
-      { k: "路由状态", v: "网关还没有 DELETE /v1/workers/:s/secrets/:name（待补路由清单第 5 条）；被拒时 kind 原样显示" },
+      { k: "路由状态", v: "上游形状 2026-10-19 实测（建后即删自清理）：DELETE secrets/{name} → 200" },
     ],
     danger: "irreversible",
   };
@@ -163,7 +163,7 @@ function askSaveVars() {
       { k: "语义", v: "CF 改变量走 PUT /settings 全量覆盖 bindings：漏掉的绑定（含 KV/R2/D1/service）会被一并删除" },
       { k: "覆盖后变量", v: vDraft.value.length ? vDraft.value.map((v) => `${v.name}=${previewValue(v.value)}`).join(" ｜ ") : "无普通变量" },
       { k: "覆盖后其它绑定", v: `${nonPlain.length} 项（保持原样一起提交）` },
-      { k: "路由状态", v: "网关还没有 PUT /v1/workers/:s/settings（待补路由清单第 4 条）；形状未实测，被拒时 kind 原样显示" },
+      { k: "路由状态", v: "上游形状 2026-10-19 实测（6 个绑定原样回写 200）：上游是 PATCH settings 且必须 multipart（JSON 415），part 名 settings —— 转换在两层里做，客户端只发 PUT {bindings}" },
     ],
     danger: "normal",
   };
