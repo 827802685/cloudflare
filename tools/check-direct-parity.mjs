@@ -254,6 +254,26 @@ expectOne("DELETE versions/vid", `/accounts/${ACC}/workers/scripts/hello/version
 await runWrite("DELETE", "/v1/workers/hello/deployments/5e310b27-4a39-4324-8f49-681f36184a30");
 expectOne("DELETE deployments/depId", `/accounts/${ACC}/workers/scripts/hello/deployments/5e310b27-4a39-4324-8f49-681f36184a30`, { method: "DELETE" });
 
+// D1 写通道：POST {sql}（写闸门管；GET 只读通道不在此测）
+await runWrite("POST", "/v1/d1/dbid/query", { sql: "INSERT INTO t VALUES (1)" });
+expectOne("POST d1 query（写通道）", `/accounts/${ACC}/d1/database/dbid/query`, {
+  method: "POST",
+  bodyIncludes: `"sql":"INSERT`,
+});
+
+// KV 键值写：客户端 {value} → 上游**裸文本** body（JSON 会把引号存进去，实测过）
+await runWrite("PUT", "/v1/kv/nsid/values/e2e-key", { value: "hello" });
+expectOne("PUT kv values（裸文本 body）", `/accounts/${ACC}/storage/kv/namespaces/nsid/values/e2e-key`, {
+  method: "PUT",
+  bodyIncludes: "hello",
+});
+{
+  const hit = captured.find((c) => c.url.endsWith("/values/e2e-key") && c.method === "PUT");
+  if (hit && /^"/.test(String(hit.body))) { console.error("❌ kv 上游 body 不该是 JSON 字符串"); fail = true; }
+}
+await runWrite("DELETE", "/v1/kv/nsid/values/e2e-key");
+expectOne("DELETE kv values/key", `/accounts/${ACC}/storage/kv/namespaces/nsid/values/e2e-key`, { method: "DELETE" });
+
 await runWrite("POST", "/v1/zones/" + ZONE + "/dns_records", { name: "x", type: "A", content: "1.2.3.4", ttl: 1, proxied: false });
 expectOne("POST dns_records", `/zones/${ZONE}/dns_records`, { method: "POST" });
 

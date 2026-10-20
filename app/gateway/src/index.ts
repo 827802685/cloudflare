@@ -34,6 +34,9 @@ import {
   validateSecretName,
   validateBindingsBody,
   validateWorkerObjId,
+  validateD1WriteSql,
+  validateKvKey,
+  validateKvValue,
   assertPurgeHostsInZone,
   noteCreatedRecord,
   canDeleteRecord,
@@ -285,7 +288,7 @@ function bail(c: Ctx, e: unknown) {
 }
 
 /** Hono 4 的 param() 返回 string|undefined；这里集中兜住，避免每个路由写一遍 ?? "" */
-function param(c: Ctx, name: "s" | "v" | "zone" | "p" | "id" | "ns"): string {
+function param(c: Ctx, name: "s" | "v" | "zone" | "p" | "id" | "ns" | "key"): string {
   const v = c.req.param(name);
   if (!v) throw new CfError("badQuery", 422, null, "缺少路径参数 " + name);
   return v;
@@ -700,6 +703,38 @@ app.delete(
   }),
 );
 
+/** D1 写 SQL：写闸门管住的通道；GET 只读通道已收紧（见上） */
+app.post(
+  "/v1/d1/:id/query",
+  route(async (c) => {
+    const sql = validateD1WriteSql(await jsonBody(c));
+    const r = await writes.d1WriteQuery(cf(c), E(c), param(c, "id"), sql);
+    return { result: r.data };
+  }),
+);
+
+/** KV 键值写/删：客户端 {value} → 上游裸文本 PUT（实测 GET 读回逐字节一致） */
+app.put(
+  "/v1/kv/:ns/values/:key",
+  route(async (c) => {
+    const ns = param(c, "ns");
+    const key = validateKvKey(param(c, "key"));
+    const value = validateKvValue(await jsonBody(c));
+    const r = await writes.kvPut(cf(c), E(c), ns, key, value);
+    return { result: r.data };
+  }),
+);
+
+app.delete(
+  "/v1/kv/:ns/values/:key",
+  route(async (c) => {
+    const ns = param(c, "ns");
+    const key = validateKvKey(param(c, "key"));
+    const r = await writes.kvDelete(cf(c), E(c), ns, key);
+    return { result: r.data };
+  }),
+);
+
 // ---------- 闸门二：白名单之外的非 GET 继续 501 ----------
 /*
  * 走到这里说明上面四条具体写路由都没匹配上（Hono 按注册顺序跑，命中的已经被 route() 处理完了）。
@@ -728,6 +763,12 @@ app.get(
     if (!sql) throw new CfError("badQuery", 422, null, "缺少 sql 参数");
     // SQL 长度限制：免费 Worker CPU 10ms/请求，超过一定长度会拖垮网关
     if (sql.length > 2000) throw new CfError("badQuery", 422, null, "SQL 太长（上限 2000 字符）");
+    // 只读闸门（2026-10-20）：GET 这条以前放行任意 SQL —— 写语句（UPDATE/DELETE/DROP…）会
+    // 绕过写闸门直接改库，公开部署（演示站）等于人人可写。这里只放行读语句，写语句 422
+    // 指路 POST 通道（那条归写闸门管）。WRITE 开头覆盖 WITH-SELECT（保守归为写）。
+    if (!/^\s*(select|pragma|explain)\b/i.test(sql)) {
+      throw new CfError("badQuery", 422, null, "GET 通道只放行 SELECT / PRAGMA / EXPLAIN；改数据的语句请开写闸门后走 POST /v1/d1/{id}/query");
+    }
     return { result: (await reads.d1Query(cf(c), E(c), param(c, "id"), sql)).data };
   }),
 );

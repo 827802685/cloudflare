@@ -19,7 +19,7 @@ import RowCard from "../RowCard.vue";
 import FoldNote from "../FoldNote.vue";
 import { useFold } from "../../lib/lists";
 import StoreSplit from "./StoreSplit.vue";
-import { api, forceFreshWindow, GwError, type D1Database, type D1QueryResult } from "../../lib/api";
+import { api, dropMem, forceFreshWindow, GwError, type D1Database, type D1QueryResult } from "../../lib/api";
 import { dt, bytes } from "../../lib/fmt";
 
 type Slot<T> = { data: T | null; err: GwError | null; loading: boolean };
@@ -81,12 +81,27 @@ async function openCols(t: string) {
   }
 }
 
+/**
+ * 执行：按首关键字分流（2026-10-20）。
+ * SELECT / PRAGMA / EXPLAIN 走 GET 只读通道（可缓存、不受写闸门）；
+ * 其它（含 WITH 开头——保守归为写）走 POST 写通道，归写闸门管：网关模式要 WRITE_ENABLED，
+ * 直连模式只看本机写开关。这样公开部署（演示站）不可能用读接口改库。
+ * 上游形状 2026-10-20 临时库实测：CREATE/INSERT/UPDATE/DELETE/DROP 全部 200。
+ */
+const isReadOnlySql = (sql: string) => /^\s*(select|pragma|explain)\b/i.test(sql);
+
 async function runQuery() {
   if (!selectedId.value || !querySql.value.trim()) return;
   queryRunning.value = true;
   queryResult.value = { data: null, err: null, loading: true };
+  const writeSql = !isReadOnlySql(querySql.value);
   try {
-    queryResult.value = { data: await api.d1Query(selectedId.value, querySql.value), err: null, loading: false };
+    const data = writeSql
+      ? await api.d1WriteQuery(selectedId.value, querySql.value)
+      : await api.d1Query(selectedId.value, querySql.value);
+    queryResult.value = { data, err: null, loading: false };
+    // 写语句成功后表结构可能变了：清掉这块的缓存，下次进详情重新拉
+    if (writeSql) { dropMem("/v1/d1/" + encodeURIComponent(selectedId.value)); }
   } catch (e) {
     queryResult.value = { data: null, loading: false, err: e instanceof GwError ? e : new GwError("unknown", 0, null, String(e)) };
   } finally {
@@ -231,9 +246,10 @@ async function copyContent(text: string) {
           ></textarea>
           <div class="row" style="gap:6px;align-items:center">
             <button class="primary" :disabled="queryRunning || !querySql.trim()" @click="runQuery">
-              {{ queryRunning ? "查询中" : "执行" }}
+              {{ queryRunning ? "查询中" : isReadOnlySql(querySql) ? "执行" : "执行（写语句）" }}
             </button>
             <span class="small muted" v-if="queryMeta">耗时 {{ (queryMeta.duration * 1000).toFixed(1) }}ms · 读 {{ queryMeta.rows_read }} 行</span>
+            <span class="small muted" v-else-if="!isReadOnlySql(querySql)">非 SELECT 语句走写通道：网关模式需开写闸门，直连模式需开本机写开关</span>
           </div>
           <ErrorNote :err="queryResult.err" style="margin-top:6px" />
           <div v-if="queryRows.length" style="margin-top:6px">
@@ -255,8 +271,11 @@ async function copyContent(text: string) {
           <div v-else-if="queryResult.data" class="empty" style="margin-top:6px">查询跑完了，返回 0 行（不是没取到）</div>
           <div v-else-if="!queryResult.err && !queryResult.loading" class="empty" style="margin-top:6px">点「执行」跑查询</div>
           <FoldNote label="这条 SQL 走的是什么">
-            走网关 <code>GET /v1/d1/{id}/query?sql=…</code>，网关再按 CF 规格 <code>POST …/d1/database/{id}/query</code> 出网，
-            所需权限 <code>D1 Read</code>（当前令牌已含）。SQL 长度上限 2000 字符；结果缓存 5 分钟。
+            读语句（SELECT / PRAGMA / EXPLAIN）走 <code>GET /v1/d1/{id}/query?sql=…</code>，网关按 CF 规格
+            <code>POST …/d1/database/{id}/query</code> 出网，结果缓存 5 分钟，长度上限 2000 字符。
+            <strong>写语句（CREATE/INSERT/UPDATE/DELETE/DROP…）走 <code>POST /v1/d1/{id}/query</code> 写通道</strong>
+            （2026-10-20 临时库实测全 200）：归写闸门管，网关模式要 WRITE_ENABLED、直连模式只看本机写开关，
+            长度上限 20000 字符。公开部署（演示站）用读接口改不了库。
           </FoldNote>
         </div>
       </template>

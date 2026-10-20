@@ -136,6 +136,9 @@ export const WRITE_ROUTES = [
   { method: "PUT", path: "/v1/workers/:s/settings" },
   { method: "DELETE", path: "/v1/workers/:s/versions/:id" },
   { method: "DELETE", path: "/v1/workers/:s/deployments/:id" },
+  { method: "POST", path: "/v1/d1/:id/query" },
+  { method: "PUT", path: "/v1/kv/:ns/values/:key" },
+  { method: "DELETE", path: "/v1/kv/:ns/values/:key" },
 ] as const;
 
 /** 写端点表：全部走 cf.rest，不进缓存层（cf.ts 的 isReadCall 只认 GET / graphql / sql） */
@@ -190,6 +193,26 @@ export const writes = {
   /** 删部署记录：API Token 可用（实测 200，删的是最老的非活跃部署记录）。清理面板用这条做「不碰版本本体」的瘦身 */
   deploymentDelete: (cf: CfClient, env: Env, s: string, id: string) =>
     cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/deployments/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /**
+   * D1 写 SQL。上游实测（临时库全链路自清理）：POST …/database/{id}/query {sql} 对
+   * CREATE/INSERT/UPDATE/DELETE/DROP 全部 200。这条**归写闸门管**——GET 只读通道同时收紧为
+   * SELECT/PRAGMA/EXPLAIN 才放行（不然公开部署人人可写库）。
+   */
+  d1WriteQuery: (cf: CfClient, env: Env, id: string, sql: string) =>
+    cf.rest(`/accounts/${ACC(env)}/d1/database/${encodeURIComponent(id)}/query`, { method: "POST", body: { sql } }),
+  /**
+   * KV 键值写/删。上游实测（临时命名空间自清理）：
+   * PUT …/namespaces/{ns}/values/{key}，body 是**裸文本**（不是 JSON），GET 读回逐字节一致；
+   * DELETE 同路径 200，删后 GET 404。客户端发 {value:"…"}（JSON），这里取出裸文本再发。
+   */
+  kvPut: (cf: CfClient, env: Env, ns: string, key: string, value: string) =>
+    cf.rest(`/accounts/${ACC(env)}/storage/kv/namespaces/${encodeURIComponent(ns)}/values/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: value,
+      rawText: true,
+    }),
+  kvDelete: (cf: CfClient, env: Env, ns: string, key: string) =>
+    cf.rest(`/accounts/${ACC(env)}/storage/kv/namespaces/${encodeURIComponent(ns)}/values/${encodeURIComponent(key)}`, { method: "DELETE" }),
 };
 
 /* ---------- 写侧校验（第三道闸门） ----------
@@ -521,6 +544,38 @@ export function validateBindingsBody(raw: Record<string, unknown>): unknown[] {
     if (o.type === "plain_text" && typeof o.text !== "string") bad(`bindings[${i}] 是 plain_text，必须有 text 字段`);
   }
   return list;
+}
+
+/** D1 写 SQL：只验长度与非空；语句内容交给 D1 判（写通道已在写闸门后面，不再做语句白名单） */
+export function validateD1WriteSql(raw: Record<string, unknown>): string {
+  const unknown = Object.keys(raw).filter((k) => k !== "sql");
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只接受 {sql:"…"}`);
+  const sql = typeof raw.sql === "string" ? raw.sql.trim() : "";
+  if (!sql) bad("sql 不能为空");
+  if (sql.length > 20000) bad(`SQL 太长（写通道上限 20000 字符，现在是 ${sql.length}）`);
+  return sql;
+}
+
+const TEXT_BYTES = new TextEncoder();
+const byteLen = (s: string) => TEXT_BYTES.encode(s).length;
+
+/** KV 的 key：1–512 字节（CF 硬上限），不接受空 key */
+export function validateKvKey(raw: string): string {
+  const key = String(raw ?? "");
+  if (!key.length) bad("key 不能为空");
+  if (byteLen(key) > 512) bad(`key 超过 512 字节（CF 硬上限）`);
+  return key;
+}
+
+/** KV 的 value：界面通道限 64KB（CF 上限 25MB，但这里走 textarea，给个稳妥上限） */
+export function validateKvValue(raw: Record<string, unknown>): string {
+  const unknown = Object.keys(raw).filter((k) => k !== "value");
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。写键值只接受 {value:"…"}`);
+  const value = raw.value;
+  if (typeof value !== "string") bad("value 必须是字符串（这条通道存文本；二进制请用 wrangler/控制台）");
+  if (!value.length) bad("value 不能为空（要清掉这个键请用删除）");
+  if (byteLen(value) > 65536) bad(`value 超过 64KB（这条通道的上限）`);
+  return value;
 }
 
 /**

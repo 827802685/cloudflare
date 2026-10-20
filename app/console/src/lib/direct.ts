@@ -886,6 +886,42 @@ export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELE
     return r.data;
   }
 
+  // ---- D1 写 SQL（写闸门通道；读语句仍走 GET 只读路径）。上游实测：POST database/{id}/query
+  // {sql} 对 CREATE/INSERT/UPDATE/DELETE/DROP 全 200（临时库全链路自清理验证）。
+  if (method === "POST" && s[0] === "d1" && s[2] === "query") {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const unknown = Object.keys(raw).filter((k) => k !== "sql");
+    if (unknown.length) throw new DirectError("badQuery", 422, null, `不支持的字段：${unknown.join(",")}。这条路由只接受 {sql:"…"}`);
+    const sql = typeof raw.sql === "string" ? raw.sql.trim() : "";
+    if (!sql) throw new DirectError("badQuery", 422, null, "sql 不能为空");
+    if (sql.length > 20000) throw new DirectError("badQuery", 422, null, `SQL 太长（写通道上限 20000 字符，现在是 ${sql.length}）`);
+    const id = s[1];
+    if (!id) throw new DirectError("badQuery", 422, null, "缺少数据库 id");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/d1/database/${enc(id)}/query`, { method: "POST", body: { sql } }, false);
+    return r.data;
+  }
+
+  // ---- KV 键值写/删。上游实测：PUT values/{key} body 是**裸文本**（JSON 会把引号存进去），
+  // GET 读回逐字节一致；DELETE 200、删后 GET 404（临时命名空间自清理验证）。
+  // 客户端发 {value:"…"}（与 ConfirmSheet 全量回显一致），这里取出裸文本再发。
+  if (method === "PUT" && s[0] === "kv" && s[2] === "values" && s[3]) {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const unknown = Object.keys(raw).filter((k) => k !== "value");
+    if (unknown.length) throw new DirectError("badQuery", 422, null, `不支持的字段：${unknown.join(",")}。写键值只接受 {value:"…"}`);
+    const value = raw.value;
+    if (typeof value !== "string" || !value.length) throw new DirectError("badQuery", 422, null, "value 必须是非空字符串（要清掉这个键请用删除）");
+    const bytes = new TextEncoder().encode(value).length;
+    if (bytes > 65536) throw new DirectError("badQuery", 422, null, `value 超过 64KB（这条通道的上限）`);
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/storage/kv/namespaces/${enc(s[1])}/values/${enc(s[3])}`, { method: "PUT", body: value, rawText: true }, false);
+    return r.data;
+  }
+  if (method === "DELETE" && s[0] === "kv" && s[2] === "values" && s[3]) {
+    const key = s[3];
+    if (!key.length || new TextEncoder().encode(key).length > 512) throw new DirectError("badQuery", 422, null, "key 得是 1–512 字节");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/storage/kv/namespaces/${enc(s[1])}/values/${enc(key)}`, { method: "DELETE" }, false);
+    return r.data;
+  }
+
   // 段位（2026-10-19 修正，与 routeREST 同一处错位）：/v1/zones/{zone}/{action}[/id]
   // → s[1]=zone、s[2]=动作、s[3]=record id。旧代码取 s[2] 当 zone、s[3] 当动作，
   //   DNS 写四条在直连模式从上线起就没通过（tools/check-direct-parity.mjs 抓的第二个 off-by-one）。

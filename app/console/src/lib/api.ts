@@ -474,11 +474,18 @@ export const api = {
   /* ---------- 数据库（D1 + KV） ---------- */
   d1Databases: () => gw<R<D1Database[]>>("/v1/d1"),
   d1Database: (id: string) => gw<R<D1Database>>("/v1/d1/" + encodeURIComponent(id)),
+  /** 只读 SQL：GET 通道（网关只放行 SELECT/PRAGMA/EXPLAIN，写语句 422 指路写通道 —— 2026-10-20 收紧） */
   d1Query: (id: string, sql: string) => gw<D1QueryResult>("/v1/d1/" + encodeURIComponent(id) + "/query?sql=" + encodeURIComponent(sql)),
+  /** 写 SQL（CREATE/INSERT/UPDATE/DELETE/DROP…）：POST 通道，归写闸门管；上游形状 2026-10-20 临时库实测全 200 */
+  d1WriteQuery: (id: string, sql: string) => gwWrite<any>("POST", "/v1/d1/" + encodeURIComponent(id) + "/query", { sql }),
   kvNamespaces: () => gw<R<KvNamespace[]>>("/v1/kv"),
   kvKeys: (nsId: string, limit = 100, cursor?: string) =>
     // CF 要求 limit ≥ 10（实测 10028），客户端先夹紧再发
     gw<KvKeysResult>("/v1/kv/" + encodeURIComponent(nsId) + "/keys", { limit: Math.min(1000, Math.max(10, limit)), ...(cursor ? { cursor } : {}) }),
+  /** 写键值：客户端发 {value}，两层转成上游裸文本 PUT（实测 GET 读回逐字节一致） */
+  kvPutValue: (nsId: string, key: string, value: string) =>
+    gwWrite<any>("PUT", `/v1/kv/${encodeURIComponent(nsId)}/values/${encodeURIComponent(key)}`, { value }),
+  kvDeleteKey: (nsId: string, key: string) => gwWrite<any>("DELETE", `/v1/kv/${encodeURIComponent(nsId)}/values/${encodeURIComponent(key)}`),
   r2Buckets: () => gw<R<R2Bucket[]>>("/v1/r2"),
 
   /* ---------- Zero Trust（Access）只读 ---------- */
