@@ -19,23 +19,34 @@ const REPO = "827802685/cloudflare";
 declare const __APP_VERSION__: string;
 export const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.0.0";
 
-/** 加速域名（尾斜杠已剥）；空串 = 没配置，全部直连 GitHub */
-export const ACCEL_BASE = String(import.meta.env.VITE_GH_ACCEL_BASE ?? "").trim().replace(/\/+$/, "");
-
-/** 全部候选（GH_ACCEL_BASE 支持逗号分隔，按序回退；0.2.2 起）：首选给下载页按钮，检查更新逐个试 */
+/**
+ * 全部候选加速域名（GH_ACCEL_BASE 支持逗号分隔，按序回退；0.2.2 起）：检查更新逐个试。
+ * 每项去空白、去尾斜杠；**漏写 scheme 的补 https://** —— 不补的话拼出来是站内相对路径，
+ * 点「打开下载页」会跳回本应用，正是"下载跳转乱"的一类（0.2.5 又踩到）。
+ * 空数组 = 没配置，全部直连 GitHub。
+ */
 export const ACCEL_BASES = String(import.meta.env.VITE_GH_ACCEL_BASE ?? "")
   .split(",")
   .map((s) => s.trim().replace(/\/+$/, ""))
-  .filter(Boolean);
+  .filter(Boolean)
+  .map((s) => (/^https?:\/\//i.test(s) ? s : `https://${s}`));
 
 /**
- * gh-proxy 的**完整 URL 前缀**拼法（0.2.2 换公共加速站时定的）：<accel>/https://github.com/...。
- * 公共实例（ghproxy.link 等）只认这个形式；自建 gh-proxy Worker 在入口把两种形式都归一化，同样兼容。
- * 0.1.7 用的裸路径拼法 <accel>/<owner>/<repo>/... 只有自建认，公共站全 404，弃。
- * 传进来的必须是 github.com 的 URL（API 域名没有 owner/repo 结构，加速不了，也不需要）。
+ * 首选加速域名（下载页 / 发行说明按钮的 href 用它，取候选第一个）；空串 = 没配置，链接直连 GitHub。
+ * **必须取单个域名**：以前这里直接拿整串环境变量，多域名配置下 href 会拼成
+ * `https://A,https://B/827802685/...`（0.2.2 的回归），所以改成取 ACCEL_BASES[0]。
+ */
+export const ACCEL_BASE = ACCEL_BASES[0] ?? "";
+
+/**
+ * 加速拼法（对**每个**候选域名统一适用）：**用加速域名直接替换 github.com**，即 <accel>/<owner>/<repo>/...（裸路径形式）。
+ * 例：`https://github.com/<owner>/<repo>/releases/` → `https://<加速域名>/<owner>/<repo>/releases/`。
+ * 域名不写死在这里 —— 全部来自仓库变量 GH_ACCEL_BASE（可随时改、重出包即生效）。
+ * 自建代理 Worker 认这个裸路径形式（入口也兼容完整 URL 形式）；公共实例（ghproxy.link 等）只认完整 URL 形式，用公共站做加速时裸路径会 404。
+ * 传进来的必须是 github.com 的 URL（API 域名没有 owner/repo 结构、加速不了，也不需要）。
  */
 function viaAccel(base: string, ghUrl: string): string {
-  return `${base}/${ghUrl}`;
+  return `${base}/${ghUrl.replace(/^https?:\/\/github\.com\/?/i, "")}`;
 }
 
 export interface UpdateInfo {
