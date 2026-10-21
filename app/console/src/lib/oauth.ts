@@ -38,8 +38,14 @@ const BUILD_CFG: OAuthClientCfg = {
   scope: String(import.meta.env.VITE_CF_OAUTH_SCOPE ?? "").trim(),
 };
 
-/** 默认回调走自定义 scheme —— 必须在 OAuth client 的 redirect_uris 里原样注册 */
-export const DEFAULT_REDIRECT = "cfconsole://oauth/callback";
+/**
+ * 回调地址：**必须是 https**（Cloudflare 不接受自定义 scheme 作为 redirect_uri），
+ * 所以真实登记的是网关上的中继 `https://<网关域名>/oauth/callback`，
+ * 中继只做 302，把 code/state 原样转给下面这个 scheme。见 docs/16 §9。
+ */
+export const CALLBACK_SCHEME = "cfconsole://oauth/callback";
+/** 设置页的占位提示：真实值在装机时填，或用仓库变量 CF_OAUTH_REDIRECT 注入 */
+export const REDIRECT_HINT = "https://<网关域名>/oauth/callback";
 
 export function oauthClientCfg(): OAuthClientCfg {
   let local: Partial<OAuthClientCfg> = {};
@@ -53,13 +59,13 @@ export function oauthClientCfg(): OAuthClientCfg {
     const v = String(local[k] ?? "").trim();
     return v || BUILD_CFG[k];
   };
-  return { clientId: pick("clientId"), redirect: pick("redirect") || DEFAULT_REDIRECT, scope: pick("scope") };
+  return { clientId: pick("clientId"), redirect: pick("redirect"), scope: pick("scope") };
 }
 
 export function saveOAuthClientCfg(cfg: OAuthClientCfg): OAuthClientCfg {
   const next: OAuthClientCfg = {
     clientId: cfg.clientId.trim(),
-    redirect: cfg.redirect.trim() || DEFAULT_REDIRECT,
+    redirect: cfg.redirect.trim(),
     scope: cfg.scope.trim(),
   };
   try {
@@ -181,9 +187,16 @@ async function refreshAccess(credRef: string, grant: StoredGrant): Promise<strin
     client_id: grant.clientId,
   });
   if (status >= 400 || !json?.access_token) {
-    // 刷新失败就把凭据清掉：留着一条刷不动的 refresh token 只会每次请求都重试一次
-    await secureRemove(grantKey(credRef));
-    accessCache.delete(credRef);
+    /**
+     * 只有**上游明确回了 OAuth 错误 JSON 的 4xx** 才清凭据（invalid_grant 等）。
+     * 断网、超时、5xx、429、以及 WAF/强制门户返回的 403 HTML 都不算授权失效 ——
+     * 那些情况删掉 refresh token 等于把仍然有效的授权误杀，用户表现为"莫名其妙要重新登录"。
+     */
+    const isOAuthError = status >= 400 && status < 500 && typeof json?.error === "string" && json.error.length > 0;
+    if (isOAuthError) {
+      await secureRemove(grantKey(credRef));
+      accessCache.delete(credRef);
+    }
     throw tokenError(status, json, text);
   }
   const expiresIn = Number(json.expires_in ?? 3600);
@@ -233,6 +246,10 @@ export interface LoginResult {
 export async function beginOAuthLogin(): Promise<LoginResult> {
   const cfg = oauthClientCfg();
   if (!cfg.clientId) throw new OAuthError("badQuery", 422, "还没填 OAuth client_id（设置页「Cloudflare OAuth」）");
+  if (!cfg.redirect) throw new OAuthError("badQuery", 422, `还没填 redirect_uri，应填网关中继地址：${REDIRECT_HINT}`);
+  if (!/^https:\/\//i.test(cfg.redirect)) {
+    throw new OAuthError("badQuery", 422, "redirect_uri 必须是 https（Cloudflare 不接受自定义 scheme），填网关中继地址");
+  }
 
   const { verifier, challenge } = await pkce();
   const state = b64url(rand(16));
@@ -244,7 +261,13 @@ export async function beginOAuthLogin(): Promise<LoginResult> {
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
-  if (cfg.scope) url.searchParams.set("scope", cfg.scope);
+  if (cfg.scope) {
+    // 没有 offline_access 就没有 refresh token，重开应用要重新授权。
+    // scope 留空时不追加：那时由 OAuth client 自己勾选的 scope 决定（避免 invalid_scope）。
+    const scopes = cfg.scope.split(/[\s,]+/).filter(Boolean);
+    if (!scopes.includes("offline_access")) scopes.push("offline_access");
+    url.searchParams.set("scope", scopes.join(" "));
+  }
 
   const callback = new Promise<string>((resolve, reject) => {
     let handle: { remove: () => Promise<void> } | null = null;
@@ -256,7 +279,9 @@ export async function beginOAuthLogin(): Promise<LoginResult> {
     void App.addListener("appUrlOpen", ({ url: back }) => {
       try {
         const u = new URL(back);
-        if (!u.href.startsWith(cfg.redirect.split("?")[0].replace(/\/?$/, ""))) return;
+        // 浏览器停在 https 中继上，真正打开 App 的是中继 302 过来的自定义 scheme，
+        // 所以要跟 CALLBACK_SCHEME 比，不能跟 cfg.redirect（那是 https）比
+        if (!u.href.startsWith(CALLBACK_SCHEME)) return;
         const err = u.searchParams.get("error");
         if (err) {
           clearTimeout(timer);

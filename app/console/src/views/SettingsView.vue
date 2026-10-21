@@ -4,7 +4,7 @@ import ErrorNote from "../components/ErrorNote.vue";
 import UnavailableNote from "../components/board/UnavailableNote.vue";
 import { api, gwHealth, gwMeta, GwError, isNativeApp, setWritesOptIn, writesOptIn, probeToken, type Account } from "../lib/api";
 import { acctState, addAccount, findAccount, removeAccount, labelOf, createVault, unlockAccounts, lockAccounts, destroyAll, type CfAccount } from "../lib/accounts";
-import { beginOAuthLogin, oauthClientCfg, saveOAuthClientCfg, DEFAULT_REDIRECT, revokeOAuth } from "../lib/oauth";
+import { beginOAuthLogin, oauthClientCfg, saveOAuthClientCfg, REDIRECT_HINT, revokeOAuth } from "../lib/oauth";
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
 import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
@@ -559,7 +559,7 @@ async function doCheckUpdate() {
       <input v-model="ocfg.clientId" class="field" placeholder="在 CF 后台 OAuth clients 里创建后得到" spellcheck="false" />
 
       <label class="lbl" style="margin-top: 8px">redirect_uri</label>
-      <input v-model="ocfg.redirect" class="field" :placeholder="DEFAULT_REDIRECT" spellcheck="false" />
+      <input v-model="ocfg.redirect" class="field" :placeholder="REDIRECT_HINT" spellcheck="false" />
 
       <label class="lbl" style="margin-top: 8px">scope（可选，留空 = 按 client 注册时勾选的）</label>
       <input v-model="ocfg.scope" class="field" placeholder="例：account:read offline_access" spellcheck="false" />

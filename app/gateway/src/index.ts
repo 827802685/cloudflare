@@ -95,9 +95,15 @@ ${incorrect ? '<div class="err">用户名或密码不对</div>' : ""}
 
 app.use("*", async (c, next) => {
   const pass = c.env.DEMO_PASS;
+  const p = new URL(c.req.url).pathname;
+  /**
+   * OAuth 回调中继必须**无条件公开**：授权完成时浏览器还没带任何 cookie，
+   * 若被登录门 302 到 /login，链条就断在这里，App 永远收不到 code。
+   * 它本身不读数据、不写库，放行的只是"把 code 转成自定义 scheme"这一件事。
+   */
+  if (p === "/oauth/callback") return next();
   if (!pass) return next();
   const cv = await demoCookieValue(c.env.DEMO_USER || "", pass);
-  const p = new URL(c.req.url).pathname;
   if (isDemoAuthed(c, cv)) return next();
   if (p === "/login") {
     if (c.req.method === "POST") {
@@ -157,6 +163,29 @@ app.get("/health", (c) =>
     cache: { ...cacheStats(), scope: "isolate" },
   }),
 );
+
+/**
+ * OAuth 回调中继（公开、无状态）。
+ *
+ * Cloudflare 只接受 https 的 `redirect_uri`，浏览器授权完必须落到一个 https 地址；
+ * 再由这里 302 到 `cfconsole://oauth/callback`，系统才会拉起 App。没有这一跳，
+ * 自定义 scheme 在授权页就会被拒（`invalid_request: Invalid redirect URI`）。
+ *
+ * 安全性：中继只做地址翻译 —— 不存 code、不换 token（换 token 必须带 `code_verifier`，
+ * 它只在手机内存里）、不写日志、不落 cookie。哪怕 code 被旁人看到也换不出令牌。
+ */
+app.get("/oauth/callback", (c) => {
+  const u = new URL(c.req.url);
+  const to = new URL("cfconsole://oauth/callback");
+  for (const k of ["code", "state", "error", "error_description"]) {
+    const v = u.searchParams.get(k);
+    if (v) to.searchParams.set(k, v);
+  }
+  const res = c.redirect(to.toString(), 302);
+  res.headers.set("cache-control", "no-store");
+  res.headers.set("referrer-policy", "no-referrer");
+  return res;
+});
 
 /**
  * 鉴权：两种凭证取其一。

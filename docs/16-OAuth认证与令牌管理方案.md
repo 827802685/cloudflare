@@ -299,7 +299,24 @@ OAuth 账号的 secret 由新的 `lib/oauth.ts` 持有，`accounts.ts` 只存元
 3. **资源形状两种都收**：官方 Create Token 示例是扁平 `{"com.cloudflare.api.account.zone.<id>": "*"}`，
    而 schema 写 `map[string] or map[map[string]]`；早前只放行嵌套会把官方示例直接 422 掉。
 
-### 9.3 仍需真机消掉的项
+### 9.3 回调链路（2026-10-21 定稿）
+
+Cloudflare 只接受 https 的 `redirect_uri`，自定义 scheme 在授权页会被直接拒绝。因此：
+
+```
+App → 系统浏览器 → CF 授权页
+    → 302 https://<网关域名>/oauth/callback?code=…&state=…
+    → 网关中继 302 cfconsole://oauth/callback?code=…&state=…
+    → 系统拉起 App
+```
+
+- 中继是网关里一条**公开**路由（`GET /oauth/callback`），必须绕过 demo 登录门；
+  否则未登录时会被 302 到 `/login`，App 永远收不到 code。
+- 中继不存 code、不换 token（换 token 要 `code_verifier`，只存在手机内存）、不写日志、不落 cookie。
+- 客户端只把 `cfconsole://oauth/callback` 当作回调匹配目标，`redirect_uri` 传的是 https 中继地址。
+- 本地 `wrangler dev` 已验证：`/` 未登录 302 `/login`；`/oauth/callback` 未登录仍 302 到自定义 scheme。
+
+### 9.4 仍需真机消掉的项
 
 - OAuth：授权回跳、`expires_in`、是否返回 `refresh_token`（需 `offline_access`）、refresh 是否轮换。
 - 令牌管理：`account_api_tokens:*` 是否可申请、`POST/GET /accounts/{id}/tokens` 与 `permission_groups` 是否可用。
