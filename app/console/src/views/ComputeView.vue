@@ -125,6 +125,9 @@ const quotaTick = ref(0);
 function refresh() { forceFreshWindow(); loadWorkers(); loadPages(); quotaTick.value++; }
 
 onMounted(() => { loadWorkers(); loadPages(); });
+
+/** 顶部分段：Workers / Pages 各一屏太长，给一个明确的切换口，默认「全部」 */
+const kind = ref<"all" | "workers" | "pages">("all");
 </script>
 
 <template>
@@ -134,11 +137,18 @@ onMounted(() => { loadWorkers(); loadPages(); });
       <button class="ghost" :disabled="workersLoading || pagesLoading" @click="refresh">{{ (workersLoading || pagesLoading) ? "加载中" : "刷新" }}</button>
     </div>
 
+    <!-- Workers / Pages 分段切换：两个区块不是同一类资源，但常要对着看，所以给「全部」也留着 -->
+    <div class="row" style="gap: 4px; margin-bottom: 10px">
+      <button class="chip" :class="{ on: kind === 'all' }" @click="kind = 'all'">全部</button>
+      <button class="chip" :class="{ on: kind === 'workers' }" @click="kind = 'workers'">Workers</button>
+      <button class="chip" :class="{ on: kind === 'pages' }" @click="kind = 'pages'">Pages</button>
+    </div>
+
     <!-- Workers 每日额度：接口只给事件数，请求数与上限的来源在这块内部各自标清（docs/09 §E16） -->
-    <WorkersQuota :tick="quotaTick" />
+    <WorkersQuota v-if="kind !== 'pages'" :tick="quotaTick" />
 
     <!-- Workers 区块 -->
-    <div class="card">
+    <div class="card" v-if="kind !== 'pages'">
       <h3>Workers（{{ workers.length }} 个）</h3>
       <ErrorNote :err="workersErr" />
       <div v-if="workers.length" style="margin-bottom: 10px">
@@ -172,7 +182,7 @@ onMounted(() => { loadWorkers(); loadPages(); });
     </div>
 
     <!-- Pages 区块 -->
-    <div class="card">
+    <div class="card" v-if="kind !== 'workers'">
       <h3>Pages 项目（{{ pages.length }} 个）</h3>
       <ErrorNote :err="pagesErr" />
 

@@ -3,6 +3,10 @@ import { computed, onMounted, ref, watch, type Ref } from "vue";
 import { useRoute } from "vue-router";
 import ErrorNote from "../components/ErrorNote.vue";
 import FoldNote from "../components/FoldNote.vue";
+import CronPanel from "../components/ver/CronPanel.vue";
+import VarsPanel from "../components/ver/VarsPanel.vue";
+import BindingsPanel from "../components/ver/BindingsPanel.vue";
+import VersionDialog from "../components/ver/VersionDialog.vue";
 import { useFold } from "../lib/lists";
 import { api, forceFreshWindow, GwError } from "../lib/api";
 import { dt, num, rel, shortId } from "../lib/fmt";
@@ -293,10 +297,8 @@ const bindingKinds = computed(() => {
   return [...m.entries()].map(([k, n]) => `${k} ×${n}`);
 });
 
-/* ---- 版本切换 / 回滚：已接通（2026-10-19 在 rin-server 实测形状，docs/14 §7）----
-   入口在版本历史弹窗的版本详情里（「回滚 / 灰度到这一版」），走 gwWrite 真发：
-   直连模式即时生效；网关模式还需网关侧 WRITE_ENABLED 放行，关着会如实报 501。 */
-const showCmd = ref(false);
+/* ---- 版本切换 / 回滚：入口是下面卡片里的按钮，弹出 VerVersionDialog（内部是真发 POST …/deployments）---- */
+const showSwitch = ref(false);
 </script>
 
 <template>
@@ -461,34 +463,62 @@ const showCmd = ref(false);
     </div>
 
     <div class="card" id="c-secrets">
-      <h3>Secret 名称（值不可读，API 本来就不返回）</h3>
-      <ErrorNote :err="secrets.err" />
-      <div class="row" v-if="secrets.data?.length">
-        <span v-for="s in secrets.data" :key="s.name" class="badge">{{ s.name }}</span>
-      </div>
-      <div v-else-if="!secrets.err" class="empty">没有 secret_text</div>
+      <h3>变量与 Secret</h3>
+      <VarsPanel
+        :name="name"
+        :bindings="settings.data?.bindings ?? []"
+        :secrets="secrets.data ?? []"
+        :loading="settings.loading || secrets.loading"
+        :err="secrets.err || settings.err"
+        @changed="refresh"
+      />
+    </div>
+
+    <div class="card" id="c-bindings">
+      <h3>绑定（KV / R2 / D1 / Service）</h3>
+      <BindingsPanel
+        :name="name"
+        :bindings="settings.data?.bindings ?? []"
+        :loading="settings.loading"
+        :err="settings.err"
+        @changed="refresh"
+      />
     </div>
 
     <div class="card" id="c-crons">
       <h3>定时触发器</h3>
-      <ErrorNote :err="crons.err" />
-      <div class="list" v-if="crons.data?.length">
-        <div v-for="(cst, i) in crons.data" :key="i" class="item">
-          <div class="k">{{ cst.cron }}</div>
-          <div class="v">{{ rel(cst.modified_on) }}</div>
-        </div>
-      </div>
-      <div v-else-if="!crons.err" class="empty">无 cron</div>
+      <CronPanel
+        :name="name"
+        :crons="crons.data"
+        :loading="crons.loading"
+        :err="crons.err"
+        @retry="loadAll"
+        @changed="refresh"
+      />
     </div>
 
     <div class="card" id="c-switch">
       <h3>版本切换 / 回滚</h3>
-      <div class="small muted">
-        已接通（2026-10-19 实测，docs/14 §7）：点「版本历史」→ 进某个版本的详情 →
-        「回滚 / 灰度到这一版」，滑杆选流量占比、确认后真发 <code>POST …/deployments</code>。
-        直连模式（APK）即时生效；网关模式还需网关侧 <code>WRITE_ENABLED</code> 放行，
-        关着会如实报 <code>501 writesDisabled</code>，不会假装成功。
+      <div class="small muted" style="margin-bottom: 10px">
+        入口就是下面这个按钮：打开版本历史，进某个版本的详情，滑杆选流量占比，确认后真发
+        <code>POST …/deployments</code>。直连模式（APK）即时生效；网关模式还需网关侧
+        <code>WRITE_ENABLED</code> 放行，关着会如实报 <code>501 writesDisabled</code>。
       </div>
+      <button class="ghost" type="button" @click="showSwitch = true">打开版本历史 / 回滚</button>
     </div>
+
+    <VersionDialog
+      v-if="showSwitch"
+      :name="name"
+      :versions="versions.data ?? []"
+      :deployments="deployments.data ?? []"
+      :loading="versions.loading"
+      :err="versions.err"
+      :total="vTotal"
+      :hosts="myTraffic"
+      @close="showSwitch = false"
+      @retry="refresh"
+      @changed="refresh"
+    />
   </div>
 </template>
