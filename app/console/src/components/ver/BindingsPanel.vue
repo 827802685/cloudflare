@@ -6,8 +6,8 @@
  * 改侧：CF 改绑定是 `PUT /accounts/:a/workers/scripts/:s/settings`，而且这个 PUT 是**全量覆盖** ——
  *       提交的 bindings 数组就是最终状态，漏一条等于删一条。所以编辑模式在本地维护完整数组，
  *       提交前把「覆盖后的完整清单」摆进确认抽屉。
- * 路由状态：PUT /v1/workers/:s/settings 网关还没有（待补路由清单第 4 条），请求体形状**没实测过**，
- *          所以界面明说这是未验形状，kind 原样显示，不假装成功。
+ * 路由状态：PUT /v1/workers/:s/settings 两层都已接通（网关侧转上游 PATCH + multipart part=settings，
+ *          2026-10-20 实测 200）；客户端只发 bindings 数组，覆盖语义与确认抽屉保持一致。
  *
  * 目标目录（可选 KV / R2 / D1 列表）本应来自 GET /v1/kv/namespaces、/v1/r2/buckets、/v1/d1/databases，
  * 但：KV/D1 读权限令牌缺（实测 403），R2 账号没开通（实测 403 10042 serviceDisabled）。

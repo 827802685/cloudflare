@@ -6,7 +6,7 @@
  *
  * 语义坑（必须写在界面上）：CF 这个接口是 **PUT 全量覆盖**，没有"删一条"的动词。
  * 所以"删除某个 cron"= 把剩下的列表整体 PUT 回去；界面在确认抽屉里把覆盖后的完整结果摆出来。
- * 写路由 PUT /v1/workers/:s/crons 网关还没有 → 请求真发，被拒时如实显示 kind。
+ * 写路由 PUT /v1/workers/:s/crons 两层都已实现（2026-10-20 真机实测 200）。
  */
 export default { name: "VerCronPanel" };
 </script>

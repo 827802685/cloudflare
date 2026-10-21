@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import ErrorNote from "../components/ErrorNote.vue";
 import RowCard from "../components/RowCard.vue";
 import WorkersQuota from "../components/ver/WorkersQuota.vue";
+import CleanupPanel from "../components/ver/CleanupPanel.vue";
 import { api, forceFreshWindow, GwError, workerName } from "../lib/api";
 import { useFold } from "../lib/lists";
 import { bytes, dt, rel, shortId } from "../lib/fmt";
@@ -76,7 +77,7 @@ const deps = ref<any[]>([]);
 const visiblePageDeps = useFold(() => deps.value);
 const depErr = ref<GwError | null>(null);
 
-const WHY_WRITE = "回滚要发 POST，网关的非 GET 现在一律 501（WRITE_ENABLED 没开）——缺的是我这边的实现，不是你的令牌权限。";
+const WHY_WRITE = "Pages 回滚要发 POST …/deployments/{id}/rollback，这条路由网关和直连层都还没实现，上游形状也没实测过——所以这个动作现在不会发请求。";
 const WHY_LOG = "构建日志这条路由网关没有（/v1/pages/{项目}/deployments/{id}/history 没进白名单），所以这里点开也不会有数据。";
 
 async function loadPages() {
@@ -128,6 +129,12 @@ onMounted(() => { loadWorkers(); loadPages(); });
 
 /** 顶部分段：Workers / Pages 各一屏太长，给一个明确的切换口，默认「全部」 */
 const kind = ref<"all" | "workers" | "pages">("all");
+
+/** 版本清理面板要处理的 Worker 集合：默认空，必须手动勾，绝不默认全选 */
+const cleanSel = ref<string[]>([]);
+function toggleClean(w: string) {
+  cleanSel.value = cleanSel.value.includes(w) ? cleanSel.value.filter((x) => x !== w) : [...cleanSel.value, w];
+}
 </script>
 
 <template>
@@ -179,6 +186,26 @@ const kind = ref<"all" | "workers" | "pages">("all");
         />
       </div>
       <div v-else-if="!workersLoading && !workersErr" class="empty">这个账号里没有 Worker</div>
+    </div>
+
+    <!-- 版本清理：批量删旧部署记录（不碰版本本体），候选必须手勾 -->
+    <div class="card" v-if="kind !== 'pages'">
+      <h3>版本清理（批量删旧部署记录）</h3>
+      <div class="small muted" style="margin-bottom: 8px">
+        勾选要清理的 Worker → 「分析」→ 只删超出保留窗口、且不包含运行中版本的<b>部署记录</b>。
+        删除版本本体那条路由 CF 对 API Token 一律 405，所以这里不走它。
+      </div>
+      <div class="row" style="flex-wrap: wrap; gap: 4px; margin-bottom: 10px">
+        <button
+          v-for="w in workers"
+          :key="workerName(w)"
+          class="chip"
+          :class="{ on: cleanSel.includes(workerName(w)) }"
+          type="button"
+          @click="toggleClean(workerName(w))"
+        >{{ workerName(w) }}</button>
+      </div>
+      <CleanupPanel :workers="cleanSel" @changed="refresh" />
     </div>
 
     <!-- Pages 区块 -->
