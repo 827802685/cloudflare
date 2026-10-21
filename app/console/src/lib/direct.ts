@@ -669,6 +669,12 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
     const r = await rest<any>(ctx.token, `${A(ctx.account)}/access/organizations`, {}, ctx.fresh);
     return { result: r.data } as unknown as T;
   }
+  // Pages 构建日志（只读）。上游 2026-10-21 实测：result = {total, includes_container_logs, data:[{ts,line}]}
+  const pgLogs = /^\/v1\/pages\/([^/]+)\/deployments\/([^/]+)\/logs$/i.exec(purePath);
+  if (pgLogs) {
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/pages/projects/${enc(pgLogs[1])}/deployments/${enc(pgLogs[2])}/history/logs`, {}, ctx.fresh);
+    return { result: r.data } as unknown as T;
+  }
   // 其余列表端点：单页有硬上限（/accounts 默认 20、/zones 50、其余 100），全部逐页拿满，
   // 与网关 catalog.pagedList 同口径 —— 不然条数超限就静默截断
   const LIST_ROUTES: Array<{ re: RegExp; base: (m: RegExpMatchArray) => string; per: number; pages?: number }> = [
@@ -919,6 +925,20 @@ export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELE
     const key = s[3];
     if (!key.length || new TextEncoder().encode(key).length > 512) throw new DirectError("badQuery", 422, null, "key 得是 1–512 字节");
     const r = await rest<any>(ctx.token, `${A(ctx.account)}/storage/kv/namespaces/${enc(s[1])}/values/${enc(key)}`, { method: "DELETE" }, false);
+    return r.data;
+  }
+
+  // ---- Pages 回滚 / 重试。2026-10-21 临时项目 cfconsole-tmp-1021 实测：两条都是 POST + 空 body，
+  // 成功返回部署对象；retry 对 Direct Upload 部署回 400 (8000055)，那是上游业务判断，原样上屏。
+  // 与网关 writes.pagesRollback / pagesRetry 同一条白名单（tools/check-direct-parity.mjs 覆盖）。
+  if (method === "POST" && s[0] === "pages" && s[2] === "deployments" && s[3] && (s[4] === "rollback" || s[4] === "retry")) {
+    const project = s[1];
+    if (!project) throw new DirectError("badQuery", 422, null, "缺少 Pages 项目名");
+    const id = s[3];
+    if (!/^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      throw new DirectError("badQuery", 422, null, `deployment id 得是 32 位 hex 或 36 位 UUID（现在是 ${id}）`);
+    }
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/pages/projects/${enc(project)}/deployments/${enc(id)}/${s[4]}`, { method: "POST", body: {} }, false);
     return r.data;
   }
 

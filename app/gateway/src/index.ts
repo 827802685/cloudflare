@@ -764,6 +764,41 @@ app.delete(
   }),
 );
 
+/**
+ * Pages 构建日志（只读）。上游 2026-10-21 实测：
+ * GET …/deployments/:id/history/logs → result {total, includes_container_logs, data:[{ts,line}]}。
+ * 这是构建日志，不是运行时日志；Direct Upload 部署只有一条 "Your site was deployed!"。
+ */
+app.get(
+  "/v1/pages/:p/deployments/:id/logs",
+  route(async (c) => {
+    const p = param(c, "p");
+    const id = validateWorkerObjId(param(c, "id"), "deployment id");
+    return { result: (await reads.pagesBuildLogs(cf(c), E(c), p, id)).data };
+  }),
+);
+
+/** Pages 回滚 / 重试：写闸门管；空 body，成功返回部署对象，失败码原样上屏 */
+app.post(
+  "/v1/pages/:p/deployments/:id/rollback",
+  route(async (c) => {
+    const p = param(c, "p");
+    const id = validateWorkerObjId(param(c, "id"), "deployment id");
+    const r = await writes.pagesRollback(cf(c), E(c), p, id);
+    return { result: r.data };
+  }),
+);
+
+app.post(
+  "/v1/pages/:p/deployments/:id/retry",
+  route(async (c) => {
+    const p = param(c, "p");
+    const id = validateWorkerObjId(param(c, "id"), "deployment id");
+    const r = await writes.pagesRetry(cf(c), E(c), p, id);
+    return { result: r.data };
+  }),
+);
+
 // ---------- 闸门二：白名单之外的非 GET 继续 501 ----------
 /*
  * 走到这里说明上面四条具体写路由都没匹配上（Hono 按注册顺序跑，命中的已经被 route() 处理完了）。

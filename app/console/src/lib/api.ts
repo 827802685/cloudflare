@@ -494,19 +494,22 @@ export const api = {
 
   pages: () => gw<R<any[]>>("/v1/pages"),
   pageDeployments: (p: string) => gw<R<any>>("/v1/pages/" + encodeURIComponent(p) + "/deployments"),
+  /** 构建日志（只读）。上游实测 result = {total, includes_container_logs, data:[{ts,line}]} */
+  pageBuildLogs: (p: string, id: string) =>
+    gw<R<{ total?: number; includes_container_logs?: boolean; data?: Array<{ ts: string; line: string }> }>>(
+      "/v1/pages/" + encodeURIComponent(p) + "/deployments/" + encodeURIComponent(id) + "/logs",
+    ),
+  /** 回滚到指定部署 / 重试这次构建：上游都是 POST + 空 body（后者对 Direct Upload 部署会 400 8000055，原样上屏） */
+  pageRollback: (p: string, id: string) =>
+    gwWrite<any>("POST", "/v1/pages/" + encodeURIComponent(p) + "/deployments/" + encodeURIComponent(id) + "/rollback"),
+  pageRetry: (p: string, id: string) =>
+    gwWrite<any>("POST", "/v1/pages/" + encodeURIComponent(p) + "/deployments/" + encodeURIComponent(id) + "/retry"),
 
   /* ---------- 写侧（docs/12 §3 P3）。调用前必须先拿 preview* 做回显，见文件末尾的写侧契约 ---------- */
   createDnsRecord: (zone: string, r: DnsRecordInput) => gwWrite<any>("POST", "/v1/zones/" + encodeURIComponent(zone) + "/dns_records", dnsBody(r)),
   updateDnsRecord: (zone: string, id: string, r: DnsRecordInput) => gwWrite<any>("PUT", "/v1/zones/" + encodeURIComponent(zone) + "/dns_records/" + encodeURIComponent(id), dnsBody(r)),
   deleteDnsRecord: (zone: string, id: string) => gwWrite<any>("DELETE", "/v1/zones/" + encodeURIComponent(zone) + "/dns_records/" + encodeURIComponent(id)),
   purgeUrls: (zone: string, files: string[]) => gwWrite<any>("POST", "/v1/zones/" + encodeURIComponent(zone) + "/purge_cache", { files }),
-  /** 版本切换 / 回滚 / 灰度：percentage 缺省 100（回滚/全量切换）；形状已在 rin-server 实测（docs/14 §7） */
-  switchWorkerVersion: (s: string, versionId: string, percentage?: number) =>
-    gwWrite<any>(
-      "POST",
-      "/v1/workers/" + encodeURIComponent(s) + "/deployments",
-      { version_id: versionId, ...(percentage !== undefined && percentage !== 100 ? { percentage } : {}) },
-    ),
 
   /* ---------- 数据库（D1 + KV） ---------- */
   d1Databases: () => gw<R<D1Database[]>>("/v1/d1"),
@@ -695,9 +698,70 @@ export function previewPurge(zoneId: string, zoneName: string, files: string[]):
   return { method: "POST", path: zonePath(zoneId) + "/purge_cache", body: { files: list }, title: `清理 ${list.length} 个 URL 的缓存`, lines: [{ k: "Zone", v: zoneName }, { k: "条数", v: String(list.length) }, ...list.map((u, i) => ({ k: "URL " + (i + 1), v: u }))], danger: "normal" };
 }
 
+/**
+ * Pages 回滚：把指定部署重新设为当前。上游 2026-10-21 实测 POST …/rollback + 空 body → 200。
+ * 后果要写死在预览里：Pages 的回滚**同时作用于生产与预览两个环境**，接口没有环境开关。
+ */
+export function previewPagesRollback(project: string, dep: Record<string, any>): WritePreview {
+  const id = String(dep?.id ?? "").trim();
+  if (!project || !id) bad("缺少项目名或部署 id，这条请求不发");
+  return {
+    method: "POST",
+    path: `/v1/pages/${encodeURIComponent(project)}/deployments/${encodeURIComponent(id)}/rollback`,
+    body: {},
+    title: `回滚到部署 ${id.slice(0, 8)}`,
+    lines: [
+      { k: "项目", v: project },
+      { k: "部署 ID", v: id },
+      { k: "构建时间", v: String(dep?.created_on ?? "—") },
+      { k: "当前内容", v: String(dep?.build_result?.status ?? dep?.status ?? "—") },
+      { k: "影响环境", v: "生产与预览同时切换（Pages 接口不分环境）" },
+      { k: "路由状态", v: "上游形状 2026-10-21 实测：POST …/deployments/{id}/rollback，空 body → 200" },
+    ],
+    danger: "normal",
+  };
+}
+
+/** Pages 重试构建：只有 Git 构建的部署能重试，Direct Upload 部署上游会回 400 8000055（原样上屏） */
+export function previewPagesRetry(project: string, dep: Record<string, any>): WritePreview {
+  const id = String(dep?.id ?? "").trim();
+  if (!project || !id) bad("缺少项目名或部署 id，这条请求不发");
+  return {
+    method: "POST",
+    path: `/v1/pages/${encodeURIComponent(project)}/deployments/${encodeURIComponent(id)}/retry`,
+    body: {},
+    title: `重试构建 ${id.slice(0, 8)}`,
+    lines: [
+      { k: "项目", v: project },
+      { k: "部署 ID", v: id },
+      { k: "构建时间", v: String(dep?.created_on ?? "—") },
+      { k: "前提", v: "只有 Git 构建的部署能重试；Direct Upload 部署上游回 400 (8000055)" },
+      { k: "路由状态", v: "上游形状 2026-10-21 实测：POST …/deployments/{id}/retry，空 body" },
+    ],
+    danger: "normal",
+  };
+}
+
 /** 写完必须让这条 zone 的只读缓存作废，否则界面会拿 5 分钟前的旧记录说"已经改好了" */
 export function dropMem(prefix: string): void {
   for (const k of Array.from(mem.keys())) if (k.includes(prefix)) mem.delete(k);
+}
+
+/**
+ * 写完作废两层读缓存。路径形状 `/v1/{kind}/{id}/...`：第二段是资源类型，第三段是对象 id/项目名。
+ * Pages 回滚后部署列表要立刻重取，否则「当前版本」还停在旧的那条。
+ */
+function dropAfterWrite(path: string): void {
+  const s = path.split("/");
+  const kind = s[2], id = s[3];
+  if (!kind || !id) return;
+  if (kind === "zones") {
+    dropMem("/v1/zones/" + id);
+    dropDirect("/zones/" + id);
+  } else if (kind === "pages") {
+    dropMem("/v1/pages/" + id);
+    dropDirect("/pages/projects/" + id);
+  }
 }
 
 /**
@@ -716,11 +780,7 @@ export async function gwWrite<T = any>(method: WritePreview["method"], path: str
     if (!ctx) throw noDirectCtxError(cfg);
     try {
       const data = await writeDirect(ctx, method, path, body);
-      const seg = path.split("/")[3] || "";
-      if (seg) {
-        dropMem("/v1/zones/" + seg);
-        dropDirect("/zones/" + seg);
-      }
+      dropAfterWrite(path);
       return data as T;
     } catch (e) {
       throw asGwError(e);
@@ -751,8 +811,7 @@ export async function gwWrite<T = any>(method: WritePreview["method"], path: str
     throw new GwError(kind, res.status, err?.code ?? null, String(err?.message || text.slice(0, 160) || res.statusText));
   }
   if (!json) throw new GwError("unknown", res.status, null, "网关返回了非 JSON 内容");
-  const seg = path.split("/")[3] || "";
-  if (seg) dropMem("/v1/zones/" + seg);
+  dropAfterWrite(path);
   return (json?.result ?? json) as T;
 }
 

@@ -53,7 +53,26 @@ const mismatch = computed(() => {
   return `版本列表最新的是 #${newest.number}（${shortId(nid, 8)}），但最新部署指向 ${who} —— 两者不一致。界面按部署指向判「运行中」，不拿最新版本冒充它在跑。`;
 });
 
-/* ---------- 详情：加载态 → 原地替换 ---------- */
+/* ---------- 版本详情里的「访问」地址：自定义域名 / Zone 路由 +（若启用）workers.dev ---------- */
+const devHost = ref("");
+async function loadDevHost() {
+  try {
+    const [acc, w] = await Promise.all([api.accountSubdomain(), api.workerSubdomain(props.name)]);
+    const s = acc.result?.subdomain ?? "";
+    devHost.value = s && w.result?.enabled ? `${props.name}.${s}.workers.dev` : "";
+  } catch {
+    // 读不到子域名就当没有 workers.dev 地址，不猜、不拼一个打不开的链接
+    devHost.value = "";
+  }
+}
+watch(() => props.name, loadDevHost, { immediate: true });
+const allHosts = computed(() => {
+  const arr = [...(props.hosts ?? [])];
+  if (devHost.value) arr.push({ host: devHost.value, via: "workers.dev" });
+  return arr;
+});
+
+/* ---------- 版本详情：加载态 → 原地替换 ---------- */
 const openId = ref("");
 const detail = ref<any | null>(null);
 const detailErr = ref<GwError | null>(null);
@@ -304,13 +323,13 @@ function strategyText(v: unknown): string {
 
               <h4>访问</h4>
               <template v-if="rowState(detail.id).on">
-                <div class="list" v-if="hosts.length">
-                  <div v-for="h in hosts" :key="h.host" class="item tap" @click="copy('https://' + h.host, h.host)">
+                <div class="list" v-if="allHosts.length">
+                  <div v-for="h in allHosts" :key="h.host" class="item tap" @click="copy('https://' + h.host, h.host)">
                     <div style="min-width: 0"><div class="k">{{ h.host }}</div><div class="small muted">{{ h.via }} · 点名称复制</div></div>
                     <div class="v">https://</div>
                   </div>
                 </div>
-                <p class="small muted" v-else>自定义域名与 Zone 路由两张表里都没有指向本 Worker 的主机名；workers.dev 的完整地址要等账号子域名那条路由（见待补路由清单第 1 条）。</p>
+                <p class="small muted" v-else>自定义域名、Zone 路由、workers.dev 三处都没有指向本 Worker 的可用地址。</p>
                 <p class="small ok" v-if="copied">{{ copied }}</p>
               </template>
               <p class="small muted" v-else>「访问」只在运行中的版本上出现：这一版现在不承接流量。</p>

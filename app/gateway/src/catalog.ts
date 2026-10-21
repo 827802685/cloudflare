@@ -139,6 +139,10 @@ export const WRITE_ROUTES = [
   { method: "POST", path: "/v1/d1/:id/query" },
   { method: "PUT", path: "/v1/kv/:ns/values/:key" },
   { method: "DELETE", path: "/v1/kv/:ns/values/:key" },
+  // Pages：2026-10-21 在临时项目 cfconsole-tmp-1021（两次 Direct Upload 部署）实测，
+  // 两个都是 POST + 空 body，成功返回部署对象；retry 对 Direct Upload 部署回 400 8000055，原样上屏
+  { method: "POST", path: "/v1/pages/:p/deployments/:id/rollback" },
+  { method: "POST", path: "/v1/pages/:p/deployments/:id/retry" },
 ] as const;
 
 /** 写端点表：全部走 cf.rest，不进缓存层（cf.ts 的 isReadCall 只认 GET / graphql / sql） */
@@ -213,6 +217,16 @@ export const writes = {
     }),
   kvDelete: (cf: CfClient, env: Env, ns: string, key: string) =>
     cf.rest(`/accounts/${ACC(env)}/storage/kv/namespaces/${encodeURIComponent(ns)}/values/${encodeURIComponent(key)}`, { method: "DELETE" }),
+  /**
+   * Pages 回滚 / 重试。2026-10-21 临时项目实测：
+   * POST …/deployments/{id}/rollback 空 body → 200，返回被切过去的部署对象；
+   * POST …/deployments/{id}/retry 空 body → 对 Direct Upload 部署 400 (8000055, 只能重试 Git 构建)，
+   * 那是上游业务判断，原样上屏，不在这里假装成功。
+   */
+  pagesRollback: (cf: CfClient, env: Env, p: string, id: string) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments/${encodeURIComponent(id)}/rollback`, { method: "POST", body: {} }),
+  pagesRetry: (cf: CfClient, env: Env, p: string, id: string) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments/${encodeURIComponent(id)}/retry`, { method: "POST", body: {} }),
 };
 
 /* ---------- 写侧校验（第三道闸门） ----------
@@ -682,6 +696,13 @@ export const reads = {
   pagesProjects: (cf: CfClient, env: Env) => pagesList(cf, `/accounts/${ACC(env)}/pages/projects`),
   pagesDeployments: (cf: CfClient, env: Env, p: string) =>
     pagesList(cf, `/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments`),
+  /**
+   * Pages 构建日志。2026-10-21 实测（临时项目 + Direct Upload 部署）：
+   * GET …/deployments/:id/history/logs → 200，result = {total, includes_container_logs, data:[{ts,line}]}。
+   * 注意这是**构建阶段**日志；Direct Upload 只有一条 "Your site was deployed!"，不是运行时日志。
+   */
+  pagesBuildLogs: (cf: CfClient, env: Env, p: string, id: string) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments/${encodeURIComponent(id)}/history/logs`),
   dnsRecords: (cf: CfClient, env: Env, zone: string) => pagedList(cf, `/zones/${encodeURIComponent(zone)}/dns_records`, 100, 50),
   zoneRoutes: (cf: CfClient, env: Env, zone: string) => cf.rest(`/zones/${encodeURIComponent(zone)}/workers/routes?per_page=100`, { unwrap: "list" }),
   /** D1 数据库列表：fields 来自 docs/evidence/responses.sample.json「d1/database」实测 */

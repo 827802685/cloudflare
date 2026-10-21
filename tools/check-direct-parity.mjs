@@ -22,6 +22,7 @@ const { gwDirect, writeDirect, dropDirect } = await import(modPath);
 const DIRECT_BASE = "https://api.cloudflare.com/client/v4";
 const ACC = "e7fbd632e8b0ebfdfc6fab38f9323ceb"; // 32 位 hex，形状与真实账号一致
 const ZONE = "b".repeat(32);
+const DEP = "5e310b27-4a39-4324-8f49-681f36184a30"; // Pages / Workers 部署 id 的 UUID 形状
 const CTX = { token: "test-token", account: ACC, fresh: false };
 
 let captured = [];
@@ -139,6 +140,9 @@ expectOne("GET /v1/pages", `/accounts/${ACC}/pages/projects?page=1&per_page=10`)
 await call("/v1/pages/proj/deployments");
 expectOne("GET /v1/pages/proj/deployments", `/accounts/${ACC}/pages/projects/proj/deployments?page=1&per_page=10`);
 
+await call("/v1/pages/proj/deployments/" + DEP + "/logs");
+expectOne("GET Pages 构建日志（上游尾巴 /history/logs）", `/accounts/${ACC}/pages/projects/proj/deployments/${DEP}/history/logs`);
+
 await call("/v1/d1");
 expectOne("GET /v1/d1", `/accounts/${ACC}/d1/database?per_page=100&page=1`);
 
@@ -253,6 +257,12 @@ await runWrite("DELETE", "/v1/workers/hello/versions/" + "d".repeat(32));
 expectOne("DELETE versions/vid", `/accounts/${ACC}/workers/scripts/hello/versions/${"d".repeat(32)}`, { method: "DELETE" });
 await runWrite("DELETE", "/v1/workers/hello/deployments/5e310b27-4a39-4324-8f49-681f36184a30");
 expectOne("DELETE deployments/depId", `/accounts/${ACC}/workers/scripts/hello/deployments/5e310b27-4a39-4324-8f49-681f36184a30`, { method: "DELETE" });
+
+// Pages 回滚 / 重试：上游都是 POST + 空 body（2026-10-21 临时项目 cfconsole-tmp-1021 实测）
+await runWrite("POST", "/v1/pages/proj/deployments/" + DEP + "/rollback", undefined);
+expectOne("POST Pages rollback（空 body）", `/accounts/${ACC}/pages/projects/proj/deployments/${DEP}/rollback`, { method: "POST" });
+await runWrite("POST", "/v1/pages/proj/deployments/" + DEP + "/retry", undefined);
+expectOne("POST Pages retry（空 body）", `/accounts/${ACC}/pages/projects/proj/deployments/${DEP}/retry`, { method: "POST" });
 
 // D1 写通道：POST {sql}（写闸门管；GET 只读通道不在此测）
 await runWrite("POST", "/v1/d1/dbid/query", { sql: "INSERT INTO t VALUES (1)" });

@@ -3,9 +3,20 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import ErrorNote from "../components/ErrorNote.vue";
 import RowCard from "../components/RowCard.vue";
+import ConfirmSheet from "../components/ConfirmSheet.vue";
 import WorkersQuota from "../components/ver/WorkersQuota.vue";
 import CleanupPanel from "../components/ver/CleanupPanel.vue";
-import { api, forceFreshWindow, GwError, workerName } from "../lib/api";
+import {
+  api,
+  forceFreshWindow,
+  GwError,
+  previewPagesRetry,
+  previewPagesRollback,
+  setWritesOptIn,
+  workerName,
+  writesOptIn,
+  type WritePreview,
+} from "../lib/api";
 import { useFold } from "../lib/lists";
 import { bytes, dt, rel, shortId } from "../lib/fmt";
 
@@ -77,9 +88,6 @@ const deps = ref<any[]>([]);
 const visiblePageDeps = useFold(() => deps.value);
 const depErr = ref<GwError | null>(null);
 
-const WHY_WRITE = "Pages 回滚要发 POST …/deployments/{id}/rollback，这条路由网关和直连层都还没实现，上游形状也没实测过——所以这个动作现在不会发请求。";
-const WHY_LOG = "构建日志这条路由网关没有（/v1/pages/{项目}/deployments/{id}/history 没进白名单），所以这里点开也不会有数据。";
-
 async function loadPages() {
   pagesLoading.value = true;
   pagesErr.value = null;
@@ -95,17 +103,25 @@ async function loadPages() {
 
 const hasProject = computed(() => pages.value.length > 0);
 
-const projectActions = [
-  { ico: "deployments", label: "部署历史", go: "deps" },
-  { ico: "rollback", label: "回滚", go: "rollback", why: WHY_WRITE },
-  { ico: "retry", label: "重试构建", go: "retry", why: WHY_WRITE },
-  { ico: "buildlog", label: "构建日志", go: "logs", why: WHY_LOG },
-];
+/** 本机写开关：默认关（api.ts 写侧契约第 3 条 —— 关着就根本不出网） */
+const optIn = ref(writesOptIn());
+function toggleOptIn(v: boolean) {
+  setWritesOptIn(v);
+  optIn.value = writesOptIn();
+}
 
-async function openDeps(p: any) {
-  const name = String(p.name ?? "");
-  if (openPage.value === name) { openPage.value = ""; return; }
-  openPage.value = name;
+/** 回滚 / 重试走同一个确认抽屉：预览里的路径就是真要发的路径，不是第二套文案 */
+const sheet = ref<{ preview: WritePreview | null; busy: boolean; error: string }>({ preview: null, busy: false, error: "" });
+const pending = ref<{ kind: "rollback" | "retry"; project: string; depId: string } | null>(null);
+const actionMsg = ref<{ ok: boolean; text: string } | null>(null);
+
+/** 构建日志按部署展开（同一时刻只开一块，避免长列表被日志撑爆） */
+const logsFor = ref("");
+const logsRows = ref<Array<{ ts?: string; line?: string }>>([]);
+const logsErr = ref<GwError | null>(null);
+const logsLoading = ref(false);
+
+async function loadDeps(name: string) {
   deps.value = [];
   depErr.value = null;
   try {
@@ -116,6 +132,95 @@ async function openDeps(p: any) {
     depErr.value = e instanceof GwError ? e : new GwError("unknown", 0, null, String(e));
   }
 }
+
+async function openDeps(p: any) {
+  const name = String(p.name ?? "");
+  if (openPage.value === name) { openPage.value = ""; return; }
+  openPage.value = name;
+  logsFor.value = "";
+  await loadDeps(name);
+}
+
+function askRollback(project: string, d: any) {
+  const id = String(d?.id ?? "");
+  if (!project || !id) return;
+  sheet.value.error = "";
+  actionMsg.value = null;
+  pending.value = { kind: "rollback", project, depId: id };
+  try {
+    sheet.value.preview = previewPagesRollback(project, d);
+  } catch (e) {
+    sheet.value.error = e instanceof GwError ? e.message : String(e);
+  }
+}
+
+function askRetry(project: string, d: any) {
+  const id = String(d?.id ?? "");
+  if (!project || !id) return;
+  sheet.value.error = "";
+  actionMsg.value = null;
+  pending.value = { kind: "retry", project, depId: id };
+  try {
+    sheet.value.preview = previewPagesRetry(project, d);
+  } catch (e) {
+    sheet.value.error = e instanceof GwError ? e.message : String(e);
+  }
+}
+
+function cancelSheet() {
+  if (sheet.value.busy) return;
+  sheet.value.preview = null;
+  sheet.value.error = "";
+  pending.value = null;
+}
+
+async function confirmSheet() {
+  const p = pending.value;
+  if (!p || sheet.value.busy) return;
+  sheet.value.busy = true;
+  sheet.value.error = "";
+  try {
+    const r = p.kind === "rollback" ? await api.pageRollback(p.project, p.depId) : await api.pageRetry(p.project, p.depId);
+    forceFreshWindow();
+    await loadDeps(p.project);
+    actionMsg.value = {
+      ok: true,
+      text: p.kind === "rollback"
+        ? `已回滚：上游返回部署 ${shortId(String(r?.id ?? p.depId), 8)}（生产与预览已同时切换）`
+        : `已触发重试：上游返回部署 ${shortId(String(r?.id ?? p.depId), 8)}`,
+    };
+    sheet.value.preview = null;
+    pending.value = null;
+  } catch (e) {
+    const err = e instanceof GwError ? e : new GwError("unknown", 0, null, String(e));
+    // 上游业务判断原样上屏（例如 Direct Upload 部署 retry 的 400 8000055），不假装成功
+    sheet.value.error = `${err.kind}${err.code ? " " + err.code : ""}：${err.message}${err.hint ? "\n" + err.hint : ""}`;
+  } finally {
+    sheet.value.busy = false;
+  }
+}
+
+async function toggleLogs(project: string, d: any) {
+  const id = String(d?.id ?? "");
+  if (!project || !id) return;
+  if (logsFor.value === id) { logsFor.value = ""; return; }
+  logsFor.value = id;
+  logsRows.value = [];
+  logsErr.value = null;
+  logsLoading.value = true;
+  try {
+    forceFreshWindow();
+    const r = await api.pageBuildLogs(project, id);
+    logsRows.value = Array.isArray(r.result?.data) ? r.result!.data : [];
+  } catch (e) {
+    logsErr.value = e instanceof GwError ? e : new GwError("unknown", 0, null, String(e));
+  } finally {
+    logsLoading.value = false;
+  }
+}
+
+/** 项目级动作只留「部署历史」——回滚/重试/日志都需要具体部署 id，放成项目级按钮会让人点空 */
+const projectActions = [{ ico: "deployments", label: "部署历史", go: "deps" }];
 
 function onProjectGo(p: any, a: any) {
   if (a.go === "deps") openDeps(p);
@@ -213,6 +318,20 @@ function toggleClean(w: string) {
       <h3>Pages 项目（{{ pages.length }} 个）</h3>
       <ErrorNote :err="pagesErr" />
 
+      <!-- 写侧两层闸门的第一层：本机开关。关着时连请求都不会离开设备 -->
+      <div class="row" style="gap: 8px; margin: 6px 0 10px; flex-wrap: wrap">
+        <label class="row" style="gap: 6px">
+          <input type="checkbox" class="switch" :checked="optIn" @change="toggleOptIn(($event.target as HTMLInputElement).checked)" />
+          <span class="small">本机写开关：{{ optIn ? "已打开" : "未打开" }}</span>
+        </label>
+        <span class="small muted">
+          {{ optIn
+            ? "回滚 / 重试确认后会真的发到 Cloudflare（网关那侧还有一道 WRITE_ENABLED）。"
+            : "关着时 gwWrite 当场返回 writesDisabled，请求不会离开这台设备。" }}
+        </span>
+      </div>
+      <div v-if="actionMsg" class="small" :style="{ color: actionMsg.ok ? 'var(--ok)' : 'var(--warn)' }">{{ actionMsg.text }}</div>
+
       <div class="card" v-if="!hasProject && !pagesLoading && !pagesErr" style="margin-top: 0; border: none; box-shadow: none">
         <div class="small muted">
           这个账号还没有 Pages 项目（不是没取到：令牌能过 Pages 路由，缺的是数据）。后台建一个，这块立刻就有内容。
@@ -233,13 +352,28 @@ function toggleClean(w: string) {
             <ErrorNote :err="depErr" />
             <div class="list" v-if="deps.length">
               <div v-for="d in visiblePageDeps.shown" :key="d.id" class="item">
-                <div style="min-width: 0">
+                <div style="min-width: 0; flex: 1">
                   <div class="k">{{ shortId(d.id, 6) }}
                     <span class="badge live" v-if="d.latest_deploy">当前版本</span>
                   </div>
-                  <div class="small muted">{{ dt(d.created_on) }} · {{ d.branch }} · {{ d.build_result?.status || d.status }}</div>
+                  <div class="small muted">{{ dt(d.created_on) }} · {{ d.branch }} · {{ d.build_result?.status || d.status }} · {{ bytes(d.build_result?.bytes ?? 0) }}</div>
+                  <div class="row" style="gap: 6px; margin-top: 6px; flex-wrap: wrap">
+                    <button class="chip" type="button" v-if="!d.latest_deploy" @click="askRollback(String(p.name), d)">回滚到此</button>
+                    <button class="chip" type="button" @click="askRetry(String(p.name), d)">重试构建</button>
+                    <button class="chip" type="button" :class="{ on: logsFor === d.id }" @click="toggleLogs(String(p.name), d)">
+                      {{ logsFor === d.id ? "收起日志" : "构建日志" }}
+                    </button>
+                  </div>
+                  <div v-if="logsFor === d.id" style="margin-top: 8px">
+                    <div v-if="logsLoading" class="small muted">构建日志加载中…</div>
+                    <ErrorNote v-else-if="logsErr" :err="logsErr" />
+                    <div v-else-if="logsRows.length" class="logbox mono">
+                      <div v-for="(l, i) in logsRows" :key="i">{{ l.ts ? `[${l.ts}] ` : "" }}{{ l.line }}</div>
+                    </div>
+                    <div v-else class="small muted">这次部署没有构建日志（Direct Upload 部署通常只有一条部署完成记录）。</div>
+                  </div>
                 </div>
-                <div class="v">{{ bytes(d.build_result?.bytes ?? 0) }}</div>
+                <div class="v">{{ rel(d.created_on) }}</div>
               </div>
             </div>
             <div v-else-if="!depErr" class="empty">{{ pagesLoading ? "加载中" : "没有部署记录" }}</div>
@@ -250,5 +384,21 @@ function toggleClean(w: string) {
         </div>
       </div>
     </div>
+
+    <ConfirmSheet :preview="sheet.preview" :busy="sheet.busy" :error="sheet.error" @confirm="confirmSheet" @cancel="cancelSheet" />
   </div>
 </template>
+
+<style scoped>
+.logbox {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11.5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+}
+</style>

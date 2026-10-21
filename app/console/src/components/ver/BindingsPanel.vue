@@ -9,18 +9,17 @@
  * 路由状态：PUT /v1/workers/:s/settings 两层都已接通（网关侧转上游 PATCH + multipart part=settings，
  *          2026-10-20 实测 200）；客户端只发 bindings 数组，覆盖语义与确认抽屉保持一致。
  *
- * 目标目录（可选 KV / R2 / D1 列表）本应来自 GET /v1/kv、/v1/r2、/v1/d1，
- * 但：KV/D1 的候选接口虽已通，这一版仍保持手填（少一次取数、也少一处可能 403 的下拉）；
- * R2 账号没开通（实测 403 10042 serviceDisabled），候选必然为空。
- * 所以不塞假下拉，只让人手填 namespace_id / bucket_name / database_name，并说清为什么。
+ * 目标目录：KV 用 GET /v1/kv 的命名空间列表、D1 用 GET /v1/d1 的库列表、service 用 GET /v1/workers 的脚本名，
+ * 都是本机已有的读接口，进编辑模式时取一次；取不到就退回手填，并说明为什么。
+ * R2 账号没开通（实测 403 10042 serviceDisabled），没有候选，只能手填桶名。
  */
 export default { name: "VerBindingsPanel" };
 </script>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import ConfirmSheet from "../ConfirmSheet.vue";
-import { GwError, gwWrite, writesOptIn, type WritePreview } from "../../lib/api";
+import { api, GwError, gwWrite, workerName, writesOptIn, type D1Database, type KvNamespace, type WritePreview } from "../../lib/api";
 import { shortId } from "../../lib/fmt";
 
 const props = withDefaults(
@@ -37,10 +36,10 @@ const KIND_CN: Record<string, string> = {
 };
 
 const CATS = [
-  { type: "kv_namespace", title: "Workers KV", whyCatalog: "候选命名空间接口（GET /v1/kv）已经在，但这一版仍是手填 namespace_id；下拉下一版接。" },
-  { type: "r2_bucket", title: "R2 存储桶", whyCatalog: "这个账号没启用 R2（实测 403 code=10042 serviceDisabled），候选桶必然是空，所以只能手填 bucket_name。" },
-  { type: "d1_database", title: "D1 数据库", whyCatalog: "候选库接口（GET /v1/d1）已经在，但这一版仍是手填 database_name；下拉下一版接。" },
-  { type: "service", title: "服务绑定", whyCatalog: "可选的其它 Worker 名来自 Worker 列表（已有），但版本/环境路由信息接口不返回，这里按 service + environment 手填。" },
+  { type: "kv_namespace", title: "Workers KV", whyCatalog: "候选来自 GET /v1/kv（命名空间列表），取不到时退回手填 namespace_id。" },
+  { type: "r2_bucket", title: "R2 存储桶", whyCatalog: "这个账号没启用 R2（实测 403 code=10042 serviceDisabled），候选桶必然是空，只能手填 bucket_name。" },
+  { type: "d1_database", title: "D1 数据库", whyCatalog: "候选来自 GET /v1/d1（库列表），取不到时退回手填 database_name。" },
+  { type: "service", title: "服务绑定", whyCatalog: "候选来自 GET /v1/workers（脚本名）；环境按 production 填，可手改。" },
 ];
 
 function ofType(type: string): any[] {
@@ -71,6 +70,7 @@ function startEdit() {
   // 拷贝现有 bindings，编辑期间只改这份 draft；提交时原样 PUT
   draft.value = (props.bindings ?? []).map((b: any) => ({ ...b }));
   editing.value = true;
+  loadCats();
 }
 function cancelEdit() {
   editing.value = false;
@@ -88,6 +88,46 @@ const addType = ref<"kv_namespace" | "r2_bucket" | "d1_database" | "service">("k
 const addBinding = ref("");
 const addTarget = ref("");
 const addErr = ref("");
+
+/* ---------- 候选：进编辑模式时取一次，取不到就手填 ---------- */
+const cats = ref<{ kv: KvNamespace[]; d1: D1Database[]; workers: string[]; err: string }>({ kv: [], d1: [], workers: [], err: "" });
+const catsLoading = ref(false);
+async function loadCats() {
+  if (catsLoading.value || cats.value.kv.length || cats.value.d1.length || cats.value.workers.length || cats.value.err) return;
+  catsLoading.value = true;
+  try {
+    const [kv, d1, ws] = await Promise.all([api.kvNamespaces(), api.d1Databases(), api.workers()]);
+    cats.value = {
+      kv: kv.result ?? [],
+      d1: d1.result ?? [],
+      workers: (ws.result ?? []).map((w: any) => workerName(w)),
+      err: "",
+    };
+  } catch (e) {
+    cats.value = { ...cats.value, err: e instanceof GwError ? `${e.kind} ${e.message}` : String(e) };
+  } finally {
+    catsLoading.value = false;
+  }
+}
+
+/** 当前类型能给的候选；R2 永远为空（账号没开通） */
+const options = computed<{ value: string; label: string }[]>(() => {
+  if (addType.value === "kv_namespace") return cats.value.kv.map((n) => ({ value: n.id, label: `${n.title || "(无标题)"} · ${n.id}` }));
+  if (addType.value === "d1_database") return cats.value.d1.map((d) => ({ value: d.name, label: `${d.name} · ${shortId(d.uuid, 10)}` }));
+  if (addType.value === "service") return cats.value.workers.filter((w) => w !== props.name).map((w) => ({ value: w, label: w }));
+  return [];
+});
+
+const whyNow = computed(() => {
+  if (addType.value === "r2_bucket") return (CATS.find((c) => c.type === addType.value) || CATS[0]).whyCatalog;
+  if (cats.value.err) return `候选列表没取到（${cats.value.err}），只能手填。`;
+  if (catsLoading.value) return "正在取候选列表…";
+  if (!options.value.length) return "这个账号下没有候选，只能手填；也可能是当前授权读不到列表。";
+  return `候选来自 ${addType.value === "kv_namespace" ? "GET /v1/kv" : addType.value === "d1_database" ? "GET /v1/d1" : "GET /v1/workers"}，共 ${options.value.length} 个。`;
+});
+
+/** 换类型时把上一类的目标清掉，避免把 namespace_id 当成库名提交 */
+watch(addType, () => { addTarget.value = ""; addErr.value = ""; loadCats(); });
 
 function addDraft() {
   addErr.value = "";
@@ -227,11 +267,15 @@ const noBindings = computed(() => !props.loading && !props.err && (props.binding
             <option value="service">服务</option>
           </select>
           <input v-model="addBinding" class="field" placeholder="绑定名 binding" spellcheck="false" />
-          <input v-model="addTarget" class="field" :placeholder="addType === 'kv_namespace' ? 'namespace_id' : addType === 'r2_bucket' ? 'bucket_name' : addType === 'd1_database' ? 'database_name' : '被调用的 Worker 名'" spellcheck="false" />
+          <select v-if="options.length" v-model="addTarget" class="field" style="max-width: 240px">
+            <option value="" disabled>{{ addType === "kv_namespace" ? "选择命名空间" : addType === "d1_database" ? "选择数据库" : "选择 Worker" }}</option>
+            <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
+          </select>
+          <input v-else v-model="addTarget" class="field" :placeholder="addType === 'kv_namespace' ? 'namespace_id' : addType === 'r2_bucket' ? 'bucket_name' : addType === 'd1_database' ? 'database_name' : '被调用的 Worker 名'" spellcheck="false" />
           <button class="chip" type="button" @click="addDraft">添加</button>
         </div>
         <p class="small errtext" v-if="addErr">{{ addErr }}</p>
-        <p class="small muted">{{ (CATS.find((c) => c.type === addType) || CATS[0]).whyCatalog }}</p>
+        <p class="small muted">{{ whyNow }}</p>
       </div>
     </template>
 

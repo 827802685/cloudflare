@@ -14,7 +14,7 @@ import RowCard from "../RowCard.vue";
 import FoldNote from "../FoldNote.vue";
 import { useFold } from "../../lib/lists";
 import StoreSplit from "./StoreSplit.vue";
-import { api, dropMem, forceFreshWindow, GwError, gwWrite, setWritesOptIn, writesOptIn, type KvNamespace, type KvKeysResult, type WritePreview } from "../../lib/api";
+import { api, dropMem, forceFreshWindow, GwError, setWritesOptIn, writesOptIn, type KvNamespace, type KvKeysResult, type WritePreview } from "../../lib/api";
 
 type Slot<T> = { data: T | null; err: GwError | null; loading: boolean };
 const mk = <T,>(): Slot<T> => ({ data: null, err: null, loading: false });
@@ -146,7 +146,7 @@ async function confirmWrite() {
   busy.value = true;
   sheetErr.value = "";
   try {
-    await gwWrite("PUT", `/v1/kv/${selectedId.value}/values/${encodeURIComponent(key)}`, { value: wVal.value });
+    await api.kvPutValue(selectedId.value, key, wVal.value);
     dropMem("/v1/kv/" + selectedId.value);
     await loadKeys();
     showWrite.value = false;
@@ -187,7 +187,7 @@ async function confirmDeleteKey() {
   busy.value = true;
   sheetErr.value = "";
   try {
-    await gwWrite("DELETE", `/v1/kv/${selectedId.value}/values/${encodeURIComponent(key)}`);
+    await api.kvDeleteKey(selectedId.value, key);
     dropMem("/v1/kv/" + selectedId.value);
     await loadKeys();
     preview.value = null;
