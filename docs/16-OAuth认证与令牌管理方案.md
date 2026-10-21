@@ -315,6 +315,25 @@ App → 系统浏览器 → CF 授权页
 - 中继不存 code、不换 token（换 token 要 `code_verifier`，只存在手机内存）、不写日志、不落 cookie。
 - 客户端只把 `cfconsole://oauth/callback` 当作回调匹配目标，`redirect_uri` 传的是 https 中继地址。
 - 本地 `wrangler dev` 已验证：`/` 未登录 302 `/login`；`/oauth/callback` 未登录仍 302 到自定义 scheme。
+- 线上已验证（`https://cf.zjkl.qzz.io/oauth/callback?code=…&state=…`）：同样 302 到
+  `cfconsole://oauth/callback?code=…&state=…`，`cache-control: no-store`。
+
+### 9.3.1 2026-10-21 真机 API 实测纠正
+
+1. **Cloudflare 其实接受自定义 scheme 作为 redirect_uri**：`PATCH /accounts/{id}/oauth_clients/{cid}`
+   把 `cfconsole://oauth/callback` 加入 `redirect_uris` 返回 200，随后 authorize 请求也通过校验
+   （302 到登录页，而不是 `invalid_request`）。所以「CF 只收 https」这条在 API 侧不成立，
+   Orange Cloud 源码注释可能只反映了 Dashboard 表单的校验。中继仍然保留：它是可达性最稳的一条路，
+   且对浏览器拦截自定义 scheme 的情况有兜底价值。
+2. **`state` 至少 8 字符**：短于 8 会被 authorize 直接 303 回 `redirect_uri` 并带
+   `error=invalid_state`。客户端用的是 16 字节 base64url（22 字符），满足要求。
+3. **错误的 redirect_uri 走 `/oauth/error`**，不会跳到未注册地址；`redirect_uris` 是逐字精确匹配。
+4. **token 端点**：用假 code 请求返回 `400 {"error":"invalid_grant",…}`，
+   说明 public client（`token_endpoint_auth_method=none`）+ PKCE 这条路被接受。
+5. 创建出来的 client：`client_id=9d3284318a8bbd3db132419f9e85e08e`、`visibility=private`、
+   无 secret；`offline_access` 不在请求里但被自动追加到 `scopes`。
+6. **线上网关现状**：`cf.zjkl.qzz.io` 可达（登录页 200、`/` 未登录 302 `/login`）；
+   `cf-console-gateway.zjkl0501.workers.dev` 连 TLS 都握手失败，再次确认 `workers.dev` 不可用。
 
 ### 9.4 仍需真机消掉的项
 
