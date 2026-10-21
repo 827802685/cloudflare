@@ -282,7 +282,7 @@ function cancelBatch() {
       <span class="small muted">{{ optIn ? "确认后请求会真的发到网关（网关那一侧还有一道 WRITE_ENABLED 闸门）。" : "关着的时候 gwWrite 会当场返回 writesDisabled，请求不会离开这台设备。" }}</span>
     </div>
 
-    <div class="empty" v-if="!states.length">先在下面列表里勾选要处理的 Worker（工具条「管理版本」进入选择模式）。</div>
+    <div class="empty" v-if="!states.length">先在上方「版本清理」卡片里勾选要处理的 Worker。</div>
 
     <div v-for="s in states" :key="s.worker" class="wsec">
       <div class="whead">

@@ -9,9 +9,10 @@
  * 路由状态：PUT /v1/workers/:s/settings 两层都已接通（网关侧转上游 PATCH + multipart part=settings，
  *          2026-10-20 实测 200）；客户端只发 bindings 数组，覆盖语义与确认抽屉保持一致。
  *
- * 目标目录（可选 KV / R2 / D1 列表）本应来自 GET /v1/kv/namespaces、/v1/r2/buckets、/v1/d1/databases，
- * 但：KV/D1 读权限令牌缺（实测 403），R2 账号没开通（实测 403 10042 serviceDisabled）。
- * 所以这里不塞假下拉，只让人手填 namespace_id / bucket_name / database_id，并说清为什么没有候选。
+ * 目标目录（可选 KV / R2 / D1 列表）本应来自 GET /v1/kv、/v1/r2、/v1/d1，
+ * 但：KV/D1 的候选接口虽已通，这一版仍保持手填（少一次取数、也少一处可能 403 的下拉）；
+ * R2 账号没开通（实测 403 10042 serviceDisabled），候选必然为空。
+ * 所以不塞假下拉，只让人手填 namespace_id / bucket_name / database_name，并说清为什么。
  */
 export default { name: "VerBindingsPanel" };
 </script>
@@ -36,9 +37,9 @@ const KIND_CN: Record<string, string> = {
 };
 
 const CATS = [
-  { type: "kv_namespace", title: "Workers KV", whyCatalog: "候选命名空间列表要 GET /v1/kv/namespaces，本网关没有这条路由，且当前令牌缺 KV 读权限（实测 403）——所以只能手填 namespace_id。" },
-  { type: "r2_bucket", title: "R2 存储桶", whyCatalog: "候选桶列表要 GET /v1/r2/buckets，本网关没有这条路由，且这个账号没启用 R2（实测 403 code=10042 serviceDisabled）——所以这里没有任何可选桶，只能手填 bucket_name。" },
-  { type: "d1_database", title: "D1 数据库", whyCatalog: "候选库列表要 GET /v1/d1/databases，本网关没有这条路由，且当前令牌缺 D1 读权限（实测 403）——所以只能手填 database_name。" },
+  { type: "kv_namespace", title: "Workers KV", whyCatalog: "候选命名空间接口（GET /v1/kv）已经在，但这一版仍是手填 namespace_id；下拉下一版接。" },
+  { type: "r2_bucket", title: "R2 存储桶", whyCatalog: "这个账号没启用 R2（实测 403 code=10042 serviceDisabled），候选桶必然是空，所以只能手填 bucket_name。" },
+  { type: "d1_database", title: "D1 数据库", whyCatalog: "候选库接口（GET /v1/d1）已经在，但这一版仍是手填 database_name；下拉下一版接。" },
   { type: "service", title: "服务绑定", whyCatalog: "可选的其它 Worker 名来自 Worker 列表（已有），但版本/环境路由信息接口不返回，这里按 service + environment 手填。" },
 ];
 
