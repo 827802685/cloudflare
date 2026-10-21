@@ -14,14 +14,22 @@ import * as vault from "./vault";
 import { isNativeApp } from "./config";
 
 export interface CfAccount {
-  /** 该账号的 CF API Token（Bearer）；请求时经 x-cf-token 带给网关 */
+  /**
+   * 该账号的 CF API Token（Bearer）。
+   * `auth === "oauth"` 时**恒为空字符串** —— OAuth 的凭据（refresh token）在系统钥匙串里，
+   * 由 oauth.ts 按 `credRef` 取，绝不进这个列表（列表是会被整体加密落盘的，钥匙串不该被复制一份）。
+   */
   token: string;
-  /** CF 账号 id（32 位 hex），添加时拿令牌打 /accounts 得到 */
+  /** CF 账号 id（32 位 hex），添加时拿令牌（或 OAuth access token）打 /accounts 得到 */
   id: string;
   /** CF 账号名（从 CF 来，只读） */
   name: string;
   /** 用户起的别名；空则回退到 name */
   alias: string;
+  /** 认证方式：缺省（老数据）= api_token；oauth 只在 APK 直连模式可用（docs/16） */
+  auth?: "api_token" | "oauth";
+  /** 仅 oauth：系统钥匙串里那条授权的键。一个 credRef 对应一次授权 */
+  credRef?: string;
 }
 
 const HEX32 = /^[0-9a-f]{32}$/i;
@@ -58,10 +66,15 @@ async function nativeLoad(): Promise<CfAccount[]> {
 }
 
 function norm(a: any): CfAccount | null {
-  const token = String(a?.token ?? "").trim();
   const id = String(a?.id ?? "").trim().toLowerCase();
-  if (!token || !HEX32.test(id)) return null;
-  return { token, id, name: String(a?.name ?? "").trim(), alias: String(a?.alias ?? "").trim() };
+  if (!HEX32.test(id)) return null;
+  // 认证方式缺省按 api_token（兼容升级前的存储）；oauth 必须有 credRef，令牌字段留空
+  const auth: "api_token" | "oauth" = a?.auth === "oauth" ? "oauth" : "api_token";
+  const credRef = String(a?.credRef ?? "").trim();
+  const token = String(a?.token ?? "").trim();
+  if (auth === "oauth" ? !credRef : !token) return null;
+  const base: CfAccount = { token: auth === "oauth" ? "" : token, id, name: String(a?.name ?? "").trim(), alias: String(a?.alias ?? "").trim() };
+  return auth === "oauth" ? { ...base, auth, credRef } : base;
 }
 
 /** 读上一版遗留的明文账号（迁移用；读完由设置页引导加密并清掉） */

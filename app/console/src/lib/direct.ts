@@ -949,3 +949,147 @@ export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELE
   }
   throw new DirectError("badQuery", 422, null, `直连写侧不认这条路：${method} ${path}`);
 }
+
+/* ============================================================================
+ * 账户级 API Token 管理（仅 APK 直连；对应 OAuth scope `account_api_tokens:*`）
+ *
+ * 为什么只做直连：OAuth 凭据只在本机钥匙串里，网关拿不到也不该拿；网页/网关模式没有
+ * 可用的 OAuth 通道，这条功能在那里不展示（docs/16 §4）。
+ *
+ * 端点（2026-10-21 核对官方 API 文档）：
+ *   GET    /accounts/{id}/tokens
+ *   POST   /accounts/{id}/tokens
+ *   DELETE /accounts/{id}/tokens/{tid}
+ *   PUT    /accounts/{id}/tokens/{tid}/value          ← 轮转（旧值立即失效）
+ *   GET    /accounts/{id}/tokens/permission_groups    ← 建 token 时要填的权限组 id
+ * ========================================================================== */
+
+export interface AccountToken {
+  id: string;
+  name?: string;
+  status?: string;
+  issued_on?: string;
+  modified_on?: string;
+  expires_on?: string;
+  policies?: Array<{
+    effect?: string;
+    resources?: Record<string, unknown>;
+    permission_groups?: Array<{ id?: string; name?: string }>;
+  }>;
+}
+
+export type TokenResources = Record<string, string | Record<string, string>>;
+
+export interface NewAccountToken {
+  name: string;
+  policies: Array<{
+    effect: "allow" | "deny";
+    resources: TokenResources;
+    permission_groups: Array<{ id: string }>;
+  }>;
+  expires_on?: string;
+  not_before?: string;
+}
+
+const TOKEN_ID = /^[0-9a-f]{32}$/i;
+const GROUP_ID = /^[0-9a-f]{32}$/i;
+
+/** 建 token 前的本地校验：**先把自己发的东西看清楚**，别拿 422 当校验器 */
+function validateNewToken(body: NewAccountToken): NewAccountToken {
+  const bad = (m: string): never => {
+    throw new DirectError("badQuery", 422, null, m);
+  };
+  const raw = (body ?? {}) as unknown as Record<string, unknown>;
+  const unknownKeys = Object.keys(raw).filter((k) => !["name", "policies", "expires_on", "not_before"].includes(k));
+  if (unknownKeys.length) bad(`不支持的字段：${unknownKeys.join(",")}`);
+
+  const name = String(raw.name ?? "").trim();
+  if (!name) bad("令牌名称不能为空");
+  if (name.length > 120) bad("令牌名称最多 120 字符");
+
+  if (!Array.isArray(raw.policies) || raw.policies.length === 0) throw new DirectError("badQuery", 422, null, "至少需要一条策略（policies）");
+  const rawPolicies = raw.policies as unknown[];
+  if (rawPolicies.length > 8) bad("策略最多 8 条");
+  const policies = rawPolicies.map((p, i): NewAccountToken["policies"][number] => {
+    if (typeof p !== "object" || p === null) bad(`policies[${i}] 必须是对象`);
+    const o = p as Record<string, unknown>;
+    const effect = String(o.effect ?? "");
+    if (effect !== "allow" && effect !== "deny") bad(`policies[${i}].effect 只能是 allow / deny`);
+    if (!Array.isArray(o.permission_groups) || o.permission_groups.length === 0) throw new DirectError("badQuery", 422, null, `policies[${i}].permission_groups 至少一项`);
+    const pgRaw = o.permission_groups as unknown[];
+    if (pgRaw.length > 64) bad(`policies[${i}].permission_groups 最多 64 项`);
+    const groups = pgRaw.map((g, j) => {
+      const id = String((g as Record<string, unknown>)?.id ?? "").trim();
+      if (!GROUP_ID.test(id)) bad(`policies[${i}].permission_groups[${j}].id 得是 32 位十六进制`);
+      return { id };
+    });
+    const res = o.resources;
+    if (typeof res !== "object" || res === null || Array.isArray(res)) bad(`policies[${i}].resources 必须是对象`);
+    /**
+     * 上游两种形状都收（官方 Create Token 示例文档 2026-10-21 核对）：
+     *   扁平  { "com.cloudflare.api.account.zone.<id>": "*" }
+     *   嵌套  { "com.cloudflare.api.account.<id>": { "com.cloudflare.api.account.zone.*": "*" } }
+     * 早前只放行嵌套，会把官方示例直接 422 掉。
+     */
+    const resources: TokenResources = {};
+    for (const [rk, rv] of Object.entries(res as Record<string, unknown>)) {
+      if (!rk.startsWith("com.cloudflare.api.")) bad(`policies[${i}].resources 的键要以 com.cloudflare.api. 开头：${rk}`);
+      if (typeof rv === "string") {
+        if (!rv.trim()) bad(`policies[${i}].resources.${rk} 不能为空字符串`);
+        resources[rk] = rv;
+        continue;
+      }
+      if (typeof rv !== "object" || rv === null || Array.isArray(rv)) bad(`policies[${i}].resources.${rk} 只能是字符串或对象`);
+      const bucket: Record<string, string> = {};
+      for (const [k, v] of Object.entries(rv as Record<string, unknown>)) {
+        if (typeof v !== "string") bad(`policies[${i}].resources.${rk}.${k} 必须是字符串`);
+        bucket[k] = v as string;
+      }
+      if (!Object.keys(bucket).length) bad(`policies[${i}].resources.${rk} 不能为空`);
+      resources[rk] = bucket;
+    }
+    if (!Object.keys(resources).length) bad(`policies[${i}].resources 不能为空`);
+    return { effect: effect as "allow" | "deny", resources, permission_groups: groups };
+  });
+
+  const out: NewAccountToken = { name, policies };
+  for (const k of ["expires_on", "not_before"] as const) {
+    const v = String(raw[k] ?? "").trim();
+    if (!v) continue;
+    const t = Date.parse(v);
+    if (!Number.isFinite(t)) bad(`${k} 不是合法时间（要 ISO 8601，例 2026-12-31T00:00:00Z）`);
+    if (k === "expires_on" && t <= Date.now()) bad("expires_on 必须晚于当前时间");
+    out[k] = new Date(t).toISOString();
+  }
+  return out;
+}
+
+export async function accountTokensDirect(ctx: DirectCtx): Promise<{ result: AccountToken[] }> {
+  const r = await rest<AccountToken[]>(ctx.token, `${A(ctx.account)}/tokens`, {}, true);
+  return { result: Array.isArray(r.data) ? r.data : [] };
+}
+
+export async function permissionGroupsDirect(ctx: DirectCtx): Promise<{ result: any[] }> {
+  const r = await rest<any[]>(ctx.token, `${A(ctx.account)}/tokens/permission_groups`, {}, true);
+  return { result: Array.isArray(r.data) ? r.data : [] };
+}
+
+/** 创建：返回体里的 `value` 是**唯一一次**出现的令牌明文，调用方只许展示、不许落盘 */
+export async function createAccountTokenDirect(ctx: DirectCtx, body: NewAccountToken): Promise<AccountToken & { value?: string }> {
+  const clean = validateNewToken(body);
+  const r = await rest<any>(ctx.token, `${A(ctx.account)}/tokens`, { method: "POST", body: clean }, false);
+  return r.data;
+}
+
+export async function deleteAccountTokenDirect(ctx: DirectCtx, tokenId: string): Promise<any> {
+  if (!TOKEN_ID.test(tokenId)) throw new DirectError("badQuery", 422, null, "token id 得是 32 位十六进制");
+  const r = await rest<any>(ctx.token, `${A(ctx.account)}/tokens/${enc(tokenId)}`, { method: "DELETE" }, false);
+  return r.data;
+}
+
+/** 轮转：同一 token 换一把新值，旧值立即失效（界面上必须提示"用到它的地方要同步换"） */
+export async function rotateAccountTokenDirect(ctx: DirectCtx, tokenId: string): Promise<AccountToken & { value?: string }> {
+  if (!TOKEN_ID.test(tokenId)) throw new DirectError("badQuery", 422, null, "token id 得是 32 位十六进制");
+  const r = await rest<any>(ctx.token, `${A(ctx.account)}/tokens/${enc(tokenId)}/value`, { method: "PUT", body: {} }, false);
+  return r.data;
+}

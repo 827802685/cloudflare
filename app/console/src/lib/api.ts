@@ -17,6 +17,7 @@
 import { reactive } from "vue";
 import { effectiveBase, isNativeApp, loadConfig, type Config } from "./config";
 import { findAccount } from "./accounts";
+import { ensureAccessToken, OAuthError } from "./oauth";
 import { DirectError, dropDirect, gwDirect, probeTokenDirect, takeDirectCalls, writeDirect, type DirectCtx } from "./direct";
 
 export type ErrKind =
@@ -64,10 +65,42 @@ export { isNativeApp };
  * 直连上下文：选中账号的令牌 + 账号 id。返回 null = 这台设备现在没法直连
  * （没选账号，或保险箱还没解锁）—— 调用方据此报一条说清楚的错，不静默改走网关：
  * APK 里本来就没有网关在跑，"回落网关"在这里只会变成一条迟到的连接失败。
+ *
+ * OAuth 账号在这里是**异步**的：access token 只在内存，冷启动/过期时先用钥匙串里的
+ * refresh token 换一次（oauth.ts 保证同一 credRef 的刷新串行）。API Token 账号仍然同步取值。
  */
-function directCtx(cfg: Config, fresh: boolean): DirectCtx | null {
+async function directCtx(cfg: Config, fresh: boolean): Promise<DirectCtx | null> {
   const acc = cfg.account ? findAccount(cfg.account) : null;
-  return acc ? { token: acc.token, account: acc.id, fresh } : null;
+  if (!acc) return null;
+  if (acc.auth === "oauth") {
+    if (!acc.credRef) return null;
+    try {
+      return { token: await ensureAccessToken(acc.credRef), account: acc.id, fresh };
+    } catch (e) {
+      throw asGwError(e);
+    }
+  }
+  return { token: acc.token, account: acc.id, fresh };
+}
+
+/** 给直连专属功能（如令牌管理）用的上下文；拿不到就按现有口径报错 */
+export async function requireDirectCtx(): Promise<DirectCtx> {
+  const cfg = loadConfig();
+  const ctx = await directCtx(cfg, false);
+  if (!ctx) throw noDirectCtxError(cfg);
+  return ctx;
+}
+
+/**
+ * OAuth 账号在网关模式下没有可用凭据（refresh token 只在系统钥匙串，网关拿不到，
+ * 也不该把长期凭据交给中间服务器）。与其静默回落到网关 env 令牌、把 A 账号的数据
+ * 显示成 B 账号的，不如直接报错让人换认证方式。
+ */
+function assertGatewayAuth(cfg: Config): void {
+  const acc = cfg.account ? findAccount(cfg.account) : null;
+  if (acc?.auth === "oauth") {
+    throw new GwError("auth", 401, null, "OAuth 账号只能在 APK 直连模式使用；网页/网关模式请改用 API Token");
+  }
 }
 
 /** 直连不可用时的报错口径：分清"没加账号"和"加了没解锁"，两者的下一步动作不一样 */
@@ -85,6 +118,8 @@ function noDirectCtxError(cfg: Config): GwError {
 /** DirectError 与 GwError 同形（kind/http/code/message），在边界上换成 GwError，界面那一层不用知道有两种错 */
 function asGwError(e: unknown): unknown {
   if (e instanceof DirectError) return new GwError(e.kind, e.http, e.code, e.message);
+  // OAuthError 的 kind 是 ErrKind 的子集，直接映射；http 保留原状态码便于界面分辨 401 / 0
+  if (e instanceof OAuthError) return new GwError(e.kind, e.http, null, e.message);
   return e;
 }
 
@@ -204,7 +239,7 @@ export async function gw<T>(path: string, query?: Record<string, string | number
     }
   }
   if (native) {
-    const ctx = directCtx(cfg, fresh);
+    const ctx = await directCtx(cfg, fresh);
     if (!ctx) throw noDirectCtxError(cfg);
     try {
       const data = await gwDirect<T>(path, merged, ctx);
@@ -219,6 +254,7 @@ export async function gw<T>(path: string, query?: Record<string, string | number
       throw asGwError(e);
     }
   }
+  assertGatewayAuth(cfg);
   const finalUrl = fresh ? url + (url.includes("?") ? "&" : "?") + "fresh=1" : url;
   let res: Response;
   try {
@@ -260,12 +296,13 @@ export async function gw<T>(path: string, query?: Record<string, string | number
 export async function gwHealth(base: string): Promise<{ ok: boolean; service?: string; writes?: string; ranges?: string[]; direct?: boolean; demo?: boolean }> {
   if (isNativeApp()) {
     const cfg = loadConfig();
-    const acc = cfg.account ? findAccount(cfg.account) : null;
-    if (!acc) throw noDirectCtxError(cfg);
     try {
-      await probeTokenDirect(acc.token);
+      // 用同一套 directCtx 取令牌：OAuth 账号会自动刷新，不能直接读 acc.token（那是空串）
+      const ctx = await requireDirectCtx();
+      await probeTokenDirect(ctx.token);
       return { ok: true, service: "直连 api.cloudflare.com（不经过网关）", writes: "enabled", ranges: ["24h", "7d", "30d"], direct: true };
     } catch (e) {
+      if (e instanceof GwError) throw e;
       throw asGwError(e);
     }
   }
@@ -675,7 +712,7 @@ export async function gwWrite<T = any>(method: WritePreview["method"], path: str
   const cfg = loadConfig();
   // 直连模式（APK）：没有设备令牌这一说，凭据就是选中账号的 CF 令牌；写完了两层缓存都要作废
   if (isNativeApp()) {
-    const ctx = directCtx(cfg, false);
+    const ctx = await directCtx(cfg, false);
     if (!ctx) throw noDirectCtxError(cfg);
     try {
       const data = await writeDirect(ctx, method, path, body);
@@ -690,6 +727,7 @@ export async function gwWrite<T = any>(method: WritePreview["method"], path: str
     }
   }
   if (!cfg.deviceToken) throw new GwError("auth", 401, null, "没有设备令牌，去「设置」里填");
+  assertGatewayAuth(cfg);
   const q = cfg.account && !NO_ACCOUNT_PARAM.has(path) ? { account: cfg.account } : undefined;
   const url = effectiveBase(cfg) + path + qs(q);
   let res: Response;

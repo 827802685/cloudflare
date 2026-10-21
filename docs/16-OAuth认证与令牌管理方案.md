@@ -273,7 +273,41 @@ OAuth 账号的 secret 由新的 `lib/oauth.ts` 持有，`accounts.ts` 只存元
 
 ---
 
-## 8. 参考
+## 9. 实施记录（2026-10-21，代码已落地，待真机验证）
+
+> 状态说明：**代码路径与类型检查已通过，OAuth 与令牌创建均未经过真机端到端验证** ——
+> 缺真实 `client_id`、缺在 CF 后台登记 redirect、缺装机实测。按「不能凭感觉」的口径，
+> 在 P0 跑完之前，这两项只能算「已实现」，不能算「已完成」。
+
+### 9.1 落地文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `app/console/src/lib/secure-store.ts` | 系统钥匙串抽象；Android 走 `@aparajita/capacitor-secure-storage`（Keystore），网页回退 localStorage（OAuth 在网页不可用） |
+| `app/console/src/lib/oauth.ts` | PKCE S256、系统浏览器授权、`cfconsole://oauth/callback` 回调、换 token、按 credRef 串行刷新、撤销 |
+| `app/console/src/lib/accounts.ts` | 账号新增 `auth` / `credRef`；OAuth 账号 `token` 恒空，长期凭据不进账号列表 |
+| `app/console/src/lib/api.ts` | `directCtx` 改异步：OAuth 账号先取（必要时刷新）access token；网关模式对 OAuth 账号直接报错 |
+| `app/console/src/lib/direct.ts` | 账户级令牌 5 个端点 + 本地校验（资源键、权限组 id、到期时间） |
+| `app/console/src/views/TokensView.vue` | 令牌列表 / 创建 / 轮转 / 删除；明文只显示一次；建/删/轮转受本机写开关管辖 |
+| `app/console/src/views/SettingsView.vue` | OAuth 登录卡片（client_id / redirect_uri / scope 本机可改）+ 多账号候选选择 |
+| `.github/workflows/cf-console-build.yml` | `cap sync` 后注入 `cfconsole://oauth` intent-filter；`CF_OAUTH_*` 走仓库变量 |
+
+### 9.2 与计划稿的偏差（按更严的执行）
+
+1. **令牌管理不进网关**：OAuth 凭据只在钥匙串，网关拿不到也不该拿。网页模式下该屏只给说明。
+2. **一次授权 = 一个账号**：多账号即多次授权；等 P0-10 证明「一个 token 可跨账号」后再考虑合并凭据。
+3. **资源形状两种都收**：官方 Create Token 示例是扁平 `{"com.cloudflare.api.account.zone.<id>": "*"}`，
+   而 schema 写 `map[string] or map[map[string]]`；早前只放行嵌套会把官方示例直接 422 掉。
+
+### 9.3 仍需真机消掉的项
+
+- OAuth：授权回跳、`expires_in`、是否返回 `refresh_token`（需 `offline_access`）、refresh 是否轮换。
+- 令牌管理：`account_api_tokens:*` 是否可申请、`POST/GET /accounts/{id}/tokens` 与 `permission_groups` 是否可用。
+- private client 能否访问非签发账号（决定多账号是否需要转 public，不可逆）。
+
+---
+
+## 10. 参考
 
 - [Create your OAuth client](https://developers.cloudflare.com/fundamentals/oauth/create-an-oauth-client/)
 - [Integrate your OAuth client with Cloudflare](https://developers.cloudflare.com/fundamentals/oauth/integrate-with-cloudflare/)

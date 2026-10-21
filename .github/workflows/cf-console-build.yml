@@ -140,6 +140,10 @@ jobs:
         working-directory: app/console
         env:
           VITE_APP_VERSION: ${{ steps.ver.outputs.version }}
+          # OAuth 的三个参数都不是凭据，走仓库变量（Variables）即可，改了重出包就生效
+          VITE_CF_OAUTH_CLIENT_ID: ${{ vars.CF_OAUTH_CLIENT_ID }}
+          VITE_CF_OAUTH_REDIRECT: ${{ vars.CF_OAUTH_REDIRECT }}
+          VITE_CF_OAUTH_SCOPE: ${{ vars.CF_OAUTH_SCOPE }}
         run: npm run build
 
       - name: 记录打进包里的网关地址
@@ -242,6 +246,9 @@ jobs:
           # 本机版本 = 本次要发的版本（steps.ver 算的"最新 tag +1"），与 Release tag 对齐，
           # 「检查更新」才能正确判定"已是最新"
           VITE_APP_VERSION: ${{ steps.ver.outputs.version }}
+          VITE_CF_OAUTH_CLIENT_ID: ${{ vars.CF_OAUTH_CLIENT_ID }}
+          VITE_CF_OAUTH_REDIRECT: ${{ vars.CF_OAUTH_REDIRECT }}
+          VITE_CF_OAUTH_SCOPE: ${{ vars.CF_OAUTH_SCOPE }}
         run: |
           npm ci
           npm run build
@@ -281,6 +288,36 @@ jobs:
           npx cap add android 2>&1
           test -d android || { echo "cap add 声称成功但没有 android/ 目录"; exit 1; }
           npx cap sync android 2>&1
+
+          # OAuth 回调要回到 App：自定义 scheme 在 Android 侧必须由 intent-filter 声明，
+          # 否则系统浏览器授权完只会停在 "cfconsole://..."（打不开应用）。
+          # cap add 每次重新生成 android/，所以这条注入只能放在生成之后、打包之前。
+          # scheme/host 与 console/src/lib/oauth.ts 的 DEFAULT_REDIRECT 必须逐字一致。
+          python3 - <<'PY'
+          import re, sys
+          p = "android/app/src/main/AndroidManifest.xml"
+          s = open(p, encoding="utf-8").read()
+          if 'android:scheme="cfconsole"' in s:
+              print("OAuth 深链已存在，跳过注入")
+              sys.exit(0)
+          filt = (
+              '\n            <intent-filter>'
+              '\n                <action android:name="android.intent.action.VIEW" />'
+              '\n                <category android:name="android.intent.category.DEFAULT" />'
+              '\n                <category android:name="android.intent.category.BROWSABLE" />'
+              '\n                <data android:scheme="cfconsole" android:host="oauth" />'
+              '\n            </intent-filter>\n        '
+          )
+          # 插到 MainActivity 结束标签之前（cap add 生成的清单里只有这一个 activity）
+          i = s.find("</activity>")
+          if i < 0:
+              print("AndroidManifest.xml 里没找到 </activity>，无法注入深链", file=sys.stderr)
+              sys.exit(1)
+          s = s[:i] + filt + s[i:]
+          open(p, "w", encoding="utf-8").write(s)
+          print("已注入 cfconsole://oauth 深链")
+          PY
+          grep -n "cfconsole" android/app/src/main/AndroidManifest.xml
 
           # 版本号写进 Android 清单：versionName 是用户看到的、versionCode 决定"能不能覆盖升级"
           # （必须单调递增，否则系统会把新包拒掉）。两个值都来自本 job 开头那步算出的 tag 递进。

@@ -4,6 +4,7 @@ import BoardView from "./views/BoardView.vue";
 import ComputeView from "./views/ComputeView.vue";
 import DomainsView from "./views/DomainsView.vue";
 import SettingsView from "./views/SettingsView.vue";
+import TokensView from "./views/TokensView.vue";
 import WorkerDetailView from "./views/WorkerDetailView.vue";
 import DatabaseView from "./views/DatabaseView.vue";
 import ZeroTrustView from "./views/ZeroTrustView.vue";
@@ -25,6 +26,8 @@ export const router = createRouter({
     { path: "/zero-trust", name: "zero-trust", component: ZeroTrustView, meta: { tab: "zt", title: "Zero Trust" } },
     { path: "/workers/:s", name: "worker", component: WorkerDetailView, meta: { tab: "compute", title: "Worker" } },
     { path: "/settings", name: "settings", component: SettingsView, meta: { tab: "settings", title: "设置" } },
+    // 令牌管理与设置同属"本机凭据"这一组，但不占底栏；APK 直连才真正可用（视图内有说明）
+    { path: "/settings/tokens", name: "tokens", component: TokensView, meta: { tab: "settings", title: "API 令牌" } },
     { path: "/:pathMatch(.*)*", redirect: "/board" },
   ],
 });

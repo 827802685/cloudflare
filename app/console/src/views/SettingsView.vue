@@ -3,7 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import UnavailableNote from "../components/board/UnavailableNote.vue";
 import { api, gwHealth, gwMeta, GwError, isNativeApp, setWritesOptIn, writesOptIn, probeToken, type Account } from "../lib/api";
-import { acctState, addAccount, removeAccount, labelOf, createVault, unlockAccounts, lockAccounts, destroyAll, type CfAccount } from "../lib/accounts";
+import { acctState, addAccount, findAccount, removeAccount, labelOf, createVault, unlockAccounts, lockAccounts, destroyAll, type CfAccount } from "../lib/accounts";
+import { beginOAuthLogin, oauthClientCfg, saveOAuthClientCfg, DEFAULT_REDIRECT, revokeOAuth } from "../lib/oauth";
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
 import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
@@ -162,11 +163,72 @@ async function pickAcc(a: CfAccount) {
 
 /** 删账号：删的是选中项就顺位选剩下的第一个；一个都不剩就回到"网关默认令牌" */
 async function delAcc(a: CfAccount) {
+  // OAuth 账号：先把钥匙串里的授权撤掉（撤销失败也照样删本地，见 oauth.ts 的取舍）
+  if (a.auth === "oauth" && a.credRef) void revokeOAuth(a.credRef);
   await removeAccount(a.id);
   if (gw.config.account === a.id) {
     const next = acctState.list[0];
     gw.save(next ? { account: next.id, accountName: labelOf(next) } : { account: "", accountName: "" });
   }
+  await test();
+}
+
+/* ============================================================================
+ * Cloudflare OAuth（Authorization Code + PKCE，仅 APK 直连）
+ * 凭据边界：access token 只在内存；refresh token 进系统钥匙串（lib/oauth.ts）。
+ * 这里只做三件事：存 client 参数、发起授权、把返回的账号选择后写进账号列表。
+ * ========================================================================== */
+const ocfg = ref(oauthClientCfg());
+const oCfgNote = ref("");
+const oBusy = ref(false);
+const oErr = ref("");
+/** 授权成功后待选的账号（一次授权可能看见多个账号；这里仍按「一个账号一条记录」存） */
+const oCandidates = ref<Account[]>([]);
+const oCredRef = ref("");
+const oHasRefresh = ref(true);
+
+function saveOAuthCfg() {
+  oCfgNote.value = "";
+  ocfg.value = saveOAuthClientCfg(ocfg.value);
+  oCfgNote.value = "已保存到本机（重装应用会丢；构建期变量仍可给它兜底）";
+}
+
+async function doOAuthLogin() {
+  if (oBusy.value) return;
+  oErr.value = "";
+  oCandidates.value = [];
+  oBusy.value = true;
+  try {
+    const r = await beginOAuthLogin();
+    oCredRef.value = r.credRef;
+    oHasRefresh.value = r.hasRefresh;
+    // 用刚换到的 access token 打一次 /accounts：既验证授权可用，又拿到要写进本地的账号元数据
+    const list = (await probeToken(r.accessToken)).result;
+    const arr = Array.isArray(list) ? list : [];
+    if (!arr.length) {
+      oErr.value = "授权成功，但这把 OAuth 令牌看不到任何账号 —— 多半是授权时没勾账号，或 OAuth client 缺 Account Read。";
+      return;
+    }
+    if (arr.length === 1) {
+      await addOAuthAccount(arr[0]);
+    } else {
+      oCandidates.value = arr;
+    }
+  } catch (e) {
+    oErr.value = String((e as Error)?.message || e);
+  } finally {
+    oBusy.value = false;
+  }
+}
+
+async function addOAuthAccount(a: Account) {
+  const acc: CfAccount = { token: "", id: String(a.id), name: String(a.name || ""), alias: "", auth: "oauth", credRef: oCredRef.value };
+  // 同一账号重新授权：旧的那条授权要撤掉，否则钥匙串里会留下一条永远用不到的 refresh token
+  const prev = findAccount(acc.id);
+  if (prev?.auth === "oauth" && prev.credRef && prev.credRef !== oCredRef.value) void revokeOAuth(prev.credRef);
+  await addAccount(acc);
+  if (!gw.config.account || acctState.list.length === 1) gw.save({ account: acc.id, accountName: labelOf(acc) });
+  oCandidates.value = [];
   await test();
 }
 
@@ -454,6 +516,7 @@ async function doCheckUpdate() {
           <div v-for="a in accts" :key="a.id" class="item">
             <div class="k">
               {{ labelOf(a) }}
+              <span v-if="a.auth === 'oauth'" class="badge live" style="margin-left: 6px">OAuth</span>
               <div class="small muted">{{ a.id.slice(0, 8) }}…{{ a.name && a.name !== labelOf(a) ? " · " + a.name : "" }}</div>
             </div>
             <div class="row">
@@ -481,6 +544,50 @@ async function doCheckUpdate() {
           <span class="small muted">上锁后要重新输口令才能取数。</span>
         </div>
       </template>
+    </div>
+
+    <!-- ============ Cloudflare OAuth（仅 APK 直连）============ -->
+    <div v-if="directMode" class="card wide">
+      <h3>Cloudflare OAuth 登录</h3>
+      <div class="small muted">
+        Authorization Code + PKCE，公共客户端（无 secret）。授权在<b>系统浏览器</b>里完成，
+        换到的 access token 只留内存，refresh token 存系统钥匙串；请求直连 Cloudflare，不经过任何中间服务器。
+        <br />需要先在 Cloudflare 后台建好 OAuth client，并把下面的 redirect_uri 原样登记进去。
+      </div>
+
+      <label class="lbl" style="margin-top: 12px">OAuth client_id</label>
+      <input v-model="ocfg.clientId" class="field" placeholder="在 CF 后台 OAuth clients 里创建后得到" spellcheck="false" />
+
+      <label class="lbl" style="margin-top: 8px">redirect_uri</label>
+      <input v-model="ocfg.redirect" class="field" :placeholder="DEFAULT_REDIRECT" spellcheck="false" />
+
+      <label class="lbl" style="margin-top: 8px">scope（可选，留空 = 按 client 注册时勾选的）</label>
+      <input v-model="ocfg.scope" class="field" placeholder="例：account:read offline_access" spellcheck="false" />
+
+      <div class="row" style="margin-top: 12px">
+        <button class="ghost" @click="saveOAuthCfg">保存本机配置</button>
+        <button class="primary" :disabled="oBusy" @click="doOAuthLogin">{{ oBusy ? "授权中…" : "用 Cloudflare 登录" }}</button>
+        <router-link class="chip" to="/settings/tokens">管理 API 令牌</router-link>
+      </div>
+      <div v-if="oCfgNote" class="small muted" style="margin-top: 8px">{{ oCfgNote }}</div>
+      <div v-if="oErr" class="small" style="color: var(--bad); margin-top: 8px">{{ oErr }}</div>
+      <div v-if="!oHasRefresh && !oCandidates.length && accts.some((a) => a.auth === 'oauth')" class="small muted" style="margin-top: 8px">
+        这次授权没有拿到 refresh token（缺 <code>offline_access</code>）：重开应用要重新登录。
+      </div>
+
+      <!-- 一次授权看见多个账号：让用户挑一个写进本地；其余账号再授权一次即可 -->
+      <div v-if="oCandidates.length" class="oauth-pick">
+        <div class="small"><b>这次授权可见 {{ oCandidates.length }} 个账号</b>，选一个加到本机：</div>
+        <div class="list" style="margin-top: 8px">
+          <div v-for="a in oCandidates" :key="a.id" class="item">
+            <div class="k">{{ a.name }}<div class="small muted">{{ a.id.slice(0, 8) }}…</div></div>
+            <button class="chip" @click="addOAuthAccount(a)">加这个</button>
+          </div>
+        </div>
+        <div class="small muted" style="margin-top: 6px">
+          其余账号：再点一次「用 Cloudflare 登录」并选对应账号 —— 一次授权对应本地一条账号记录。
+        </div>
+      </div>
     </div>
 
     <!-- ============ 写闸门 ============ -->
@@ -549,7 +656,7 @@ async function doCheckUpdate() {
     <div class="card">
       <h3>这台设备存了什么</h3>
       <div class="small muted">
-        账号令牌（{{ directMode ? "随机密钥加密，无口令" : "口令加密" }}）+ 界面偏好，全部只存本机、不上云。
+        账号令牌（{{ directMode ? "API Token：随机密钥加密，无口令；OAuth：refresh token 进系统钥匙串、access token 只在内存" : "口令加密" }}）+ 界面偏好，全部只存本机、不上云。
         存储键清单与加密的边界（防什么、不防什么）见 <code>docs/14</code> §4。
       </div>
     </div>
@@ -575,6 +682,7 @@ async function doCheckUpdate() {
 .set > .card { margin-bottom: 0; }
 .set > .wide :deep(.card) { margin-bottom: 0; }
 .opt { margin-bottom: 12px; }
+.oauth-pick { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
 .opt-h { font-size: var(--t-xs); color: var(--muted); letter-spacing: .04em; margin-bottom: 6px; }
 /* 强调色预览点：这是"选项本身"的固定色，不是界面当前色，所以写字面值 */
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgb(0 0 0 / .18); }
