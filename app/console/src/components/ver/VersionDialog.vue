@@ -30,8 +30,10 @@ const props = withDefaults(
     total?: number | null;
     /** 指向本 Worker 的主机名（自定义域名 / Zone 路由），「访问」按钮只在运行中版本出现时用 */
     hosts?: { host: string; via: string }[];
+    /** 从列表行的「回滚」直接进来时，预选这一版并展开回滚面板 */
+    initialId?: string;
   }>(),
-  { deployments: () => [], loading: false, err: null, total: null, hosts: () => [] },
+  { deployments: () => [], loading: false, err: null, total: null, hosts: () => [], initialId: "" },
 );
 const emit = defineEmits<{ (e: "close"): void; (e: "retry"): void; (e: "changed"): void }>();
 
@@ -177,6 +179,21 @@ function cancelDelete() {
 
 /* ---------- 回滚 / 灰度：形状已在 rin-server 实测（docs/14 §7），走 gwWrite 真发 ---------- */
 const showRollback = ref(false);
+/** 从列表行的「回滚」直接进来：版本还在加载时先等，数据一到就展开那一版 */
+let rolledOnce = false;
+watch(
+  [() => props.initialId, () => props.versions],
+  ([id]) => {
+    const s = String(id ?? "");
+    if (!s || rolledOnce) return;
+    const v = props.versions.find((r: any) => String(r.id) === s);
+    if (!v) return;
+    rolledOnce = true;
+    if (openId.value !== s) void openDetail(v);
+    showRollback.value = true;
+  },
+  { immediate: true },
+);
 const canary = ref(100);
 const rolling = ref(false);
 const rbErr = ref<GwError | null>(null);
@@ -337,7 +354,7 @@ function strategyText(v: unknown): string {
               <h4>回滚 / 灰度到这一版</h4>
               <p class="small muted" v-if="rowState(detail.id).on && (detailPct === null || detailPct >= 100)">这一版已经在跑{{ detailPct === null ? "" : "且占 " + detailPct + "%" }}，不需要回滚到它自己。</p>
               <template v-else>
-                <button class="ghost" type="button" @click="showRollback = !showRollback">{{ showRollback ? "收起" : "合成请求预览" }}</button>
+                <button class="ghost" type="button" @click="showRollback = !showRollback">{{ showRollback ? "收起回滚面板" : "回滚到此版 / 灰度" }}</button>
                 <div v-if="showRollback" class="rb">
                   <template v-if="rbOther">
                     <label class="lbl">切给这一版的流量：{{ canary }}%

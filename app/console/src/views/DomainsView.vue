@@ -33,6 +33,9 @@ const routes = ref<Slot<any[]>>(mk());
 const waf = ref<Slot<Waf>>(mk());
 /** 账户级 workers.dev 前缀（域名页那行 `*.前缀.workers.dev`）；CF 只返回前缀，不返回开关 */
 const sub = ref<Slot<{ subdomain?: string }>>(mk());
+/** Pages 自定义域名：按项目分组。GET /v1/pages 拿到项目，再逐个 GET …/domains（上游没有账户级聚合口） */
+type PageDomainsGroup = { project: string; domains: any[]; err?: GwError };
+const pageDomains = ref<Slot<PageDomainsGroup[]>>(mk());
 const zoneId = ref("");
 /** 当前选中 zone 的名称（用于写侧 preview* 回显） */
 const currentZoneName = computed(() => {
@@ -72,6 +75,24 @@ async function loadTop() {
     grab(domains, async () => { const r: any = await api.domains(); return Array.isArray(r.result) ? r.result : (r.result ?? []); }),
     grab(zones, async () => { const r = await api.zones(); return Array.isArray(r.result) ? r.result : []; }),
     grab(sub, async () => (await api.accountSubdomain()).result ?? null),
+    grab(pageDomains, async () => {
+      const r = await api.pages();
+      const list = Array.isArray(r.result) ? r.result : [];
+      // 每个项目一条 domains 请求；单项目 403/404 不影响其它项目（分组里留 err 如实显示）
+      const groups = await Promise.all(
+        list.map(async (p: any): Promise<PageDomainsGroup> => {
+          const project = String(p?.name ?? "");
+          if (!project) return { project: "", domains: [] };
+          try {
+            const d = await api.pageDomains(project);
+            return { project, domains: Array.isArray(d.result) ? d.result : [] };
+          } catch (e) {
+            return { project, domains: [], err: e instanceof GwError ? e : new GwError("unknown", 0, null, String(e)) };
+          }
+        }),
+      );
+      return groups.filter((g) => g.project);
+    }),
   ]);
   const arr = zones.value.data ?? [];
   if (!zoneId.value && arr.length) zoneId.value = String(arr[0].id);
@@ -278,6 +299,9 @@ async function confirmSheet() {
       <ErrorNote :err="domains.err" />
       <UnifiedDomains
         :worker-domains="domains.data || []"
+        :pages-groups="pageDomains.data || []"
+        :pages-loading="pageDomains.loading"
+        :pages-err="pageDomains.err?.hint ?? pageDomains.err?.message ?? null"
         :subdomain="sub.data?.subdomain || ''"
         :sub-loading="sub.loading"
         :sub-err="sub.err?.hint ?? null"

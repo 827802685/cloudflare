@@ -5,7 +5,8 @@
  *
  * 三类的可得性不一样，必须如实分开表达（这是 §8.2「没返回 ≠ 没有」那条硬规矩）：
  *  - Worker：数据现成（/v1/domains，网关已注册）—— 逐条列出。
- *  - Pages：网关没有 GET /v1/pages/:p/domains 这条路由，且账号 0 个 Pages 项目 → 显示「没取到，不是没有」。
+ *  - Pages：网关已有 GET /v1/pages 与 GET /v1/pages/:p/domains（2026-10-22 实测），
+ *    按项目逐条取；没项目 / 项目里 0 条 / 单项目取失败三种情况分开写。
  *  - R2：本账号未开通 R2（403 10042）→ 显示「没取到，不是没有」。
  *  - workers.dev 子域：账户级 <code>GET /v1/workers/subdomain</code>（网关已注册，2026-10-11 实测 200），
  *    拿到前缀才拼 `*.前缀.workers.dev`；取数中 / 没取到 / 取到了三种状态分开写，
@@ -15,12 +16,16 @@ export default { name: "UnifiedDomains" };
 </script>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { shortId } from "../../lib/fmt";
 
 const props = defineProps<{
   /** /v1/domains 的 Worker 自定义域名（可用） */
   workerDomains: any[];
+  /** Pages：按项目分组的域名；单项目失败时该组带 err */
+  pagesGroups?: Array<{ project: string; domains: any[]; err?: any }>;
+  pagesLoading?: boolean;
+  pagesErr?: string | null;
   /** 账户级 workers.dev 前缀；空串 = 还没拿到值（是"没取到"还是"取数中"看下面两个状态） */
   subdomain?: string;
   /** 这一条还在路上 —— 这时候不能说"没取到"，也不能把旧值当新值显示 */
@@ -37,6 +42,10 @@ async function copy(text: string, label: string) {
 }
 
 const subHost = () => (props.subdomain ? `*.${props.subdomain}.workers.dev` : "");
+const pagesGroupList = computed(() => props.pagesGroups ?? []);
+const pagesTotal = computed(() => pagesGroupList.value.reduce((n, g) => n + (g.domains?.length ?? 0), 0));
+const pagesAnyErr = computed(() => pagesGroupList.value.some((g) => !!g.err));
+const pageHost = (d: any) => String(d?.name ?? d?.domain ?? d?.hostname ?? "");
 </script>
 
 <template>
@@ -72,14 +81,63 @@ const subHost = () => (props.subdomain ? `*.${props.subdomain}.workers.dev` : ""
       <span class="kind">{{ shortId(d.id, 6) }}</span>
     </div>
 
-    <!-- Pages 域名：整块「没取到」，不能显示成 0 个 -->
-    <div class="urow na">
+    <!-- Pages 域名：按项目分组；没项目 / 0 条 / 取失败三种状态分开 -->
+    <div class="urow na" v-if="pagesLoading && !pagesGroupList.length">
       <div class="lead">
         <div class="host muted">Pages 自定义域名</div>
-        <div class="muted small">没取到，<b>不是没有</b>：网关没有 <code>GET /v1/pages/:p/domains</code> 这条读路由，且本账号 Pages 项目数为 0。</div>
+        <div class="muted small">取数中…（<code>GET /v1/pages</code> → 每个项目 <code>GET …/domains</code>）</div>
       </div>
-      <span class="badge">未接入</span>
+      <span class="badge">取数中</span>
     </div>
+
+    <div class="urow na" v-else-if="pagesErr">
+      <div class="lead">
+        <div class="host muted">Pages 自定义域名</div>
+        <div class="muted small">没取到：{{ pagesErr }} —— <b>不是"没有"</b>，这条请求失败了；刷新本页可重试。</div>
+      </div>
+      <span class="badge">没取到</span>
+    </div>
+
+    <div class="urow na" v-else-if="pagesGroupList.length === 0">
+      <div class="lead">
+        <div class="host muted">Pages 自定义域名</div>
+        <div class="muted small">账号里没有 Pages 项目（<code>GET /v1/pages</code> 返回 []）——这才能说"没有"。</div>
+      </div>
+      <span class="badge">0 个项目</span>
+    </div>
+
+    <template v-else>
+      <div v-for="g in pagesGroupList" :key="g.project">
+        <div v-for="(d, i) in g.domains" :key="g.project + ':' + i" class="urow tap" @click="copy(pageHost(d), pageHost(d))">
+          <div class="lead">
+            <div class="host">
+              {{ pageHost(d) || "（这条没有域名值）" }}
+              <span class="badge blue">Pages</span>
+            </div>
+            <div class="muted small">
+              → Pages: {{ g.project }}
+              <span v-if="d.status" class="badge" :class="{ live: d.status === 'active' }">{{ d.status === "active" ? "已生效" : d.status }}</span>
+              <span v-if="d.created_on" class="muted"> · 绑定于 {{ d.created_on.slice(0, 10) }}</span>
+            </div>
+          </div>
+          <span class="kind">点击复制</span>
+        </div>
+        <div v-if="g.err" class="urow na">
+          <div class="lead">
+            <div class="host muted">{{ g.project }} 的域名</div>
+            <div class="muted small">没取到（项目 {{ g.project }}）：{{ g.err.message || g.err }} —— <b>不是"这个项目没有域名"</b>。</div>
+          </div>
+          <span class="badge">没取到</span>
+        </div>
+      </div>
+      <div v-if="pagesTotal === 0 && !pagesAnyErr" class="urow na">
+        <div class="lead">
+          <div class="host muted">Pages 自定义域名</div>
+          <div class="muted small">{{ pagesGroupList.length }} 个项目都返回空列表 —— 这是"真的没有自定义域名"，不是没取到。</div>
+        </div>
+        <span class="badge">0 条</span>
+      </div>
+    </template>
 
     <!-- R2 域名：服务未开通 -->
     <div class="urow na">

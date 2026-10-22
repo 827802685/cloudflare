@@ -120,14 +120,16 @@ onMounted(loadAll);
 function refresh() { forceFreshWindow(); loadAll(); }
 
 /** 列表页动作宫格跳进来时带 ?c=versions，滚到那张卡并闪一下。竞品用的是弹窗，我们是长页，锚点少一层状态 */
-function jump() {
-  const c = String(route.query.c || "");
-  if (!c) return;
+function jumpTo(c: string) {
   const el = document.getElementById("c-" + c);
   if (!el) return;
   el.scrollIntoView({ block: "start" });
   el.classList.add("flash");
   setTimeout(() => el.classList.remove("flash"), 1400);
+}
+function jump() {
+  const c = String(route.query.c || "");
+  if (c) jumpTo(c);
 }
 onMounted(jump);
 watch(() => route.query.c, jump);
@@ -414,6 +416,15 @@ const bindingKinds = computed(() => {
 
 /* ---- 版本切换 / 回滚：入口是下面卡片里的按钮，弹出 VerVersionDialog（内部是真发 POST …/deployments）---- */
 const showSwitch = ref(false);
+/** 从版本 / 部署行直接点「回滚」时预选的那一版 */
+const switchTarget = ref("");
+function startRollback(versionId: unknown) {
+  switchTarget.value = String(versionId ?? "");
+  showSwitch.value = true;
+}
+function isLive(versionId: unknown): boolean {
+  return currentVersions.value.some((c: any) => String(c.version_id) === String(versionId));
+}
 </script>
 
 <template>
@@ -421,6 +432,16 @@ const showSwitch = ref(false);
     <div class="row" style="justify-content: space-between; margin-bottom: 10px">
       <h2 style="margin: 0; font-size: 17px">{{ name }}</h2>
       <button class="ghost" :disabled="versions.loading" @click="refresh">{{ versions.loading ? "加载中" : "刷新" }}</button>
+    </div>
+
+    <div class="row" style="gap: 6px; flex-wrap: wrap; margin-bottom: 10px">
+      <button class="chip" type="button" @click="jumpTo('current')">当前版本</button>
+      <button class="chip" type="button" @click="jumpTo('versions')">版本列表 / 回滚</button>
+      <button class="chip" type="button" @click="jumpTo('deployments')">部署历史</button>
+      <button class="chip" type="button" @click="jumpTo('domains')">自定义域名</button>
+      <button class="chip" type="button" @click="jumpTo('settings')">配置信息</button>
+      <button class="chip" type="button" @click="jumpTo('secrets')">Secret</button>
+      <button class="chip" type="button" @click="jumpTo('crons')">定时触发</button>
     </div>
 
     <div class="card" id="c-current">
@@ -540,7 +561,10 @@ const showSwitch = ref(false);
               </div>
               <div class="small muted">{{ dt(v.metadata?.created_on) }} • {{ sourceText(v.metadata?.source) }}</div>
             </div>
-            <div class="v">{{ triggerText(v.annotations?.["workers/triggered_by"]) }}</div>
+            <div class="v" style="display: flex; gap: 6px; align-items: center; white-space: nowrap">
+              <button v-if="!isLive(v.id)" class="ghost sm" type="button" :disabled="!optIn" @click.stop="startRollback(v.id)">回滚</button>
+              <span>{{ triggerText(v.annotations?.["workers/triggered_by"]) }}</span>
+            </div>
           </div>
           <div v-if="openId === v.id" style="padding: 0 13px 12px">
             <ErrorNote :err="detail.err" />
@@ -600,7 +624,16 @@ const showSwitch = ref(false);
             <div class="k">{{ strategyText(d.strategy) }} · <span class="muted">{{ shortId((d.versions || [])[0]?.version_id, 8) }}</span></div>
             <div class="small muted">{{ dt(d.created_on) }} · {{ sourceText(d.source) }} · {{ triggerText(d.annotations?.["workers/triggered_by"]) }}</div>
           </div>
-          <div class="v">{{ d.versions?.length > 1 ? d.versions.length + " 个版本" : ((d.versions || [])[0]?.percentage ?? "100") + "%" }}</div>
+          <div class="v" style="display: flex; gap: 6px; align-items: center; white-space: nowrap">
+            <button
+              v-if="(d.versions || []).length === 1 && !isLive((d.versions || [])[0]?.version_id)"
+              class="ghost sm"
+              type="button"
+              :disabled="!optIn"
+              @click.stop="startRollback((d.versions || [])[0]?.version_id)"
+            >回滚到此</button>
+            <span>{{ d.versions?.length > 1 ? d.versions.length + " 个版本" : ((d.versions || [])[0]?.percentage ?? "100") + "%" }}</span>
+          </div>
         </div>
       </div>
       <button class="ghost" style="margin-top: 8px" v-if="visibleDeps.rest" @click="visibleDeps.open = !visibleDeps.open">
@@ -686,11 +719,12 @@ const showSwitch = ref(false);
     <div class="card" id="c-switch">
       <h3>版本切换 / 回滚</h3>
       <div class="small muted" style="margin-bottom: 10px">
-        入口就是下面这个按钮：打开版本历史，进某个版本的详情，滑杆选流量占比，确认后真发
-        <code>POST …/deployments</code>。直连模式（APK）即时生效；网关模式还需网关侧
+        两个入口：<b>版本列表</b>里每个非运行中的版本行右侧有「回滚」；<b>部署历史</b>里单版本部署也有「回滚到此」。
+        点完会打开版本历史并预选那一版、直接展开回滚面板（滑杆选流量占比，100% 即整版回滚）。
+        确认后真发 <code>POST …/deployments</code>；APK 直连即时生效，网关模式还需网关侧
         <code>WRITE_ENABLED</code> 放行，关着会如实报 <code>501 writesDisabled</code>。
       </div>
-      <button class="ghost" type="button" @click="showSwitch = true">打开版本历史 / 回滚</button>
+      <button class="ghost" type="button" @click="startRollback('')">打开版本历史 / 回滚</button>
     </div>
 
     <VersionDialog
@@ -702,7 +736,8 @@ const showSwitch = ref(false);
       :err="versions.err"
       :total="vTotal"
       :hosts="myTraffic"
-      @close="showSwitch = false"
+      :initial-id="switchTarget"
+      @close="showSwitch = false; switchTarget = ''"
       @retry="refresh"
       @changed="refresh"
     />

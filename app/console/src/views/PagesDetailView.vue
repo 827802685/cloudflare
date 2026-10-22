@@ -191,15 +191,19 @@ const depStats = computed(() => {
 });
 
 /* ---------- 作业区：锚点跳转（动作宫格进来时落到对应卡片） ---------- */
-function jump() {
-  const c = String(route.query.c || "");
-  if (!c) return;
+function jumpTo(c: string) {
   const el = document.getElementById("c-" + c);
   if (!el) return;
   el.scrollIntoView({ block: "start" });
   el.classList.add("flash");
   setTimeout(() => el.classList.remove("flash"), 1400);
 }
+function jump() {
+  const c = String(route.query.c || "");
+  if (c) jumpTo(c);
+}
+/* 从计算页动作宫格进来时 q=c 在首次挂载就存在，watcher 不是 immediate —— 不主动跑一次就永远不滚 */
+onMounted(() => nextTick(jump));
 watch(() => route.query.c, jump);
 
 /* ---------- 逐条展开部署详情 ---------- */
@@ -471,6 +475,14 @@ function refresh() {
       <button class="ghost" :disabled="proj.loading" @click="refresh">{{ proj.loading ? "加载中" : "刷新" }}</button>
     </div>
 
+    <div class="row" style="gap: 6px; flex-wrap: wrap; margin-bottom: 10px">
+      <button class="chip" type="button" @click="jumpTo('overview')">概览</button>
+      <button class="chip" type="button" @click="jumpTo('deps')">部署历史 / 回滚</button>
+      <button class="chip" type="button" @click="jumpTo('domains')">自定义域名</button>
+      <button class="chip" type="button" @click="jumpTo('env')">环境变量</button>
+      <button class="chip" type="button" @click="jumpTo('logs')">构建日志</button>
+    </div>
+
     <div class="card" id="c-overview">
       <h3>概览</h3>
       <ErrorNote :err="proj.err" />
@@ -554,7 +566,16 @@ function refresh() {
                 <a :href="d.url" target="_blank" rel="noreferrer" @click.stop>{{ d.url }}</a>
               </div>
             </div>
-            <div class="v small muted">{{ openDep === d.id ? "收起" : "详情" }}</div>
+            <div class="v small muted" style="display: flex; gap: 6px; align-items: center; white-space: nowrap">
+              <button
+                v-if="String(d.id) !== currentId"
+                class="ghost sm"
+                type="button"
+                :disabled="!optIn || busy"
+                @click.stop="askRollback(d)"
+              >回滚到此</button>
+              <span>{{ openDep === d.id ? "收起" : "详情" }}</span>
+            </div>
           </div>
 
           <div v-if="openDep === d.id" class="depdetail">
