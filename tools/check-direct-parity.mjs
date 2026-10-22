@@ -144,7 +144,7 @@ await call("/v1/pages/proj");
 expectOne("GET Pages 项目详情", `/accounts/${ACC}/pages/projects/proj`);
 
 await call("/v1/pages/proj/domains");
-expectOne("GET Pages 自定义域名", `/accounts/${ACC}/pages/projects/proj/domains?per_page=100`);
+expectOne("GET Pages 自定义域名（不带 per_page：实测 100 回 400 8000024）", `/accounts/${ACC}/pages/projects/proj/domains`);
 
 await call("/v1/pages/proj/deployments/" + DEP + "/logs");
 expectOne("GET Pages 构建日志（上游尾巴 /history/logs）", `/accounts/${ACC}/pages/projects/proj/deployments/${DEP}/history/logs`);
@@ -298,6 +298,47 @@ expectOne("DELETE dns_records/rid", `/zones/${ZONE}/dns_records/${"c".repeat(32)
 
 await runWrite("POST", "/v1/zones/" + ZONE + "/purge_cache", { files: ["https://x.example.com/a"] });
 expectOne("POST purge_cache", `/zones/${ZONE}/purge_cache`, { method: "POST" });
+
+// ---- 自定义域名 / 站点路由 / Pages 环境变量 / workers.dev 开关（2026-10-22 临时资源自清理实测）----
+// Workers 自定义域名：客户端 POST → 上游 **PUT**（POST 实测 405）
+await runWrite("POST", "/v1/domains", { hostname: "api.example.com", zone_id: ZONE, service: "hello", environment: "production" });
+expectOne("POST /v1/domains（上游 PUT 动词）", `/accounts/${ACC}/workers/domains`, {
+  method: "PUT",
+  bodyIncludes: `"hostname":"api.example.com"`,
+});
+await runWrite("DELETE", "/v1/domains/" + "a".repeat(32));
+expectOne("DELETE /v1/domains/:id", `/accounts/${ACC}/workers/domains/${"a".repeat(32)}`, { method: "DELETE" });
+
+// Pages 自定义域名：POST {name} / DELETE …/domains/{name}（同一条上游路径）
+await runWrite("POST", "/v1/pages/proj/domains", { name: "www.example.com" });
+expectOne("POST Pages domains", `/accounts/${ACC}/pages/projects/proj/domains`, {
+  method: "POST",
+  bodyIncludes: `"name":"www.example.com"`,
+});
+await runWrite("DELETE", "/v1/pages/proj/domains/www.example.com");
+expectOne("DELETE Pages domains/:name", `/accounts/${ACC}/pages/projects/proj/domains/www.example.com`, { method: "DELETE" });
+
+// Pages 环境变量：客户端 PUT {environment,vars} → 上游 PATCH 项目对象的 deployment_configs
+await runWrite("PUT", "/v1/pages/proj/env_vars", { environment: "production", vars: { FOO: { value: "bar", type: "plain_text" } } });
+expectOne("PUT Pages env_vars（上游 PATCH 项目对象）", `/accounts/${ACC}/pages/projects/proj`, {
+  method: "PATCH",
+  bodyIncludes: `"deployment_configs":{"production":{"env_vars":{"FOO":{"value":"bar","type":"plain_text"}}}}`,
+});
+
+// 站点 Workers 路由：POST / PUT / DELETE 同路径
+await runWrite("POST", "/v1/zones/" + ZONE + "/routes", { pattern: "example.com/*", script: "hello" });
+expectOne("POST zone routes", `/zones/${ZONE}/workers/routes`, { method: "POST", bodyIncludes: `"pattern":"example.com/*"` });
+await runWrite("PUT", "/v1/zones/" + ZONE + "/routes/" + "f".repeat(32), { pattern: "example.com/*", script: "hello" });
+expectOne("PUT zone routes/:id", `/zones/${ZONE}/workers/routes/${"f".repeat(32)}`, { method: "PUT" });
+await runWrite("DELETE", "/v1/zones/" + ZONE + "/routes/" + "f".repeat(32));
+expectOne("DELETE zone routes/:id", `/zones/${ZONE}/workers/routes/${"f".repeat(32)}`, { method: "DELETE" });
+
+// 脚本级 workers.dev 开关：客户端 PUT → 上游 POST，两个布尔全量写
+await runWrite("PUT", "/v1/workers/hello/subdomain", { enabled: true, previews_enabled: false });
+expectOne("PUT workers/:s/subdomain（上游 POST）", `/accounts/${ACC}/workers/scripts/hello/subdomain`, {
+  method: "POST",
+  bodyIncludes: `"enabled":true,"previews_enabled":false`,
+});
 
 console.log(`\n合计：${pass} 条通过，${fail ? "有失败 ❌" : "0 条失败 ✅"}`);
 process.exit(fail ? 1 : 0);

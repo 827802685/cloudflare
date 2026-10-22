@@ -14,8 +14,10 @@ import {
   forceFreshWindow,
   GwError,
   previewDnsDelete,
+  previewZoneRoute,
   setWritesOptIn,
   writesOptIn,
+  type RouteInput,
   type Waf,
   type WritePreview,
 } from "../lib/api";
@@ -97,7 +99,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
 
 /** 「刷新」= 这一屏全部绕过两层缓存重来；平时进这屏只发命中的那几条 */
 async function refresh() { forceFreshWindow(); await loadTop(); await loadZone(); }
-watch(zoneId, () => { editorOpen.value = false; editorRecord.value = null; editorPreset.value = null; loadZone(); });
+watch(zoneId, () => { editorOpen.value = false; editorRecord.value = null; editorPreset.value = null; routeOpen.value = false; routeEditing.value = null; loadZone(); });
 
 const zoneName = computed(() => (zones.value.data ?? []).find((z: any) => String(z.id) === zoneId.value)?.name ?? "");
 const currentZone = computed(() => (zones.value.data ?? []).find((z: any) => String(z.id) === zoneId.value) ?? null);
@@ -149,6 +151,58 @@ function onWizardSuggest(s: { zoneId: string; type: string; name: string }) {
   }
 }
 
+/* ---------- 站点 Workers 路由：新增 / 改 / 删 ----------
+ * 上游 POST/PUT/DELETE `/zones/{z}/workers/routes`，body {pattern, script|null}。
+ * 这条写需要令牌带 Workers Routes Write（docs/05）；缺权限时 CF 回 403，错误原样留在抽屉里。 */
+const routeOpen = ref(false);
+const routeEditing = ref<any | null>(null);
+const routePattern = ref("");
+const routeScript = ref("");
+const routeErr = ref("");
+
+function openRouteCreate() {
+  routeEditing.value = null;
+  routePattern.value = "";
+  routeScript.value = "";
+  routeErr.value = "";
+  routeOpen.value = true;
+  doneMsg.value = "";
+}
+function openRouteEdit(r: any) {
+  routeEditing.value = r;
+  routePattern.value = String(r?.pattern ?? "");
+  routeScript.value = String(r?.script ?? "");
+  routeErr.value = "";
+  routeOpen.value = true;
+  doneMsg.value = "";
+}
+function routeInput(): RouteInput {
+  return { pattern: routePattern.value.trim(), script: routeScript.value.trim() ? routeScript.value.trim() : null };
+}
+function askSaveRoute() {
+  routeErr.value = "";
+  doneMsg.value = "";
+  try {
+    const input = routeInput();
+    const editing = routeEditing.value;
+    const pv = previewZoneRoute(zoneId.value, currentZoneName.value, editing ? "update" : "create", editing ? { ...input, id: String(editing.id) } : input);
+    openSheet(pv, () =>
+      editing ? api.zoneRouteUpdate(zoneId.value, String(editing.id), input) : api.zoneRouteCreate(zoneId.value, input),
+    );
+  } catch (e) {
+    routeErr.value = e instanceof GwError ? e.message : String((e as Error)?.message || e);
+  }
+}
+function askDeleteRoute(r: any) {
+  routeErr.value = "";
+  doneMsg.value = "";
+  try {
+    openSheet(previewZoneRoute(zoneId.value, currentZoneName.value, "delete", r), () => api.zoneRouteDelete(zoneId.value, String(r.id)));
+  } catch (e) {
+    routeErr.value = e instanceof GwError ? e.message : String((e as Error)?.message || e);
+  }
+}
+
 function openSheet(preview: WritePreview, run: () => Promise<unknown>) {
   runWrite = run;
   sheet.value = { preview, busy: false, error: "" };
@@ -159,9 +213,11 @@ async function confirmSheet() {
   sheet.value = { ...sheet.value, busy: true, error: "" };
   try {
     await runWrite();
-    const kind = sheet.value.preview?.path.endsWith("purge_cache") ? "缓存" : "记录";
+    const kind = sheet.value.preview?.path.endsWith("purge_cache") ? "缓存" : sheet.value.preview?.path.includes("/routes") ? "路由" : "记录";
     sheet.value = { preview: null, busy: false, error: "" };
     runWrite = null;
+    routeOpen.value = false;
+    routeEditing.value = null;
     dropMem("/v1/zones/" + zoneId.value);
     await loadZone();
     doneMsg.value = kind + "写请求已成功返回，列表已重取。";
@@ -279,15 +335,44 @@ async function confirmSheet() {
     </div>
 
     <div class="card" v-if="zoneName">
-      <h3>{{ zoneName }} · Workers 路由（{{ (routes.data || []).length }}）</h3>
+      <div class="hd">
+        <h3 style="margin: 0">{{ zoneName }} · Workers 路由（{{ (routes.data || []).length }}）</h3>
+        <button class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
+      </div>
       <ErrorNote :err="routes.err" />
+
+      <div v-if="routeOpen" class="editor">
+        <h4>{{ routeEditing ? "修改路由" : "新增路由" }}</h4>
+        <div class="row gen">
+          <input v-model="routePattern" class="field" placeholder="example.com/*" spellcheck="false" autocomplete="off" />
+          <input v-model="routeScript" class="field" placeholder="Worker 名（留空 = 仅记录，不跑 Worker）" spellcheck="false" autocomplete="off" />
+        </div>
+        <p class="small muted">
+          pattern 必须属于 {{ zoneName }}，并以 <code>*</code> 结尾；上游 POST/PUT/DELETE 三条同一路径。
+          这条写需要令牌带 Workers Routes Write，缺权限时 CF 回 403，会原样显示。
+        </p>
+        <p class="small errtext" v-if="routeErr">{{ routeErr }}</p>
+        <div class="row" style="gap: 8px">
+          <button class="ghost sm" :disabled="!writesOn" @click="askSaveRoute">预览并确认</button>
+          <button class="ghost sm" @click="routeOpen = false">取消</button>
+        </div>
+      </div>
+
       <div class="list" v-if="(routes.data || []).length">
         <div v-for="r in routes.data" :key="r.id" class="item">
           <div class="k">{{ r.pattern }}</div>
-          <div class="v">{{ r.script || "仅记录" }}<div class="small">{{ shortId(r.id, 6) }}</div></div>
+          <div class="v">
+            {{ r.script || "仅记录" }}
+            <div class="small">{{ shortId(r.id, 6) }}</div>
+            <div class="row" style="gap: 6px; margin-top: 4px">
+              <button class="ghost sm" :disabled="!writesOn" @click="openRouteEdit(r)">编辑</button>
+              <button class="ghost sm danger" :disabled="!writesOn" @click="askDeleteRoute(r)">删除</button>
+            </div>
+          </div>
         </div>
       </div>
       <div v-else-if="!routes.err" class="empty">这个站点没有 Workers 路由</div>
+      <p class="small muted" style="margin-top: 8px" v-if="!writesOn">上面「本机写开关」没打开，路由的增删改按钮是灰的。</p>
     </div>
 
     <div class="card" v-if="zoneName">
@@ -351,4 +436,9 @@ async function confirmSheet() {
 .editor { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 10px 0; background: var(--panel-2); }
 .editor h4 { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
 .whyline.ok { color: var(--ok); background: rgb(var(--ok-rgb) / .08); border-left-color: var(--ok); }
+.errtext { color: var(--bad); }
+button.sm { padding: 4px 10px; font-size: 12px; }
+button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
+.gen { flex-wrap: wrap; gap: 6px; }
+.gen .field { max-width: 280px; }
 </style>

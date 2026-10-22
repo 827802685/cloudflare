@@ -438,6 +438,17 @@ export interface Subscription {
   plan?: string | null;
   state?: string | null;
 }
+
+/* ---------- 自定义域名 / 站点路由 / Pages 环境变量的客户端形状 ---------- */
+export type PageEnvironment = "production" | "preview";
+/** 上游每个值都是 {value,type} 对象（不是裸字符串），这里照实对齐 */
+export type PageEnvVar = { value: string; type: "plain_text" | "secret_text" };
+export type PageEnvVars = Record<string, PageEnvVar>;
+/** 站点 Workers 路由：script 传 null = 这条路由只跳过 Worker */
+export interface RouteInput {
+  pattern: string;
+  script: string | null;
+}
 /**
  * 网关返回的是 CF 的账号列表信封 + 三个状态字段：
  * active（本响应用的账号，因为 /v1/accounts 豁免 ?account=，所以恒为网关默认）、
@@ -507,6 +518,30 @@ export const api = {
     gwWrite<any>("POST", "/v1/pages/" + encodeURIComponent(p) + "/deployments/" + encodeURIComponent(id) + "/rollback"),
   pageRetry: (p: string, id: string) =>
     gwWrite<any>("POST", "/v1/pages/" + encodeURIComponent(p) + "/deployments/" + encodeURIComponent(id) + "/retry"),
+  /** Pages 自定义域名（上游 2026-10-22 临时项目实测：POST/DELETE 项目下的 domains） */
+  pageAddDomain: (p: string, name: string) =>
+    gwWrite<any>("POST", "/v1/pages/" + encodeURIComponent(p) + "/domains", { name }),
+  pageDeleteDomain: (p: string, name: string) =>
+    gwWrite<any>("DELETE", "/v1/pages/" + encodeURIComponent(p) + "/domains/" + encodeURIComponent(name)),
+  /** Pages 环境变量（PUT 该环境完整变量表；删除 = 不传这个键） */
+  pageEnvPut: (p: string, environment: PageEnvironment, vars: PageEnvVars) =>
+    gwWrite<any>("PUT", "/v1/pages/" + encodeURIComponent(p) + "/env_vars", { environment, vars }),
+
+  /** Workers 自定义域名（客户端 POST→上游 PUT；解绑 DELETE） */
+  workerDomainAttach: (d: { hostname: string; zone_id: string; service: string }) =>
+    gwWrite<any>("POST", "/v1/domains", { ...d, environment: "production" }),
+  workerDomainDetach: (id: string) => gwWrite<any>("DELETE", "/v1/domains/" + encodeURIComponent(id)),
+
+  /** 站点 Workers 路由增删改（上游 POST/PUT/DELETE 同路径） */
+  zoneRouteCreate: (zone: string, r: RouteInput) => gwWrite<any>("POST", "/v1/zones/" + encodeURIComponent(zone) + "/routes", r),
+  zoneRouteUpdate: (zone: string, id: string, r: RouteInput) =>
+    gwWrite<any>("PUT", "/v1/zones/" + encodeURIComponent(zone) + "/routes/" + encodeURIComponent(id), r),
+  zoneRouteDelete: (zone: string, id: string) =>
+    gwWrite<any>("DELETE", "/v1/zones/" + encodeURIComponent(zone) + "/routes/" + encodeURIComponent(id)),
+
+  /** 脚本级 workers.dev 开关（两个布尔全量写） */
+  workerSubdomainSet: (s: string, enabled: boolean, previews: boolean) =>
+    gwWrite<any>("PUT", "/v1/workers/" + encodeURIComponent(s) + "/subdomain", { enabled, previews_enabled: previews }),
 
   /* ---------- 写侧（docs/12 §3 P3）。调用前必须先拿 preview* 做回显，见文件末尾的写侧契约 ---------- */
   createDnsRecord: (zone: string, r: DnsRecordInput) => gwWrite<any>("POST", "/v1/zones/" + encodeURIComponent(zone) + "/dns_records", dnsBody(r)),
@@ -740,6 +775,210 @@ export function previewPagesRetry(project: string, dep: Record<string, any>): Wr
       { k: "构建时间", v: String(dep?.created_on ?? "—") },
       { k: "前提", v: "只有 Git 构建的部署能重试；Direct Upload 部署上游回 400 (8000055)" },
       { k: "路由状态", v: "上游形状 2026-10-21 实测：POST …/deployments/{id}/retry，空 body" },
+    ],
+    danger: "normal",
+  };
+}
+
+/* ---------- 自定义域名 / 站点路由 / Pages 环境变量 / workers.dev 开关的预览 ----------
+ * 校验与网关 catalog 同一套规则：前端负责别让人白填，网关负责真正拦住。
+ */
+
+const HOSTNAME_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
+const SCRIPT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/i;
+
+function hostnameFor(v: unknown, field: string): string {
+  const h = String(v ?? "").trim().toLowerCase().replace(/\.+$/, "");
+  if (!h) bad(`${field} 不能为空`);
+  if (h.includes("/") || h.includes(":") || h.includes("*") || h.includes(" ")) bad(`${field} 只填域名本身，不带协议 / 端口 / 通配符：${h}`);
+  if (h.length > 253 || !HOSTNAME_RE.test(h)) bad(`${field} 不是合法域名：${h || "空"}`);
+  return h;
+}
+
+function scriptNameFor(v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!SCRIPT_NAME_RE.test(s)) bad(`Worker 脚本名不合法：${s || "空"}`);
+  return s;
+}
+
+function routeBodyFor(zoneName: string, r: RouteInput): RouteInput {
+  const pattern = String(r?.pattern ?? "").trim().toLowerCase();
+  if (!pattern) bad("pattern 不能为空");
+  if (pattern.includes("://") || /\s/.test(pattern)) bad("pattern 是「主机名/路径」形状，不带协议、不带空格");
+  if (!/^(\*\.)?[a-z0-9.-]+\/\S*$/.test(pattern)) bad(`pattern 得是 example.com/* 或 *.example.com/* 这种形状（现在是 ${pattern}）`);
+  if (!pattern.endsWith("*")) bad("pattern 要以 * 结尾（CF 的路由靠末尾通配匹配路径）");
+  const host = pattern.split("/")[0].replace(/^\*\./, "");
+  const z = zoneName.toLowerCase();
+  if (!(host === z || host.endsWith("." + z))) bad(`pattern 的主机名 ${host} 不属于这个 zone（${z}）`);
+  const script = r?.script === null || r?.script === undefined ? null : scriptNameFor(r.script);
+  return { pattern, script };
+}
+
+/** Workers 自定义域名绑定：客户端 POST /v1/domains → 上游 PUT /accounts/{a}/workers/domains */
+export function previewWorkerDomainAttach(zoneId: string, zoneName: string, hostname: string, service: string): WritePreview {
+  const h = hostnameFor(hostname, "hostname");
+  const z = zoneName.toLowerCase();
+  if (!(h === z || h.endsWith("." + z))) bad(`hostname ${h} 不属于 zone ${z}`);
+  if (!/^[0-9a-f]{32}$/i.test(zoneId)) bad("zone id 得是 32 位");
+  const s = scriptNameFor(service);
+  return {
+    method: "POST",
+    path: "/v1/domains",
+    body: { hostname: h, zone_id: zoneId, service: s, environment: "production" },
+    title: `绑定自定义域名 ${h}`,
+    lines: [
+      { k: "域名", v: h },
+      { k: "Zone", v: zoneName },
+      { k: "Worker", v: s },
+      { k: "环境", v: "production（上游这个端点只有 production）" },
+      { k: "上游形状", v: "2026-10-22 实测：PUT /accounts/{a}/workers/domains（POST 回 405）" },
+    ],
+    danger: "normal",
+  };
+}
+
+export function previewWorkerDomainDetach(d: Record<string, any>): WritePreview {
+  const id = String(d?.id ?? "").trim();
+  if (!id) bad("这条域名没有 id，不解绑");
+  return {
+    method: "DELETE",
+    path: "/v1/domains/" + encodeURIComponent(id),
+    body: undefined,
+    title: `解绑 ${String(d?.hostname ?? id)}`,
+    lines: [
+      { k: "要删除的记录", v: String(d?.hostname ?? id) },
+      { k: "域名", v: String(d?.hostname ?? "—") },
+      { k: "绑定 ID", v: id },
+      { k: "Worker", v: String(d?.service ?? "—") },
+      { k: "影响", v: "解绑后这个域名不再指向 Worker；DNS 记录是否保留以 Cloudflare 后台为准" },
+    ],
+    danger: "irreversible",
+  };
+}
+
+export function previewPageDomainAdd(project: string, hostname: string): WritePreview {
+  const h = hostnameFor(hostname, "name");
+  return {
+    method: "POST",
+    path: `/v1/pages/${encodeURIComponent(project)}/domains`,
+    body: { name: h },
+    title: `给「${project}」添加域名 ${h}`,
+    lines: [
+      { k: "项目", v: project },
+      { k: "域名", v: h },
+      { k: "前提", v: "域名所属 zone 必须在本账号下；添加后还要按 CF 提示配置 DNS" },
+      { k: "实测", v: "2026-10-22 临时项目：POST → 200，建后即删无残留" },
+    ],
+    danger: "normal",
+  };
+}
+
+export function previewPageDomainDelete(project: string, d: Record<string, any>): WritePreview {
+  const name = hostnameFor(d?.name ?? d?.domain, "name");
+  return {
+    method: "DELETE",
+    path: `/v1/pages/${encodeURIComponent(project)}/domains/${encodeURIComponent(name)}`,
+    body: undefined,
+    title: `从「${project}」移除 ${name}`,
+    lines: [
+      { k: "要删除的记录", v: name },
+      { k: "项目", v: project },
+      { k: "域名", v: name },
+      { k: "影响", v: "移除后这个域名不再指向该项目；pages.dev 子域不受影响" },
+    ],
+    danger: "irreversible",
+  };
+}
+
+/** 站点 Workers 路由：新建 / 改 / 删，三条都回显最终 pattern + script */
+export function previewZoneRoute(
+  zoneId: string,
+  zoneName: string,
+  action: "create" | "update" | "delete",
+  r: RouteInput & { id?: string },
+): WritePreview {
+  if (!/^[0-9a-f]{32}$/i.test(zoneId)) bad("zone id 得是 32 位");
+  if (action === "delete") {
+    const id = String(r?.id ?? "").trim();
+    if (!id) bad("这条路由没有 id，不删");
+    return {
+      method: "DELETE",
+      path: `/v1/zones/${encodeURIComponent(zoneId)}/routes/${encodeURIComponent(id)}`,
+      body: undefined,
+      title: `删除路由 ${String(r?.pattern ?? id)}`,
+      lines: [
+        { k: "要删除的记录", v: String(r?.pattern ?? id) },
+        { k: "Zone", v: zoneName },
+        { k: "路由 ID", v: id },
+        { k: "pattern", v: String(r?.pattern ?? "—") },
+        { k: "script", v: r?.script ? String(r.script) : "仅记录（不跑 Worker）" },
+        { k: "影响", v: "这条 pattern 的请求不再经过该 Worker（或不再跳过）" },
+      ],
+      danger: "irreversible",
+    };
+  }
+  const body = routeBodyFor(zoneName, r);
+  const id = String(r?.id ?? "").trim();
+  if (action === "update" && !id) bad("改动路由需要 id");
+  return {
+    method: action === "create" ? "POST" : "PUT",
+    path: `/v1/zones/${encodeURIComponent(zoneId)}/routes` + (action === "update" ? "/" + encodeURIComponent(id) : ""),
+    body,
+    title: action === "create" ? `新增路由 ${body.pattern}` : `修改路由 ${body.pattern}`,
+    lines: [
+      { k: "Zone", v: zoneName },
+      ...(action === "update" ? [{ k: "路由 ID", v: id }] : []),
+      { k: "pattern", v: body.pattern },
+      { k: "script", v: body.script ?? "null（仅记录，不跑 Worker）" },
+      { k: "前提", v: "写这条需要令牌带 Workers Routes Write；缺权限时 CF 会回 403，原样上屏" },
+    ],
+    danger: "normal",
+  };
+}
+
+/** Pages 环境变量：body 是该环境**完整**变量表（PUT 全量覆盖），界面据此回显变更摘要 */
+export function previewPageEnv(
+  project: string,
+  environment: PageEnvironment,
+  vars: PageEnvVars,
+  summary: string,
+): WritePreview {
+  const entries = Object.entries(vars);
+  if (entries.length > 64) bad("一次最多 64 个环境变量");
+  for (const [k, v] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || k.length > 64) bad(`环境变量名不合法：${k}`);
+    if (typeof v?.value !== "string") bad(`${k} 的值必须是字符串`);
+    if (v.type !== "plain_text" && v.type !== "secret_text") bad(`${k} 的类型只能是 plain_text / secret_text`);
+  }
+  return {
+    method: "PUT",
+    path: `/v1/pages/${encodeURIComponent(project)}/env_vars`,
+    body: { environment, vars },
+    title: `更新「${project}」${environment === "production" ? "生产" : "预览"}环境变量`,
+    lines: [
+      { k: "项目", v: project },
+      { k: "环境", v: environment === "production" ? "生产" : "预览" },
+      { k: "变更", v: summary },
+      { k: "覆盖方式", v: `整表覆盖（共 ${entries.length} 个变量）；没出现在表里的键会被删除，删除只能靠"不传键"` },
+      { k: "实测", v: "2026-10-22 临时项目：PATCH deployment_configs.{env}.env_vars → 200" },
+    ],
+    danger: "normal",
+  };
+}
+
+/** 脚本级 workers.dev 开关：上游 POST 收两个布尔（缺一个会被当成 reset） */
+export function previewWorkerSubdomain(s: string, enabled: boolean, previews: boolean): WritePreview {
+  const svc = scriptNameFor(s);
+  return {
+    method: "PUT",
+    path: `/v1/workers/${encodeURIComponent(svc)}/subdomain`,
+    body: { enabled, previews_enabled: previews },
+    title: `${enabled ? "启用" : "关闭"} ${svc} 的 workers.dev`,
+    lines: [
+      { k: "脚本", v: svc },
+      { k: "workers.dev", v: enabled ? "启用" : "关闭" },
+      { k: "预览子域", v: previews ? "启用" : "关闭" },
+      { k: "上游形状", v: "2026-10-22 实测：POST …/scripts/{s}/subdomain，两个布尔全量写" },
     ],
     danger: "normal",
   };

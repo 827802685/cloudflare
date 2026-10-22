@@ -26,8 +26,13 @@ import {
   api,
   forceFreshWindow,
   GwError,
+  previewPageDomainAdd,
+  previewPageDomainDelete,
+  previewPageEnv,
   setWritesOptIn,
   writesOptIn,
+  type PageEnvironment,
+  type PageEnvVars,
   type WritePreview,
 } from "../lib/api";
 import { dt, rel, shortId } from "../lib/fmt";
@@ -239,7 +244,14 @@ function toggleOptIn(v: boolean) {
 }
 
 const preview = ref<WritePreview | null>(null);
-const pending = ref<{ action: "rollback" | "retry"; id: string } | null>(null);
+type PendingAct =
+  | { action: "rollback" | "retry"; id: string }
+  | { action: "domainAdd"; name: string }
+  | { action: "domainDelete"; name: string }
+  | { action: "envPut"; environment: PageEnvironment; vars: PageEnvVars };
+const pending = ref<PendingAct | null>(null);
+/** 确认后真正要发的那一条写请求（闭包在 openSheet 里存） */
+let runAct: (() => Promise<unknown>) | null = null;
 const busy = ref(false);
 const sheetErr = ref("");
 const done = ref("");
@@ -286,6 +298,117 @@ function askRetry(d: any) {
 function cancelSheet() {
   preview.value = null;
   pending.value = null;
+  runAct = null;
+  sheetErr.value = "";
+}
+
+/* ---------- 自定义域名增删（上游 2026-10-22 临时项目实测） ---------- */
+const domainInput = ref("");
+const domainErr = ref("");
+
+function askAddDomain() {
+  domainErr.value = "";
+  done.value = "";
+  const h = domainInput.value.trim();
+  if (!h) { domainErr.value = "先填一个域名（例如 www.example.com）"; return; }
+  try {
+    openSheet(previewPageDomainAdd(name.value, h), () => api.pageAddDomain(name.value, h.toLowerCase().replace(/\.+$/, "")));
+    pending.value = { action: "domainAdd", name: h.toLowerCase().replace(/\.+$/, "") };
+  } catch (e) {
+    domainErr.value = e instanceof GwError ? e.message : String((e as Error)?.message || e);
+  }
+}
+
+function askDeleteDomain(d: any) {
+  domainErr.value = "";
+  done.value = "";
+  const n = String(d?.name ?? d?.domain ?? "");
+  if (!n) { domainErr.value = "这条域名没有 name，不发删除请求"; return; }
+  try {
+    openSheet(previewPageDomainDelete(name.value, d), () => api.pageDeleteDomain(name.value, n));
+    pending.value = { action: "domainDelete", name: n };
+  } catch (e) {
+    domainErr.value = e instanceof GwError ? e.message : String((e as Error)?.message || e);
+  }
+}
+
+/* ---------- 环境变量编辑：整表覆盖，删除 = 不传这个键 ---------- */
+type EnvRow = { key: string; value: string; type: "plain_text" | "secret_text" };
+const envEdit = ref<{ environment: PageEnvironment; rows: EnvRow[] } | null>(null);
+const envErr = ref("");
+const envAdd = ref<{ key: string; value: string; type: "plain_text" | "secret_text" }>({ key: "", value: "", type: "plain_text" });
+
+function envVarsOf(environment: PageEnvironment): Record<string, any> {
+  const conf = pj.value?.deployment_configs?.[environment];
+  const v = conf?.env_vars;
+  return v && typeof v === "object" ? v : {};
+}
+
+function openEnv(environment: PageEnvironment) {
+  envErr.value = "";
+  done.value = "";
+  const src = envVarsOf(environment);
+  envEdit.value = {
+    environment,
+    rows: Object.keys(src).sort().map((k) => ({
+      key: k,
+      value: String(src[k]?.value ?? ""),
+      type: src[k]?.type === "secret_text" ? "secret_text" : "plain_text",
+    })),
+  };
+  envAdd.value = { key: "", value: "", type: "plain_text" };
+}
+
+function addEnvRow() {
+  envErr.value = "";
+  if (!envEdit.value) return;
+  const k = envAdd.value.key.trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) { envErr.value = "变量名要用字母或下划线开头、只含字母数字下划线"; return; }
+  if (envEdit.value.rows.some((r) => r.key === k)) { envErr.value = `变量 ${k} 已经在了`; return; }
+  envEdit.value.rows.push({ key: k, value: envAdd.value.value, type: envAdd.value.type });
+  envAdd.value = { key: "", value: "", type: "plain_text" };
+}
+
+function removeEnvRow(i: number) { envEdit.value?.rows.splice(i, 1); }
+
+/** 变更摘要：新增/删除/改值，逐个点名；空串 = 没有实际差异 */
+function envSummary(environment: PageEnvironment, rows: EnvRow[]): string {
+  const before = envVarsOf(environment);
+  const after = new Map(rows.map((r) => [r.key, r.value]));
+  const added = rows.filter((r) => !(r.key in before)).map((r) => r.key);
+  const removed = Object.keys(before).filter((k) => !after.has(k));
+  const changed = rows.filter((r) => k_has(before, r.key) && String(before[r.key]?.value ?? "") !== r.value).map((r) => r.key);
+  const parts = [
+    added.length ? `新增 ${added.join("、")}` : "",
+    removed.length ? `删除 ${removed.join("、")}` : "",
+    changed.length ? `改值 ${changed.join("、")}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join("；") : "没有实际差异（整表原样重写）";
+}
+function k_has(o: Record<string, any>, k: string): boolean { return Object.prototype.hasOwnProperty.call(o, k); }
+
+function askSaveEnv() {
+  if (!envEdit.value) return;
+  envErr.value = "";
+  const { environment, rows } = envEdit.value;
+  const vars: PageEnvVars = {};
+  for (const r of rows) {
+    const k = r.key.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) { envErr.value = `变量名不合法：${k || "空"}`; return; }
+    vars[k] = { value: r.value, type: r.type };
+  }
+  try {
+    const pv = previewPageEnv(name.value, environment, vars, envSummary(environment, rows));
+    openSheet(pv, () => api.pageEnvPut(name.value, environment, vars));
+    pending.value = { action: "envPut", environment, vars };
+  } catch (e) {
+    envErr.value = e instanceof GwError ? e.message : String((e as Error)?.message || e);
+  }
+}
+
+function openSheet(p: WritePreview, run: () => Promise<unknown>) {
+  runAct = run;
+  preview.value = p;
   sheetErr.value = "";
 }
 
@@ -293,13 +416,19 @@ async function confirmAct() {
   if (!pending.value || busy.value) return;
   busy.value = true;
   sheetErr.value = "";
-  const { action, id } = pending.value;
+  const act = pending.value;
   try {
-    if (action === "rollback") await api.pageRollback(name.value, id);
-    else await api.pageRetry(name.value, id);
-    done.value = action === "rollback" ? `已回滚到 ${shortId(id, 8)}` : `已请求重试 ${shortId(id, 8)}`;
+    if (!runAct) throw new GwError("unknown", 0, null, "没有待发送的写请求");
+    await runAct();
+    if (act.action === "rollback") done.value = `已回滚到 ${shortId(act.id, 8)}`;
+    else if (act.action === "retry") done.value = `已请求重试 ${shortId(act.id, 8)}`;
+    else if (act.action === "domainAdd") { done.value = `已添加域名 ${act.name}`; domainInput.value = ""; }
+    else if (act.action === "domainDelete") done.value = `已移除域名 ${act.name}`;
+    else if (act.action === "envPut") done.value = `已更新${act.environment === "production" ? "生产" : "预览"}环境变量（${Object.keys(act.vars).length} 个）`;
     preview.value = null;
     pending.value = null;
+    runAct = null;
+    if (act.action === "envPut") envEdit.value = null;
     forceFreshWindow();
     await loadAll();
   } catch (e) {
@@ -479,6 +608,11 @@ function refresh() {
     <div class="card" id="c-domains">
       <h3>自定义域名（{{ domains.data?.length ?? 0 }} 个）</h3>
       <ErrorNote :err="domains.err" />
+      <div class="row gen" style="margin: 8px 0">
+        <input v-model="domainInput" class="field" placeholder="www.example.com" spellcheck="false" autocomplete="off" />
+        <button class="chip" type="button" :disabled="!optIn || busy" @click="askAddDomain">添加域名</button>
+      </div>
+      <p class="small errtext" v-if="domainErr">{{ domainErr }}</p>
       <div class="list" v-if="domains.data?.length">
         <div v-for="(d, i) in domains.data" :key="i" class="item">
           <div style="min-width: 0">
@@ -490,7 +624,12 @@ function refresh() {
           </div>
           <div class="v small">
             <span v-if="d.status" class="badge" :class="{ live: d.status === 'active' }">{{ d.status === "active" ? "已生效" : statusText(d.status) }}</span>
-            <span v-else class="muted">—</span>
+            <button
+              class="ghost sm danger"
+              type="button"
+              :disabled="!optIn || busy || !(d.name || d.domain)"
+              @click.stop="askDeleteDomain(d)"
+            >移除</button>
           </div>
         </div>
       </div>
@@ -498,7 +637,8 @@ function refresh() {
         {{ domains.loading ? "加载中" : "没有自定义域名。临时项目实测：空项目这里返回 []。" }}
       </div>
       <div class="small muted" style="margin-top: 8px">
-        增删自定义域名要 POST / DELETE，这两条写路由未实现（上游形状未实测），本版只读。
+        增删都要先打开「部署历史」卡片上的本机写开关；发出前 ConfirmSheet 会回显要发的请求，删除还要手打域名。
+        上游形状 2026-10-22 在临时项目上实测（建后即删，无残留）。
       </div>
     </div>
 
@@ -518,8 +658,50 @@ function refresh() {
           <dd v-if="productionEnv?.fail_open !== undefined">{{ productionEnv.fail_open ? "开" : "关" }}</dd>
           <dt>构建配置</dt><dd>{{ buildCfg ? "已配置" : "空（直传项目本来就没有构建步骤）" }}</dd>
         </div>
-        <div class="small muted" style="margin-top: 8px">
-          只列键名，不展示值：接口虽然回明文，但这一屏经常被截图/投屏。改值要 PATCH 项目，本版未实现。
+        <div class="row" style="gap: 6px; margin-top: 10px; flex-wrap: wrap">
+          <button class="ghost sm" type="button" :disabled="!optIn || busy" @click="openEnv('production')">编辑生产变量</button>
+          <button class="ghost sm" type="button" :disabled="!optIn || busy" @click="openEnv('preview')">编辑预览变量</button>
+        </div>
+
+        <div v-if="envEdit" class="editbox">
+          <div class="row" style="justify-content: space-between; align-items: center">
+            <b class="small">{{ envEdit.environment === "production" ? "生产" : "预览" }}环境变量（{{ envEdit.rows.length }} 个）</b>
+            <div class="row" style="gap: 6px">
+              <button class="ghost sm" type="button" :disabled="busy" @click="envEdit = null">取消</button>
+              <button class="ghost sm" type="button" :disabled="busy" @click="askSaveEnv">保存并确认</button>
+            </div>
+          </div>
+          <div v-if="!envEdit.rows.length" class="empty">这份清单现在是空的——保存后这个环境将没有任何变量</div>
+          <div v-for="(r, i) in envEdit.rows" :key="r.key" class="vrow">
+            <div class="row" style="gap: 6px; justify-content: space-between">
+              <span class="k mono">{{ r.key }}</span>
+              <span class="row" style="gap: 6px">
+                <select v-model="r.type" class="field sel">
+                  <option value="plain_text">plain_text</option>
+                  <option value="secret_text">secret_text</option>
+                </select>
+                <button class="ghost sm danger" type="button" @click="removeEnvRow(i)">移除</button>
+              </span>
+            </div>
+            <input v-model="r.value" class="field" :type="r.type === 'secret_text' ? 'password' : 'text'" spellcheck="false" autocomplete="off" />
+          </div>
+          <div class="row gen" style="margin-top: 8px">
+            <input v-model="envAdd.key" class="field" placeholder="新变量名" spellcheck="false" autocomplete="off" />
+            <input v-model="envAdd.value" class="field" :type="envAdd.type === 'secret_text' ? 'password' : 'text'" placeholder="值" spellcheck="false" autocomplete="off" />
+            <select v-model="envAdd.type" class="field sel">
+              <option value="plain_text">plain_text</option>
+              <option value="secret_text">secret_text</option>
+            </select>
+            <button class="chip" type="button" @click="addEnvRow">添加</button>
+          </div>
+          <p class="small errtext" v-if="envErr">{{ envErr }}</p>
+          <p class="small muted">
+            保存是**整表覆盖**：不在表里的键会被删除（删除只能靠「不传这个键」，传 null 实测只是把值置空）。
+            值从接口回显，secret_text 用密码框显示。
+          </p>
+        </div>
+        <div class="small muted" style="margin-top: 8px" v-else>
+          只列键名，不展示值：接口虽然回明文，但这一屏经常被截图/投屏。点上面的按钮才进编辑态。
         </div>
         <div class="list" v-if="buildCfg" style="margin-top: 10px">
           <div v-for="[k, v] in buildCfg" :key="String(k)" class="item">
@@ -569,4 +751,12 @@ function refresh() {
   max-height: 240px;
   overflow: auto;
 }
+button.sm { padding: 4px 10px; font-size: 12px; }
+button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
+.errtext { color: var(--bad); }
+.editbox { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.vrow { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.gen { flex-wrap: wrap; gap: 6px; }
+.gen .field { max-width: 200px; }
+.sel { width: auto; }
 </style>

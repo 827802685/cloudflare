@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, type Ref } from "vue";
 import { useRoute } from "vue-router";
+import ConfirmSheet from "../components/ConfirmSheet.vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import FoldNote from "../components/FoldNote.vue";
 import CronPanel from "../components/ver/CronPanel.vue";
@@ -8,7 +9,17 @@ import VarsPanel from "../components/ver/VarsPanel.vue";
 import BindingsPanel from "../components/ver/BindingsPanel.vue";
 import VersionDialog from "../components/ver/VersionDialog.vue";
 import { useFold } from "../lib/lists";
-import { api, forceFreshWindow, GwError } from "../lib/api";
+import {
+  api,
+  forceFreshWindow,
+  GwError,
+  previewWorkerDomainAttach,
+  previewWorkerDomainDetach,
+  previewWorkerSubdomain,
+  setWritesOptIn,
+  writesOptIn,
+  type WritePreview,
+} from "../lib/api";
 import { dt, num, rel, shortId } from "../lib/fmt";
 
 const route = useRoute();
@@ -25,6 +36,13 @@ const scriptSettings = ref<Slot<any>>(mk());
 const subdomain = ref<Slot<any>>(mk());
 const secrets = ref<Slot<any[]>>(mk());
 const crons = ref<Slot<any[]>>(mk());
+/** 自定义域名（全部 Worker，过滤出本脚本）与可选 zone（绑定时要 zone_id 归属） */
+const domains = ref<Slot<any[]>>(mk());
+const zones = ref<Slot<any[]>>(mk());
+/** 绑定表单：hostname + 目标 zone（zone_id 必须属于本账号，上游按它校验归属） */
+const domHost = ref("");
+const domZone = ref("");
+const domErr = ref("");
 
 /** 版本分页：CF 这个列表**给** total（`result_info.total_count`，网关透传为 `total`），以它为准；
  *  total 缺失时才退回"拿不满一页就当到底了"。 */
@@ -85,7 +103,16 @@ async function loadAll() {
       const raw: any = r.result;
       return Array.isArray(raw) ? raw : (raw?.schedules ?? []);
     }),
+    grab(domains, async () => {
+      const r = await api.domains();
+      return Array.isArray(r.result) ? r.result : [];
+    }),
+    grab(zones, async () => {
+      const r = await api.zones();
+      return Array.isArray(r.result) ? r.result : [];
+    }),
   ]);
+  if (!domZone.value && zones.value.data?.length) domZone.value = String(zones.value.data[0].id);
 }
 onMounted(loadAll);
 
@@ -173,6 +200,83 @@ const myTotalReqs = computed(() => myTraffic.value.reduce((s, r) => s + r.reqs, 
 const missingHosts = computed(() =>
   (traffic.value.data?.myHosts ?? []).filter((m) => !traffic.value.data?.rows.some((r) => r.host.toLowerCase() === m.host)),
 );
+
+/* ---------- 写侧：自定义域名绑定 / 解绑，脚本级 workers.dev 开关 ---------- */
+const myDomains = computed(() => (domains.value.data ?? []).filter((d: any) => String(d.service) === name.value));
+const domZoneName = computed(() => String((zones.value.data ?? []).find((z: any) => String(z.id) === domZone.value)?.name ?? ""));
+
+const optIn = ref(writesOptIn());
+function toggleOptIn(v: boolean) {
+  setWritesOptIn(v);
+  optIn.value = writesOptIn();
+}
+
+const preview = ref<WritePreview | null>(null);
+const busy = ref(false);
+const sheetErr = ref("");
+const doneMsg = ref("");
+let pendingRun: (() => Promise<unknown>) | null = null;
+let pendingMsg = "";
+
+function openSheet(p: WritePreview, run: () => Promise<unknown>, msg: string) {
+  preview.value = p;
+  pendingRun = run;
+  pendingMsg = msg;
+  sheetErr.value = "";
+  doneMsg.value = "";
+}
+function cancelSheet() {
+  preview.value = null;
+  pendingRun = null;
+  sheetErr.value = "";
+}
+async function confirmWrite() {
+  if (!pendingRun || busy.value) return;
+  busy.value = true;
+  sheetErr.value = "";
+  try {
+    await pendingRun();
+    preview.value = null;
+    pendingRun = null;
+    doneMsg.value = pendingMsg;
+    refresh();
+  } catch (e) {
+    const err = e instanceof GwError ? e : new GwError("unknown", 0, null, String((e as Error)?.message || e));
+    sheetErr.value = `[${err.kind} · HTTP ${err.http}] ${err.message} —— ${err.hint}`;
+  } finally {
+    busy.value = false;
+  }
+}
+
+function askAttachDomain() {
+  domErr.value = "";
+  const h = domHost.value.trim().toLowerCase().replace(/\.+$/, "");
+  if (!h) { domErr.value = "先填一个域名（例如 api.example.com）"; return; }
+  if (!domZone.value) { domErr.value = "先选一个 zone（域名必须属于它）"; return; }
+  try {
+    const pv = previewWorkerDomainAttach(domZone.value, domZoneName.value, h, name.value);
+    openSheet(pv, () => api.workerDomainAttach({ hostname: h, zone_id: domZone.value, service: name.value }), `已绑定 ${h}`);
+  } catch (e) {
+    domErr.value = e instanceof GwError ? e.message : String((e as Error)?.message || e);
+  }
+}
+function askDetachDomain(d: any) {
+  domErr.value = "";
+  try {
+    const pv = previewWorkerDomainDetach(d);
+    openSheet(pv, () => api.workerDomainDetach(String(d.id)), `已解绑 ${String(d.hostname ?? d.id)}`);
+  } catch (e) {
+    domErr.value = e instanceof GwError ? e.message : String((e as Error)?.message || e);
+  }
+}
+function askSubdomain(nextEnabled: boolean, nextPreviews: boolean) {
+  const pv = previewWorkerSubdomain(name.value, nextEnabled, nextPreviews);
+  openSheet(
+    pv,
+    () => api.workerSubdomainSet(name.value, nextEnabled, nextPreviews),
+    `workers.dev 已${nextEnabled ? "启用" : "关闭"}，预览子域已${nextPreviews ? "启用" : "关闭"}`,
+  );
+}
 
 const current = computed(() => deployments.value.data?.[0] ?? null);
 const currentVersions = computed<any[]>(() => current.value?.versions ?? []);
@@ -357,6 +461,49 @@ const showSwitch = ref(false);
       <div class="empty" v-else-if="!traffic.err && traffic.loading">加载中…</div>
     </div>
 
+    <div class="card" id="c-domains">
+      <div class="row" style="justify-content: space-between; align-items: flex-start; gap: 10px">
+        <h3 style="margin: 0">自定义域名（{{ myDomains.length }} 个）</h3>
+        <label class="small muted" style="display: flex; align-items: center; gap: 6px; white-space: nowrap">
+          <input type="checkbox" :checked="optIn" @change="toggleOptIn(($event.target as HTMLInputElement).checked)" />
+          本机写开关
+        </label>
+      </div>
+      <ErrorNote :err="domains.err || zones.err" />
+      <div class="small muted" style="margin: 6px 0 8px">
+        上游 2026-10-22 实测：绑定是 <code>PUT /accounts/{a}/workers/domains</code>（客户端发 POST，两层转换），
+        解绑 DELETE 回空 200。开关关着时下面的按钮不会发请求。
+      </div>
+      <div v-if="doneMsg" class="small" style="margin-bottom: 8px; color: var(--ok)">{{ doneMsg }}</div>
+
+      <div class="list" v-if="myDomains.length">
+        <div v-for="d in myDomains" :key="d.id" class="item">
+          <div style="min-width: 0">
+            <div class="k">{{ d.hostname }}</div>
+            <div class="small muted">
+              {{ d.zone_name || "—" }} · {{ d.environment || "production" }}
+              <span class="badge" :class="{ live: !!d.cert_id }">{{ d.cert_id ? "有证书" : "无证书记录" }}</span>
+            </div>
+          </div>
+          <div class="v small">
+            <button class="ghost sm danger" type="button" :disabled="!optIn || busy" @click="askDetachDomain(d)">解绑</button>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="!domains.loading && !domains.err" class="empty">这个 Worker 还没有自定义域名</div>
+
+      <div class="editbox">
+        <div class="row gen">
+          <select v-model="domZone" class="field sel" :disabled="!zones.data?.length">
+            <option v-if="!zones.data?.length" value="">没有可见 zone</option>
+            <option v-for="z in zones.data || []" :key="z.id" :value="String(z.id)">{{ z.name }}</option>
+          </select>
+          <input v-model="domHost" class="field" placeholder="api.example.com（必须属于上面的 zone）" spellcheck="false" autocomplete="off" />
+          <button class="chip" type="button" :disabled="!optIn || busy" @click="askAttachDomain">绑定域名</button>
+        </div>
+        <p class="small errtext" v-if="domErr">{{ domErr }}</p>
+      </div>
+    </div>
     <div class="card" id="c-versions">
       <h3>版本列表（已加载 {{ versions.data?.length || 0 }}<span v-if="vTotal"> / 共 {{ vTotal }} 版</span>）</h3>
       <ErrorNote :err="versions.err" />
@@ -453,6 +600,21 @@ const showSwitch = ref(false);
           <span v-if="subdomain.data" class="badge" :class="{ live: subdomain.data.enabled }">{{ subdomain.data.enabled ? "已启用" : "已关闭" }}</span>
           <span v-if="subdomain.data" class="muted small">预览 {{ subdomain.data.previews_enabled ? "开" : "关" }} · 你的网络访问不到 *.workers.dev（docs/00）</span>
           <span v-else>—</span>
+          <div class="row" style="gap: 6px; margin-top: 4px" v-if="subdomain.data">
+            <button
+              class="ghost sm"
+              type="button"
+              :disabled="!optIn || busy"
+              @click="askSubdomain(!subdomain.data.enabled, !!subdomain.data.previews_enabled)"
+            >{{ subdomain.data.enabled ? "关闭 workers.dev" : "启用 workers.dev" }}</button>
+            <button
+              class="ghost sm"
+              type="button"
+              :disabled="!optIn || busy"
+              @click="askSubdomain(!!subdomain.data.enabled, !subdomain.data.previews_enabled)"
+            >{{ subdomain.data.previews_enabled ? "关闭预览子域" : "启用预览子域" }}</button>
+          </div>
+          <div class="small muted" v-if="!optIn">本机写开关没打开（在「自定义域名」卡片上打开）。</div>
         </dd>
       </div>
       <FoldNote label="这些字段各来自哪条路由">
@@ -520,5 +682,17 @@ const showSwitch = ref(false);
       @retry="refresh"
       @changed="refresh"
     />
+
+    <ConfirmSheet :preview="preview" :busy="busy" :error="sheetErr" @confirm="confirmWrite" @cancel="cancelSheet" />
   </div>
 </template>
+
+<style scoped>
+button.sm { padding: 4px 10px; font-size: 12px; }
+button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
+.errtext { color: var(--bad); }
+.editbox { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.gen { flex-wrap: wrap; gap: 6px; }
+.gen .field { max-width: 280px; }
+.sel { width: auto; }
+</style>

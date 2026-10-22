@@ -661,7 +661,8 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
   if (pageOne) {
     const base = `${A(ctx.account)}/pages/projects/${enc(pageOne[1])}`;
     if (pageOne[2]) {
-      const r = await rest<any[]>(ctx.token, `${base}/domains?per_page=100`, { unwrap: "list" }, ctx.fresh);
+      // 这条列表不能带 per_page=100（实测 400 8000024），与网关 catalog.pageDomains 同口径
+      const r = await rest<any[]>(ctx.token, `${base}/domains`, { unwrap: "list" }, ctx.fresh);
       return { result: r.data } as unknown as T;
     }
     const r = await rest<any>(ctx.token, base, {}, ctx.fresh);
@@ -750,8 +751,14 @@ export async function probeTokenDirect(token: string): Promise<{ result: any[] }
   return { result: Array.isArray(r.data) ? r.data : [] };
 }
 
+/** 直连写侧与网关 catalog 同一套形状校验（域名 / Worker 脚本名 / 环境变量名） */
+const HOSTNAME_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
+const SCRIPT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/i;
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 /**
- * 写侧直连：DNS 增删改 + 按 URL 清缓存 + 版本切换/回滚/灰度（与网关 WRITE_ROUTES 同一张白名单，一条不多）。
+ * 写侧直连：DNS 增删改 + 按 URL 清缓存 + 版本切换/回滚/灰度 + 自定义域名/路由/环境变量/子域开关
+ * （与网关 WRITE_ROUTES 同一张白名单，一条不多）。
  * 校验在 api.ts 的 gwWrite() 里已经做过（validateDns / validatePurgeFiles），
  * 这里只负责按白名单发出去；写完由调用方 dropDirect 作废相关缓存。
  */
@@ -937,6 +944,156 @@ export async function writeDirect(ctx: DirectCtx, method: "POST" | "PUT" | "DELE
     if (!key.length || new TextEncoder().encode(key).length > 512) throw new DirectError("badQuery", 422, null, "key 得是 1–512 字节");
     const r = await rest<any>(ctx.token, `${A(ctx.account)}/storage/kv/namespaces/${enc(s[1])}/values/${enc(key)}`, { method: "DELETE" }, false);
     return r.data;
+  }
+
+  // ---- 脚本级 workers.dev 开关：客户端 PUT {enabled, previews_enabled} → 上游 POST 同体（2026-10-22 实测）
+  if (method === "PUT" && s[0] === "workers" && s[2] === "subdomain" && !s[3]) {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+    const allowed = ["enabled", "previews_enabled"];
+    const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+    for (const k of allowed) if (typeof raw[k] !== "boolean") bad(`${k} 必须是布尔值（两个都要传，缺一个会被上游当成 reset）`);
+    const svc = s[1];
+    if (!svc) bad("缺少脚本名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/scripts/${enc(svc)}/subdomain`, {
+      method: "POST",
+      body: { enabled: raw.enabled, previews_enabled: raw.previews_enabled },
+    }, false);
+    return r.data;
+  }
+
+  // ---- Workers 自定义域名。上游 2026-10-22 实测：**PUT** /accounts/{a}/workers/domains（POST 405），
+  // body {hostname, zone_id, service, environment:"production"}；解绑 DELETE …/domains/{id} 空 200。
+  if (method === "POST" && s[0] === "domains" && !s[1]) {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+    const allowed = ["hostname", "zone_id", "service", "environment"];
+    const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+    const hostname = String(raw.hostname ?? "").trim().toLowerCase().replace(/\.+$/, "");
+    if (!hostname || hostname.includes("/") || hostname.includes(":") || hostname.includes("*") || hostname.length > 253 || !HOSTNAME_RE.test(hostname)) {
+      bad(`hostname 不是合法域名：${hostname || "空"}`);
+    }
+    const zone_id = String(raw.zone_id ?? "").trim();
+    if (!/^[0-9a-f]{32}$/i.test(zone_id)) bad("zone_id 得是 32 位 zone id");
+    const service = String(raw.service ?? "").trim();
+    if (!SCRIPT_NAME_RE.test(service)) bad(`service 得是 Worker 脚本名：${service || "空"}`);
+    const environment = raw.environment === undefined ? "production" : String(raw.environment);
+    if (environment !== "production") bad('environment 只支持 "production"（这条上游端点没有 preview 写法）');
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/domains`, {
+      method: "PUT",
+      body: { hostname, zone_id, service, environment },
+    }, false);
+    return r.data;
+  }
+  if (method === "DELETE" && s[0] === "domains" && s[1]) {
+    const id = s[1];
+    if (!/^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      throw new DirectError("badQuery", 422, null, "domain id 得是 32 位 hex 或 36 位 UUID");
+    }
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/workers/domains/${enc(id)}`, { method: "DELETE" }, false);
+    return r.data;
+  }
+
+  // ---- Pages 自定义域名。上游 2026-10-22 临时项目实测：POST …/projects/{p}/domains {name}；
+  // DELETE …/domains/{name}；列表不能带 per_page=100（400 8000024）。
+  if (method === "POST" && s[0] === "pages" && s[2] === "domains" && !s[3]) {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const unknown = Object.keys(raw).filter((k) => k !== "name");
+    if (unknown.length) throw new DirectError("badQuery", 422, null, `不支持的字段：${unknown.join(",")}。这条路由只接受 {name}`);
+    const name = String(raw.name ?? "").trim().toLowerCase().replace(/\.+$/, "");
+    if (!name || name.includes("/") || name.includes(":") || name.includes("*") || name.length > 253 || !HOSTNAME_RE.test(name)) {
+      throw new DirectError("badQuery", 422, null, `name 不是合法域名：${name || "空"}`);
+    }
+    const proj = s[1];
+    if (!proj) throw new DirectError("badQuery", 422, null, "缺少 Pages 项目名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/pages/projects/${enc(proj)}/domains`, { method: "POST", body: { name } }, false);
+    return r.data;
+  }
+  if (method === "DELETE" && s[0] === "pages" && s[2] === "domains" && s[3]) {
+    const name = s[3].trim().toLowerCase().replace(/\.+$/, "");
+    if (!name || name.includes("/") || name.includes(":") || name.includes("*") || name.length > 253 || !HOSTNAME_RE.test(name)) {
+      throw new DirectError("badQuery", 422, null, `name 不是合法域名：${name || "空"}`);
+    }
+    const proj = s[1];
+    if (!proj) throw new DirectError("badQuery", 422, null, "缺少 Pages 项目名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/pages/projects/${enc(proj)}/domains/${enc(name)}`, { method: "DELETE" }, false);
+    return r.data;
+  }
+
+  // ---- Pages 环境变量。上游 2026-10-22 临时项目实测：PATCH 项目对象
+  // {deployment_configs:{production|preview:{env_vars:{KEY:{value,type}}}}}；删除 = 不传这个键。
+  if (method === "PUT" && s[0] === "pages" && s[2] === "env_vars") {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+    const unknown = Object.keys(raw).filter((k) => !["environment", "vars"].includes(k));
+    if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 environment / vars`);
+    const environment = String(raw.environment ?? "").trim();
+    if (environment !== "production" && environment !== "preview") bad('environment 只能是 "production" 或 "preview"');
+    const varsRaw = raw.vars as unknown;
+    if (!varsRaw || typeof varsRaw !== "object" || Array.isArray(varsRaw)) bad("vars 必须是 {KEY:{value,type}} 对象（空对象 = 这个环境没有变量）");
+    const entries = Object.entries(varsRaw as Record<string, unknown>);
+    if (entries.length > 64) bad(`一次最多 64 个环境变量（现在是 ${entries.length} 个）`);
+    const vars: Record<string, { value: string; type: string }> = {};
+    for (const [name, item] of entries) {
+      if (!ENV_NAME_RE.test(name) || name.length > 64) bad(`环境变量名得是字母/数字/下划线、数字不打头、≤64 字符：${name || "空"}`);
+      if (typeof item !== "object" || item === null || Array.isArray(item)) bad(`vars.${name} 必须是 {value,type} 对象`);
+      const o = item as Record<string, unknown>;
+      const extra = Object.keys(o).filter((k) => !["value", "type"].includes(k));
+      if (extra.length) bad(`vars.${name} 不支持的字段：${extra.join(",")}`);
+      if (typeof o.value !== "string") bad(`vars.${name}.value 必须是字符串（删除变量请把它从表里去掉，别传 null）`);
+      if (new TextEncoder().encode(o.value as string).length > 8192) bad(`vars.${name}.value 超过 8192 字节`);
+      const type = o.type === undefined ? "plain_text" : String(o.type);
+      if (type !== "plain_text" && type !== "secret_text") bad(`vars.${name}.type 只能是 plain_text 或 secret_text`);
+      vars[name] = { value: o.value as string, type };
+    }
+    const proj = s[1];
+    if (!proj) bad("缺少 Pages 项目名");
+    const r = await rest<any>(ctx.token, `${A(ctx.account)}/pages/projects/${enc(proj)}`, {
+      method: "PATCH",
+      body: { deployment_configs: { [environment]: { env_vars: vars } } },
+    }, false);
+    return r.data;
+  }
+
+  // ---- 站点 Workers 路由。上游形状来自官方 OpenAPI 实读条目（POST/PUT/DELETE 同路径），
+  // ⚠️ 当前令牌缺 Workers Routes Write，增删改尚未真机验证（需要临时令牌，见 docs/05）。
+  if (s[0] === "zones" && s[2] === "routes" && /^[0-9a-f]{32}$/i.test(s[1] || "")) {
+    const zone = s[1];
+    const routeBody = (): { pattern: string; script: string | null } => {
+      const raw = (body ?? {}) as Record<string, unknown>;
+      const bad = (m: string): never => { throw new DirectError("badQuery", 422, null, m); };
+      const unknown = Object.keys(raw).filter((k) => !["pattern", "script"].includes(k));
+      if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 pattern / script`);
+      const pattern = String(raw.pattern ?? "").trim().toLowerCase();
+      if (!pattern) bad("pattern 不能为空");
+      if (pattern.includes("://") || /\s/.test(pattern)) bad("pattern 是「主机名/路径」形状，不带协议、不带空格");
+      if (!/^(\*\.)?[a-z0-9.-]+\/\S*$/.test(pattern)) bad(`pattern 得是 example.com/* 或 *.example.com/* 这种形状（现在是 ${pattern}）`);
+      if (!pattern.endsWith("*")) bad("pattern 要以 * 结尾（CF 的路由靠末尾通配匹配路径）");
+      if (!raw.script && raw.script !== null) bad("script 必须是 Worker 脚本名，或 null（表示这条路由只跳过 Worker）");
+      const script = raw.script === null ? null : String(raw.script).trim();
+      if (script !== null && !SCRIPT_NAME_RE.test(script)) bad(`script 得是 Worker 脚本名：${script || "空"}`);
+      return { pattern, script };
+    };
+    if (method === "POST" && !s[3]) {
+      const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/workers/routes`, { method: "POST", body: routeBody() }, false);
+      return r.data;
+    }
+    if (method === "PUT" && s[3]) {
+      if (!/^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s[3])) {
+        throw new DirectError("badQuery", 422, null, "route id 得是 32 位 hex 或 36 位 UUID");
+      }
+      const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/workers/routes/${enc(s[3])}`, { method: "PUT", body: routeBody() }, false);
+      return r.data;
+    }
+    if (method === "DELETE" && s[3]) {
+      if (!/^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s[3])) {
+        throw new DirectError("badQuery", 422, null, "route id 得是 32 位 hex 或 36 位 UUID");
+      }
+      const r = await rest<any>(ctx.token, `/zones/${enc(zone)}/workers/routes/${enc(s[3])}`, { method: "DELETE" }, false);
+      return r.data;
+    }
   }
 
   // ---- Pages 回滚 / 重试。2026-10-21 临时项目 cfconsole-tmp-1021 实测：两条都是 POST + 空 body，

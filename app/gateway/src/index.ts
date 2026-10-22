@@ -37,6 +37,12 @@ import {
   validateD1WriteSql,
   validateKvKey,
   validateKvValue,
+  validateWorkerDomainBody,
+  validateRouteBody,
+  assertRouteInZone,
+  validatePageDomainBody,
+  validatePageEnvBody,
+  validateWorkerSubdomainBody,
   assertPurgeHostsInZone,
   noteCreatedRecord,
   canDeleteRecord,
@@ -317,7 +323,7 @@ function bail(c: Ctx, e: unknown) {
 }
 
 /** Hono 4 的 param() 返回 string|undefined；这里集中兜住，避免每个路由写一遍 ?? "" */
-function param(c: Ctx, name: "s" | "v" | "zone" | "p" | "id" | "ns" | "key"): string {
+function param(c: Ctx, name: "s" | "v" | "zone" | "p" | "id" | "ns" | "key" | "domain"): string {
   const v = c.req.param(name);
   if (!v) throw new CfError("badQuery", 422, null, "缺少路径参数 " + name);
   return v;
@@ -798,6 +804,111 @@ app.post(
     const p = param(c, "p");
     const id = validateWorkerObjId(param(c, "id"), "deployment id");
     const r = await writes.pagesRetry(cf(c), E(c), p, id);
+    return { result: r.data };
+  }),
+);
+
+/* ---------- 自定义域名 / 站点路由 / Pages 环境变量 / workers.dev 开关 ----------
+ * 顺序照旧：① 请求体逐字段校验（零出网）→ ② 路径里的 zone 过可见集合 → ③ 才出网。
+ * Workers 自定义域名的 zone_id 是**请求体**字段，和路径 `:zone` 走同一套可见集合校验，
+ * 这样客户端同样塞不进别的账号的 zone；hostname 还必须属于那个 zone（与 DNS 归属校验同理）。
+ */
+app.post(
+  "/v1/domains",
+  route(async (c) => {
+    const draft = validateWorkerDomainBody(await jsonBody(c));
+    const zones = await visibleZones(cf(c), reqToken(c));
+    const z = zones.find((x) => x.id.toLowerCase() === draft.zone_id.toLowerCase());
+    if (!z) throw new CfError("badQuery", 422, null, "zone_id 不在当前令牌可见的站点列表里");
+    if (z.accountId && z.accountId !== E(c).CF_ACCOUNT_ID) throw new CfError("badQuery", 422, null, "这个 zone 不属于当前账号");
+    if (!(draft.hostname === z.name || draft.hostname.endsWith("." + z.name))) {
+      throw new CfError("badQuery", 422, null, `hostname ${draft.hostname} 不属于 zone ${z.name}`);
+    }
+    // 客户端传的 zone_id 统一收敛成可见集合里的规范形状（大小写已由校验归一）
+    const r = await writes.workerDomainAttach(cf(c), E(c), { ...draft, zone_id: z.id });
+    return { result: r.data };
+  }),
+);
+
+app.delete(
+  "/v1/domains/:id",
+  route(async (c) => {
+    const id = validateWorkerObjId(param(c, "id"), "domain id");
+    const r = await writes.workerDomainDetach(cf(c), E(c), id);
+    return { result: r.data ?? { id, deleted: true } };
+  }),
+);
+
+app.post(
+  "/v1/pages/:p/domains",
+  route(async (c) => {
+    const hostname = validatePageDomainBody(await jsonBody(c));
+    const r = await writes.pageDomainAdd(cf(c), E(c), param(c, "p"), hostname);
+    return { result: r.data };
+  }),
+);
+
+app.delete(
+  "/v1/pages/:p/domains/:domain",
+  route(async (c) => {
+    // 路径里的域名同样要过一遍主机名校验，不能把任意片段拼进上游路径
+    const hostname = validatePageDomainBody({ name: param(c, "domain") });
+    const r = await writes.pageDomainDelete(cf(c), E(c), param(c, "p"), hostname);
+    return { result: r.data ?? { name: hostname, deleted: true } };
+  }),
+);
+
+/** 站点 Workers 路由：POST 新建 / PUT 改 pattern 或 script / DELETE 移除（上游三条同路径，见 catalog.writes） */
+app.post(
+  "/v1/zones/:zone/routes",
+  route(async (c) => {
+    const draft = validateRouteBody(await jsonBody(c));
+    const z = await writeZone(c);
+    assertRouteInZone(draft, z.name);
+    const r = await writes.zoneRouteCreate(cf(c), z.id, draft);
+    return { result: r.data };
+  }),
+);
+
+app.put(
+  "/v1/zones/:zone/routes/:id",
+  route(async (c) => {
+    const id = validateWorkerObjId(param(c, "id"), "route id");
+    const draft = validateRouteBody(await jsonBody(c));
+    const z = await writeZone(c);
+    assertRouteInZone(draft, z.name);
+    const r = await writes.zoneRouteUpdate(cf(c), z.id, id, draft);
+    return { result: r.data };
+  }),
+);
+
+app.delete(
+  "/v1/zones/:zone/routes/:id",
+  route(async (c) => {
+    const id = validateWorkerObjId(param(c, "id"), "route id");
+    const z = await writeZone(c);
+    const r = await writes.zoneRouteDelete(cf(c), z.id, id);
+    return { result: r.data ?? { id, deleted: true } };
+  }),
+);
+
+/** Pages 环境变量：客户端发该环境的**完整**变量表（PUT 全量覆盖），删除 = 不传这个键 */
+app.put(
+  "/v1/pages/:p/env_vars",
+  route(async (c) => {
+    const draft = validatePageEnvBody(await jsonBody(c));
+    const r = await writes.pageEnvPatch(cf(c), E(c), param(c, "p"), draft.environment, draft.vars);
+    return { result: r.data };
+  }),
+);
+
+/** 脚本级 workers.dev 开关：两个布尔全量写（上游 POST，见 catalog.writes.workerSubdomainPut） */
+app.put(
+  "/v1/workers/:s/subdomain",
+  route(async (c) => {
+    const s = param(c, "s");
+    const body = validateWorkerSubdomainBody(await jsonBody(c));
+    const r = await writes.workerSubdomainPut(cf(c), E(c), s, body);
     return { result: r.data };
   }),
 );

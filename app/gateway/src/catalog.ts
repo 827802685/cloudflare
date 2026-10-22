@@ -143,6 +143,23 @@ export const WRITE_ROUTES = [
   // 两个都是 POST + 空 body，成功返回部署对象；retry 对 Direct Upload 部署回 400 8000055，原样上屏
   { method: "POST", path: "/v1/pages/:p/deployments/:id/rollback" },
   { method: "POST", path: "/v1/pages/:p/deployments/:id/retry" },
+  // 自定义域名绑定（2026-10-22 临时资源自清理实测）：
+  //   Workers：上游只认 PUT（POST 实测 405），删除空 200；
+  //   Pages：POST/DELETE 项目下的 domains，新增成功后立即删掉验证，无残留。
+  { method: "POST", path: "/v1/domains" },
+  { method: "DELETE", path: "/v1/domains/:id" },
+  { method: "POST", path: "/v1/pages/:p/domains" },
+  { method: "DELETE", path: "/v1/pages/:p/domains/:domain" },
+  // 站点 Workers 路由：上游 {pattern, script}（docs/04 §7 实读形状 + 官方 OpenAPI 的
+  // POST/PUT/DELETE 三条都在；写权限需要单独的 Workers Routes Write，见 docs/05）
+  { method: "POST", path: "/v1/zones/:zone/routes" },
+  { method: "PUT", path: "/v1/zones/:zone/routes/:id" },
+  { method: "DELETE", path: "/v1/zones/:zone/routes/:id" },
+  // Pages 环境变量：PATCH 项目对象的 deployment_configs.{production|preview}.env_vars。
+  // 客户端发的是**该环境完整变量表**（PUT 全量覆盖），删除 = 不传这个键（传 null 只是置空，实测）。
+  { method: "PUT", path: "/v1/pages/:p/env_vars" },
+  // Workers 脚本级 workers.dev 开关：上游 POST {enabled, previews_enabled} 两个布尔
+  { method: "PUT", path: "/v1/workers/:s/subdomain" },
 ] as const;
 
 /** 写端点表：全部走 cf.rest，不进缓存层（cf.ts 的 isReadCall 只认 GET / graphql / sql） */
@@ -227,6 +244,53 @@ export const writes = {
     cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments/${encodeURIComponent(id)}/rollback`, { method: "POST", body: {} }),
   pagesRetry: (cf: CfClient, env: Env, p: string, id: string) =>
     cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments/${encodeURIComponent(id)}/retry`, { method: "POST", body: {} }),
+  /**
+   * Workers 自定义域名绑定。上游形状 2026-10-22 实测：
+   * **PUT** `/accounts/{a}/workers/domains`（POST 回 405 "Method not allowed for this authentication scheme"），
+   * body `{hostname, zone_id, service, environment}` → 200，返回绑定对象（含 id / cert_id）。
+   */
+  workerDomainAttach: (cf: CfClient, env: Env, body: WorkerDomainDraft) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/domains`, { method: "PUT", body }),
+  /** 解绑自定义域名：DELETE …/workers/domains/{id} → 200 空 result（实测） */
+  workerDomainDetach: (cf: CfClient, env: Env, id: string) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/domains/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /**
+   * Pages 自定义域名。上游 2026-10-22 临时项目实测：
+   * POST …/pages/projects/{p}/domains `{name}` → 200/201，返回域名对象；
+   * DELETE …/domains/{name} → 200，列表里立刻消失（建后即删，自清理完成）。
+   * 列表不能带 per_page=100（400 8000024），见 reads.pageDomains。
+   */
+  pageDomainAdd: (cf: CfClient, env: Env, p: string, name: string) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/domains`, { method: "POST", body: { name } }),
+  pageDomainDelete: (cf: CfClient, env: Env, p: string, name: string) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/domains/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  /**
+   * 站点 Workers 路由。上游形状（docs/04 §7 实读 + 官方 OpenAPI）：
+   * POST/PUT `/zones/{z}/workers/routes[/{id}]`，body `{pattern, script}`；
+   * DELETE 同路径 200。script 传 null = 该路由只跳过 Worker（CF 的显式语义）。
+   */
+  zoneRouteCreate: (cf: CfClient, zone: string, body: RouteDraft) =>
+    cf.rest(`/zones/${encodeURIComponent(zone)}/workers/routes`, { method: "POST", body }),
+  zoneRouteUpdate: (cf: CfClient, zone: string, id: string, body: RouteDraft) =>
+    cf.rest(`/zones/${encodeURIComponent(zone)}/workers/routes/${encodeURIComponent(id)}`, { method: "PUT", body }),
+  zoneRouteDelete: (cf: CfClient, zone: string, id: string) =>
+    cf.rest(`/zones/${encodeURIComponent(zone)}/workers/routes/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /**
+   * Pages 环境变量。上游形状 2026-10-22 临时项目实测：
+   * PATCH `/accounts/{a}/pages/projects/{p}`，body `{deployment_configs:{production:{env_vars:{…}}}}`。
+   * **删除变量只能靠"不传这个键"**：传 `null` 是把值置空（键还在），不是删除。
+   */
+  pageEnvPatch: (cf: CfClient, env: Env, p: string, environment: "production" | "preview", vars: Record<string, { value: string; type: string }>) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}`, {
+      method: "PATCH",
+      body: { deployment_configs: { [environment]: { env_vars: vars } } },
+    }),
+  /**
+   * 脚本级 workers.dev 开关。上游 2026-10-22 实测：POST …/workers/scripts/{s}/subdomain，
+   * body 是 `{enabled, previews_enabled}` 两个布尔（全量写，缺一个会被当成 reset）。
+   */
+  workerSubdomainPut: (cf: CfClient, env: Env, s: string, body: { enabled: boolean; previews_enabled: boolean }) =>
+    cf.rest(`/accounts/${ACC(env)}/workers/scripts/${encodeURIComponent(s)}/subdomain`, { method: "POST", body }),
 };
 
 /* ---------- 写侧校验（第三道闸门） ----------
@@ -592,6 +656,132 @@ export function validateKvValue(raw: Record<string, unknown>): string {
   return value;
 }
 
+/* ---------- 自定义域名 / 站点路由 / Pages 环境变量 / workers.dev 开关 ----------
+ * 上游形状的来源都写在各自注释里（2026-10-22 临时资源自清理实测，或官方 OpenAPI 的实读条目）。
+ */
+
+/** 域名：只收主机名本身（不带协议 / 端口 / 通配符），标签规则按 DNS 来 */
+const HOSTNAME_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
+/** Worker 脚本名：CF 允许小写字母数字与连字符/下划线，这里放宽大小写但保持同形 */
+const SCRIPT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/i;
+
+function hostnameField(v: unknown, field: string): string {
+  const h = textField(v, field).trim().toLowerCase().replace(/\.+$/, "");
+  if (!h) bad(`${field} 不能为空`);
+  if (h.includes("/") || h.includes(":") || h.includes("*") || h.includes(" ")) bad(`${field} 只填域名本身，不带协议 / 端口 / 通配符：${h}`);
+  if (h.length > 253 || !HOSTNAME_RE.test(h)) bad(`${field} 不是合法域名：${h || "空"}`);
+  return h;
+}
+
+function scriptField(v: unknown, field: string): string {
+  const s = textField(v, field).trim();
+  if (!SCRIPT_NAME_RE.test(s)) bad(`${field} 得是 Worker 脚本名（字母数字/连字符/下划线，≤63 字符）：${s || "空"}`);
+  return s;
+}
+
+/** Workers 自定义域名。上游 2026-10-22 实测：PUT /accounts/{a}/workers/domains，body 四字段（见 writes） */
+export interface WorkerDomainDraft {
+  hostname: string;
+  zone_id: string;
+  service: string;
+  environment: "production";
+}
+
+export function validateWorkerDomainBody(raw: Record<string, unknown>): WorkerDomainDraft {
+  const allowed = ["hostname", "zone_id", "service", "environment"];
+  const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+
+  const hostname = hostnameField(raw.hostname, "hostname");
+  const zone_id = textField(raw.zone_id, "zone_id").trim();
+  if (!/^[0-9a-f]{32}$/i.test(zone_id)) bad("zone_id 得是 32 位 zone id");
+  const service = scriptField(raw.service, "service");
+  // CF 这条端点当前只接受 production；preview 环境没有对应写法，传别的值等于赌
+  const environment = raw.environment === undefined ? "production" : textField(raw.environment, "environment");
+  if (environment !== "production") bad('environment 只支持 "production"（这条上游端点没有 preview 写法）');
+  return { hostname, zone_id, service, environment };
+}
+
+/** 站点 Workers 路由：pattern 必须落在 zone 上，script 传 null 表示"这条只跳过 Worker" */
+export interface RouteDraft {
+  pattern: string;
+  script: string | null;
+}
+
+export function validateRouteBody(raw: Record<string, unknown>): RouteDraft {
+  const allowed = ["pattern", "script"];
+  const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+
+  const pattern = textField(raw.pattern, "pattern").trim().toLowerCase();
+  if (!pattern) bad("pattern 不能为空");
+  if (pattern.includes("://") || /\s/.test(pattern)) bad("pattern 是「主机名/路径」形状，不带协议、不带空格");
+  if (!/^(\*\.)?[a-z0-9.-]+\/\S*$/.test(pattern)) bad(`pattern 得是 example.com/* 或 *.example.com/* 这种形状（现在是 ${pattern}）`);
+  if (!pattern.endsWith("*")) bad("pattern 要以 * 结尾（CF 的路由靠末尾通配匹配路径）");
+  if (!raw.script && raw.script !== null) bad("script 必须是 Worker 脚本名，或 null（表示这条路由只跳过 Worker）");
+  const script = raw.script === null ? null : scriptField(raw.script, "script");
+  return { pattern, script };
+}
+
+/** pattern 的主机部分必须属于这个 zone（与 DNS 记录的归属校验同一个理由） */
+export function assertRouteInZone(d: RouteDraft, zoneName: string): void {
+  const z = zoneName.toLowerCase();
+  const host = d.pattern.split("/")[0].replace(/^\*\./, "");
+  if (!(host === z || host.endsWith("." + z))) bad(`pattern 的主机名 ${host} 不属于这个 zone（${z}）`);
+}
+
+/** Pages 自定义域名：POST /domains 只收 {name}（2026-10-22 临时项目实测，建后即删） */
+export function validatePageDomainBody(raw: Record<string, unknown>): string {
+  const unknown = Object.keys(raw).filter((k) => k !== "name");
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只接受 {name}`);
+  return hostnameField(raw.name, "name");
+}
+
+/**
+ * Pages 环境变量。上游 2026-10-22 临时项目实测：
+ * `PATCH /pages/projects/{p}` body `{deployment_configs:{production|preview:{env_vars:{KEY:{value,type}}}}}`。
+ * **每个值都是对象 `{value, type}`**（不是裸字符串）；删除变量 = 不传这个键（传 null 只是置空）。
+ */
+export type PageEnvType = "plain_text" | "secret_text";
+export interface PageEnvDraft {
+  environment: "production" | "preview";
+  vars: Record<string, { value: string; type: PageEnvType }>;
+}
+
+export function validatePageEnvBody(raw: Record<string, unknown>): PageEnvDraft {
+  const unknown = Object.keys(raw).filter((k) => !["environment", "vars"].includes(k));
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 environment / vars`);
+  const environment = textField(raw.environment, "environment").trim();
+  if (environment !== "production" && environment !== "preview") bad('environment 只能是 "production" 或 "preview"');
+  const varsRaw = raw.vars;
+  if (!varsRaw || typeof varsRaw !== "object" || Array.isArray(varsRaw)) bad("vars 必须是 {KEY:{value,type}} 对象（空对象 = 这个环境没有变量）");
+  const entries = Object.entries(varsRaw as Record<string, unknown>);
+  if (entries.length > 64) bad(`一次最多 64 个环境变量（现在是 ${entries.length} 个）`);
+  const vars: PageEnvDraft["vars"] = {};
+  for (const [name, item] of entries) {
+    if (!ENV_NAME_RE.test(name) || name.length > 64) bad(`环境变量名得是字母/数字/下划线、数字不打头、≤64 字符：${name || "空"}`);
+    if (typeof item !== "object" || item === null || Array.isArray(item)) bad(`vars.${name} 必须是 {value,type} 对象`);
+    const o = item as Record<string, unknown>;
+    const extra = Object.keys(o).filter((k) => !["value", "type"].includes(k));
+    if (extra.length) bad(`vars.${name} 不支持的字段：${extra.join(",")}`);
+    if (typeof o.value !== "string") bad(`vars.${name}.value 必须是字符串（删除变量请把它从表里去掉，别传 null）`);
+    if (byteLen(o.value) > 8192) bad(`vars.${name}.value 超过 8192 字节`);
+    const type = o.type === undefined ? "plain_text" : textField(o.type, `vars.${name}.type`);
+    if (type !== "plain_text" && type !== "secret_text") bad(`vars.${name}.type 只能是 plain_text 或 secret_text`);
+    vars[name] = { value: o.value as string, type };
+  }
+  return { environment, vars };
+}
+
+/** 脚本级 workers.dev 开关：上游 POST 收两个布尔（实测缺一个会被当成 reset，所以两个都必填） */
+export function validateWorkerSubdomainBody(raw: Record<string, unknown>): { enabled: boolean; previews_enabled: boolean } {
+  const allowed = ["enabled", "previews_enabled"];
+  const unknown = Object.keys(raw).filter((k) => !allowed.includes(k));
+  if (unknown.length) bad(`不支持的字段：${unknown.join(",")}。这条路由只认 ${allowed.join(" / ")}`);
+  for (const k of allowed) if (typeof raw[k] !== "boolean") bad(`${k} 必须是布尔值（两个都要传，缺一个会被上游当成 reset）`);
+  return { enabled: raw.enabled as boolean, previews_enabled: raw.previews_enabled as boolean };
+}
+
 /**
  * 通用逐页拉取：CF 的列表端点都有每页上限（/accounts 默认 20、/zones 50、dns_records 100…），
  * 单页取法在条数超限时**静默截断**，界面上毫无提示。这里按每页上限逐页拿满（在哪页断就停），
@@ -699,9 +889,13 @@ export const reads = {
   /** 项目详情：2026-10-21 临时项目实测 200，含 canonical_deployment / latest_deployment / deployment_configs */
   pageProject: (cf: CfClient, env: Env, p: string) =>
     cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}`),
-  /** 自定义域名：实测 200，`result` 是数组 + `result_info`（pages.dev 子域不算在里面） */
+  /**
+   * 自定义域名：实测 200，`result` 是数组 + `result_info`（pages.dev 子域不算在里面）。
+   * ⚠️ 这条列表**不能带 `per_page=100`**：2026-10-22 实测返回 400 8000024 Invalid list options；
+   * 不带参数（或 per_page ≤ 10）正常。以前这里写了 per_page=100，界面上域名读不出来就是这个原因。
+   */
   pageDomains: (cf: CfClient, env: Env, p: string) =>
-    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/domains?per_page=100`, { unwrap: "list" }),
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/domains`, { unwrap: "list" }),
   /**
    * Pages 构建日志。2026-10-21 实测（临时项目 + Direct Upload 部署）：
    * GET …/deployments/:id/history/logs → 200，result = {total, includes_container_logs, data:[{ts,line}]}。
