@@ -73,7 +73,9 @@ async function loadAll() {
       return Array.isArray(raw) ? raw : (raw?.deployments ?? []);
     }),
     grab(domains, () => api.pageDomains(p).then((r) => r.result ?? [])),
+    grab(zones, () => api.zones().then((r) => r.result ?? [])),
   ]);
+  if (!domainZone.value && zones.value.data?.length) domainZone.value = String(zones.value.data[0].id);
   await nextTick();
   jump();
 }
@@ -303,14 +305,29 @@ function cancelSheet() {
 }
 
 /* ---------- 自定义域名增删（上游 2026-10-22 临时项目实测） ---------- */
-const domainInput = ref("");
+/** 账号下的 zone 列表：域名后缀从这里选，用户只填前缀 */
+const zones = ref<Slot<any[]>>(mk());
+const domainZone = ref("");
+const domainPrefix = ref("");
 const domainErr = ref("");
+const domainZoneName = computed(
+  () => String((zones.value.data ?? []).find((z: any) => String(z.id) === domainZone.value)?.name ?? ""),
+);
+/** 只填前缀，后缀由所选 zone 补上；整段域名直接粘进来时不再重复拼 */
+const domainFull = computed(() => {
+  const p = domainPrefix.value.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+  if (!p) return "";
+  const z = domainZoneName.value.toLowerCase();
+  if (z && (p === z || p.endsWith(`.${z}`))) return p;
+  return z ? `${p}.${z}` : p;
+});
 
 function askAddDomain() {
   domainErr.value = "";
   done.value = "";
-  const h = domainInput.value.trim();
-  if (!h) { domainErr.value = "先填一个域名（例如 www.example.com）"; return; }
+  const h = domainFull.value;
+  if (!domainPrefix.value.trim()) { domainErr.value = "先填前缀（例如 www，会自动拼成 www.所选域名）"; return; }
+  if (!domainZone.value) { domainErr.value = "先选一个域名（zone）"; return; }
   try {
     openSheet(previewPageDomainAdd(name.value, h), () => api.pageAddDomain(name.value, h.toLowerCase().replace(/\.+$/, "")));
     pending.value = { action: "domainAdd", name: h.toLowerCase().replace(/\.+$/, "") };
@@ -422,7 +439,7 @@ async function confirmAct() {
     await runAct();
     if (act.action === "rollback") done.value = `已回滚到 ${shortId(act.id, 8)}`;
     else if (act.action === "retry") done.value = `已请求重试 ${shortId(act.id, 8)}`;
-    else if (act.action === "domainAdd") { done.value = `已添加域名 ${act.name}`; domainInput.value = ""; }
+    else if (act.action === "domainAdd") { done.value = `已添加域名 ${act.name}`; domainPrefix.value = ""; }
     else if (act.action === "domainDelete") done.value = `已移除域名 ${act.name}`;
     else if (act.action === "envPut") done.value = `已更新${act.environment === "production" ? "生产" : "预览"}环境变量（${Object.keys(act.vars).length} 个）`;
     preview.value = null;
@@ -607,11 +624,26 @@ function refresh() {
 
     <div class="card" id="c-domains">
       <h3>自定义域名（{{ domains.data?.length ?? 0 }} 个）</h3>
-      <ErrorNote :err="domains.err" />
+      <ErrorNote :err="domains.err || zones.err" />
       <div class="row gen" style="margin: 8px 0">
-        <input v-model="domainInput" class="field" placeholder="www.example.com" spellcheck="false" autocomplete="off" />
+        <select v-model="domainZone" class="field sel" :disabled="!zones.data?.length">
+          <option v-if="!zones.data?.length" value="">没有可见 zone</option>
+          <option v-for="z in zones.data || []" :key="z.id" :value="String(z.id)">{{ z.name }}</option>
+        </select>
+        <div style="display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0">
+          <input
+            v-model="domainPrefix"
+            class="field"
+            style="flex: 1; min-width: 0"
+            placeholder="只填前缀，例：www"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <span class="small muted" style="white-space: nowrap">{{ domainZoneName ? "." + domainZoneName : "" }}</span>
+        </div>
         <button class="chip" type="button" :disabled="!optIn || busy" @click="askAddDomain">添加域名</button>
       </div>
+      <p class="small muted" style="margin: 0 0 8px">最终域名：<code>{{ domainFull || "—" }}</code></p>
       <p class="small errtext" v-if="domainErr">{{ domainErr }}</p>
       <div class="list" v-if="domains.data?.length">
         <div v-for="(d, i) in domains.data" :key="i" class="item">

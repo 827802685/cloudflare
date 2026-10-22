@@ -39,8 +39,8 @@ const crons = ref<Slot<any[]>>(mk());
 /** 自定义域名（全部 Worker，过滤出本脚本）与可选 zone（绑定时要 zone_id 归属） */
 const domains = ref<Slot<any[]>>(mk());
 const zones = ref<Slot<any[]>>(mk());
-/** 绑定表单：hostname + 目标 zone（zone_id 必须属于本账号，上游按它校验归属） */
-const domHost = ref("");
+/** 绑定表单：目标 zone + 前缀（zone_id 必须属于本账号，上游按它校验归属） */
+const domPrefix = ref("");
 const domZone = ref("");
 const domErr = ref("");
 
@@ -204,6 +204,17 @@ const missingHosts = computed(() =>
 /* ---------- 写侧：自定义域名绑定 / 解绑，脚本级 workers.dev 开关 ---------- */
 const myDomains = computed(() => (domains.value.data ?? []).filter((d: any) => String(d.service) === name.value));
 const domZoneName = computed(() => String((zones.value.data ?? []).find((z: any) => String(z.id) === domZone.value)?.name ?? ""));
+/**
+ * 只填前缀、zone 从账号里选 —— 后缀由所选 zone 自动补上。
+ * 也兼容直接把整段域名粘进来：已经以当前 zone 结尾就不再重复拼一次。
+ */
+const domFull = computed(() => {
+  const p = domPrefix.value.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+  if (!p) return "";
+  const z = domZoneName.value.toLowerCase();
+  if (z && (p === z || p.endsWith(`.${z}`))) return p;
+  return z ? `${p}.${z}` : p;
+});
 
 const optIn = ref(writesOptIn());
 function toggleOptIn(v: boolean) {
@@ -250,8 +261,8 @@ async function confirmWrite() {
 
 function askAttachDomain() {
   domErr.value = "";
-  const h = domHost.value.trim().toLowerCase().replace(/\.+$/, "");
-  if (!h) { domErr.value = "先填一个域名（例如 api.example.com）"; return; }
+  const h = domFull.value;
+  if (!domPrefix.value.trim()) { domErr.value = "先填前缀（例如 api，会自动拼成 api.所选域名）"; return; }
   if (!domZone.value) { domErr.value = "先选一个 zone（域名必须属于它）"; return; }
   try {
     const pv = previewWorkerDomainAttach(domZone.value, domZoneName.value, h, name.value);
@@ -498,9 +509,22 @@ const showSwitch = ref(false);
             <option v-if="!zones.data?.length" value="">没有可见 zone</option>
             <option v-for="z in zones.data || []" :key="z.id" :value="String(z.id)">{{ z.name }}</option>
           </select>
-          <input v-model="domHost" class="field" placeholder="api.example.com（必须属于上面的 zone）" spellcheck="false" autocomplete="off" />
+          <div style="display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0">
+            <input
+              v-model="domPrefix"
+              class="field"
+              style="flex: 1; min-width: 0"
+              placeholder="只填前缀，例：api"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <span class="small muted" style="white-space: nowrap">{{ domZoneName ? "." + domZoneName : "" }}</span>
+          </div>
           <button class="chip" type="button" :disabled="!optIn || busy" @click="askAttachDomain">绑定域名</button>
         </div>
+        <p class="small muted" style="margin: 0">
+          最终域名：<code>{{ domFull || "—" }}</code>
+        </p>
         <p class="small errtext" v-if="domErr">{{ domErr }}</p>
       </div>
     </div>
