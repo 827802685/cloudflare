@@ -696,6 +696,12 @@ export const reads = {
   pagesProjects: (cf: CfClient, env: Env) => pagesList(cf, `/accounts/${ACC(env)}/pages/projects`),
   pagesDeployments: (cf: CfClient, env: Env, p: string) =>
     pagesList(cf, `/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/deployments`),
+  /** 项目详情：2026-10-21 临时项目实测 200，含 canonical_deployment / latest_deployment / deployment_configs */
+  pageProject: (cf: CfClient, env: Env, p: string) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}`),
+  /** 自定义域名：实测 200，`result` 是数组 + `result_info`（pages.dev 子域不算在里面） */
+  pageDomains: (cf: CfClient, env: Env, p: string) =>
+    cf.rest(`/accounts/${ACC(env)}/pages/projects/${encodeURIComponent(p)}/domains?per_page=100`, { unwrap: "list" }),
   /**
    * Pages 构建日志。2026-10-21 实测（临时项目 + Direct Upload 部署）：
    * GET …/deployments/:id/history/logs → 200，result = {total, includes_container_logs, data:[{ts,line}]}。

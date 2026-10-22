@@ -140,6 +140,12 @@ expectOne("GET /v1/pages", `/accounts/${ACC}/pages/projects?page=1&per_page=10`)
 await call("/v1/pages/proj/deployments");
 expectOne("GET /v1/pages/proj/deployments", `/accounts/${ACC}/pages/projects/proj/deployments?page=1&per_page=10`);
 
+await call("/v1/pages/proj");
+expectOne("GET Pages 项目详情", `/accounts/${ACC}/pages/projects/proj`);
+
+await call("/v1/pages/proj/domains");
+expectOne("GET Pages 自定义域名", `/accounts/${ACC}/pages/projects/proj/domains?per_page=100`);
+
 await call("/v1/pages/proj/deployments/" + DEP + "/logs");
 expectOne("GET Pages 构建日志（上游尾巴 /history/logs）", `/accounts/${ACC}/pages/projects/proj/deployments/${DEP}/history/logs`);
 

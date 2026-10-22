@@ -656,6 +656,17 @@ export async function gwDirect<T = any>(path: string, query: Record<string, stri
   if (wafHit) return wafDirect(ctx, wafHit[1]) as unknown as T;
   const d1q = /^\/v1\/d1\/([^/]+)\/query$/i.exec(purePath);
   if (d1q) return d1QueryDirect(d1q[1], new URLSearchParams(qsPart || "").get("sql") || "", ctx) as unknown as T;
+  // Pages 项目详情 / 自定义域名（2026-10-21 临时项目实测 200）—— 必须在下面列表匹配之前
+  const pageOne = /^\/v1\/pages\/([^/]+)(\/domains)?$/i.exec(purePath);
+  if (pageOne) {
+    const base = `${A(ctx.account)}/pages/projects/${enc(pageOne[1])}`;
+    if (pageOne[2]) {
+      const r = await rest<any[]>(ctx.token, `${base}/domains?per_page=100`, { unwrap: "list" }, ctx.fresh);
+      return { result: r.data } as unknown as T;
+    }
+    const r = await rest<any>(ctx.token, base, {}, ctx.fresh);
+    return { result: r.data } as unknown as T;
+  }
   // Pages 两条走多页循环（per_page 硬限 10），与网关 catalog.pagesList 同口径
   const pagesHit = /^\/v1\/pages(?:\/([^/]+)\/deployments)?$/i.exec(purePath);
   if (pagesHit) {

@@ -583,6 +583,9 @@ app.get("/v1/zones/:zone/waf", route(async (c) => await waf(cf(c), E(c), param(c
 // ---------- Pages ----------
 app.get("/v1/pages", route(async (c) => ({ result: (await reads.pagesProjects(cf(c), E(c))).data })));
 app.get("/v1/pages/:p/deployments", route(async (c) => ({ result: (await reads.pagesDeployments(cf(c), E(c), param(c, "p"))).data })));
+// 详情两条：项目本身 + 自定义域名（2026-10-21 临时项目实测 200）
+app.get("/v1/pages/:p", route(async (c) => ({ result: (await reads.pageProject(cf(c), E(c), param(c, "p"))).data })));
+app.get("/v1/pages/:p/domains", route(async (c) => ({ result: (await reads.pageDomains(cf(c), E(c), param(c, "p"))).data })));
 
 // ---------- 写路由（catalog.WRITE_ROUTES 那四条，路径与前端契约一字不差） ----------
 /*

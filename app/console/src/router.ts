@@ -6,6 +6,7 @@ import DomainsView from "./views/DomainsView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import TokensView from "./views/TokensView.vue";
 import WorkerDetailView from "./views/WorkerDetailView.vue";
+import PagesDetailView from "./views/PagesDetailView.vue";
 import DatabaseView from "./views/DatabaseView.vue";
 import ZeroTrustView from "./views/ZeroTrustView.vue";
 
@@ -25,6 +26,8 @@ export const router = createRouter({
     { path: "/kv", redirect: (to) => ({ path: "/database", query: { ...to.query, store: "kv" } }) },
     { path: "/zero-trust", name: "zero-trust", component: ZeroTrustView, meta: { tab: "zt", title: "Zero Trust" } },
     { path: "/workers/:s", name: "worker", component: WorkerDetailView, meta: { tab: "compute", title: "Worker" } },
+    // Pages 项目详情：与 Worker 详情同级，从计算页点项目行或动作宫格进来
+    { path: "/pages/:p", name: "pages-project", component: PagesDetailView, meta: { tab: "compute", title: "Pages" } },
     { path: "/settings", name: "settings", component: SettingsView, meta: { tab: "settings", title: "设置" } },
     // 令牌管理与设置同属"本机凭据"这一组，但不占底栏；APK 直连才真正可用（视图内有说明）
     { path: "/settings/tokens", name: "tokens", component: TokensView, meta: { tab: "settings", title: "API 令牌" } },

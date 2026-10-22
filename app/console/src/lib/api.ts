@@ -494,6 +494,9 @@ export const api = {
 
   pages: () => gw<R<any[]>>("/v1/pages"),
   pageDeployments: (p: string) => gw<R<any>>("/v1/pages/" + encodeURIComponent(p) + "/deployments"),
+  /** 项目详情 / 自定义域名（2026-10-21 临时项目实测 200） */
+  pageProject: (p: string) => gw<R<any>>("/v1/pages/" + encodeURIComponent(p)),
+  pageDomains: (p: string) => gw<R<any[]>>("/v1/pages/" + encodeURIComponent(p) + "/domains"),
   /** 构建日志（只读）。上游实测 result = {total, includes_container_logs, data:[{ts,line}]} */
   pageBuildLogs: (p: string, id: string) =>
     gw<R<{ total?: number; includes_container_logs?: boolean; data?: Array<{ ts: string; line: string }> }>>(
