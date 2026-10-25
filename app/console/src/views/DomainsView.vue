@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { reloadTick } from "../lib/bus";
 import ErrorNote from "../components/ErrorNote.vue";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
 import DnsRecordList from "../components/dns/DnsRecordList.vue";
@@ -8,6 +9,7 @@ import DnsPurgeForm from "../components/dns/DnsPurgeForm.vue";
 import DnsSetupWizard from "../components/dns/DnsSetupWizard.vue";
 import UnifiedDomains from "../components/dns/UnifiedDomains.vue";
 import ZoneStatusCard from "../components/dns/ZoneStatusCard.vue";
+import WriteGate from "../components/WriteGate.vue";
 import {
   api,
   dropMem,
@@ -15,7 +17,6 @@ import {
   GwError,
   previewDnsDelete,
   previewZoneRoute,
-  setWritesOptIn,
   writesOptIn,
   type RouteInput,
   type Waf,
@@ -52,12 +53,9 @@ const wizardOpen = ref(false);
 const editorRecord = ref<Record<string, any> | null>(null);
 const editorPreset = ref<{ type?: string; name?: string } | null>(null);
 
-/** 本机写开关：关了根本不出网（api 里 gwWrite 先查它）。默认关，符合 docs/13 §7.5「别摆没放行的入口」 */
+/** 本机写开关：关了根本不出网（api 里 gwWrite 先查它）。默认关，符合 docs/13 §7.5「别摆没放行的入口」。
+ *  开关的读写与文案统一在 WriteGate 组件里；这里只留状态给按钮的 disabled 判断用。 */
 const writesOn = ref(writesOptIn());
-function toggleWrites(v: boolean) {
-  setWritesOptIn(v);
-  writesOn.value = writesOptIn();
-}
 
 /** 确认抽屉状态 + 确认后要执行的那一次真写 */
 const sheet = ref<{ preview: WritePreview | null; busy: boolean; error: string }>({ preview: null, busy: false, error: "" });
@@ -119,6 +117,8 @@ onMounted(() => document.addEventListener("click", onDocClick));
 onUnmounted(() => document.removeEventListener("click", onDocClick));
 
 /** 「刷新」= 这一屏全部绕过两层缓存重来；平时进这屏只发命中的那几条 */
+/** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
+watch(reloadTick, () => { void refresh(); });
 async function refresh() { forceFreshWindow(); await loadTop(); await loadZone(); }
 watch(zoneId, () => { editorOpen.value = false; editorRecord.value = null; editorPreset.value = null; routeOpen.value = false; routeEditing.value = null; loadZone(); });
 
@@ -273,39 +273,19 @@ async function confirmSheet() {
           </button>
         </div>
       </div>
-      <button class="ghost" @click="refresh">刷新</button>
     </div>
 
     <ErrorNote :err="domains.err || zones.err" />
 
-    <!-- 本机写开关：关时写操作根本不出网；开时真发（网关侧 WRITE_ENABLED 关会 501，原因如实显示） -->
-    <label class="wsw">
-      <input type="checkbox" class="switch" :checked="writesOn" @change="toggleWrites(($event.target as HTMLInputElement).checked)" />
-      <span>
-        <b>本机写开关：{{ writesOn ? "已打开" : "关（默认）" }}</b>
-        <span class="muted small">{{ writesOn ? "变更请求会真的发出，发出前逐条确认。" : "写操作在这台设备上就被拦下，不发请求。" }}</span>
-      </span>
-    </label>
-
-    <!-- 站点状态 + nameserver（数据全在 /v1/zones 里，零新路由） -->
+    <!-- 站点状态 + nameserver（数据全在 /v1/zones 里，零新路由）。
+         本机写开关收进这一行的标题行：它原来在页面最上方独占一整条 —— 那是"闸门"不是"内容"，
+         而这一屏真正的内容是 DNS 记录。 -->
     <div class="card" v-if="currentZone">
-      <h3>站点状态</h3>
+      <div class="hd">
+        <h3 style="margin: 0">站点状态</h3>
+        <WriteGate v-model="writesOn" variant="inline" />
+      </div>
       <ZoneStatusCard :zone="currentZone" />
-    </div>
-
-    <!-- 统一域名视图：Worker / Pages / R2 合并一列，用「→ 类型:」区分 -->
-    <div class="card">
-      <h3>统一域名视图（Worker / Pages / R2）</h3>
-      <ErrorNote :err="domains.err" />
-      <UnifiedDomains
-        :worker-domains="domains.data || []"
-        :pages-groups="pageDomains.data || []"
-        :pages-loading="pageDomains.loading"
-        :pages-err="pageDomains.err?.hint ?? pageDomains.err?.message ?? null"
-        :subdomain="sub.data?.subdomain || ''"
-        :sub-loading="sub.loading"
-        :sub-err="sub.err?.hint ?? null"
-      />
     </div>
 
     <!-- DNS 记录：整行点=编辑，新增走表单 → 预览 → 确认 -->
@@ -336,95 +316,123 @@ async function confirmSheet() {
       <!-- 交互说明（点行编辑 / 删除点名 / 501 原因）见 docs/14 §8 -->
     </div>
 
-    <!-- 按 URL 清理缓存 -->
-    <div class="card" v-if="zoneName">
-      <div class="hd">
-        <h3>按 URL 清理缓存</h3>
-        <button class="ghost sm" @click="purgeOpen = !purgeOpen">{{ purgeOpen ? "收起" : "展开" }}</button>
-      </div>
-      <div v-if="purgeOpen" style="margin-top: 8px">
-        <DnsPurgeForm :zone-id="zoneId" :zone-name="currentZoneName" @preview="onPurgePreview" />
-      </div>
-      <div v-else class="small muted">上限 30 条 URL，逐条回显后再发；默认不预填任何 URL。</div>
-    </div>
+    <!-- 站点资产（折叠）：统一域名视图 + Workers 路由。
+         首屏只留「站点 + DNS 记录」—— 这两块是"这个站点挂了哪些东西"的全景，属于查阅而非主任务。 -->
+    <details class="grp">
+      <summary>站点资产<span class="gs">域名 {{ (domains.data || []).length }} · 路由 {{ (routes.data || []).length }}</span></summary>
 
-    <!-- DNS 配置向导（自研判定，非 Cloudflare 字段） -->
-    <div class="card">
-      <div class="hd">
-        <h3>DNS 配置向导</h3>
-        <button class="ghost sm" @click="wizardOpen = !wizardOpen">{{ wizardOpen ? "收起" : "展开" }}</button>
+      <div class="card">
+        <h3>统一域名视图（Worker / Pages / R2）</h3>
+        <ErrorNote :err="domains.err" />
+        <UnifiedDomains
+          :worker-domains="domains.data || []"
+          :pages-groups="pageDomains.data || []"
+          :pages-loading="pageDomains.loading"
+          :pages-err="pageDomains.err?.hint ?? pageDomains.err?.message ?? null"
+          :subdomain="sub.data?.subdomain || ''"
+          :sub-loading="sub.loading"
+          :sub-err="sub.err?.hint ?? null"
+        />
       </div>
-      <DnsSetupWizard v-if="wizardOpen" :domains="domains.data || []" :zones="zones.data || []" @suggest="onWizardSuggest" />
-      <div v-else class="small muted">给自定义域名验证提示该填什么记录；判定规则是本控制台自研，界面上会写清。</div>
-    </div>
 
-    <div class="card" v-if="zoneName">
-      <div class="hd">
-        <h3 style="margin: 0">{{ zoneName }} · Workers 路由（{{ (routes.data || []).length }}）</h3>
-        <button class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
-      </div>
-      <ErrorNote :err="routes.err" />
-
-      <div v-if="routeOpen" class="editor">
-        <h4>{{ routeEditing ? "修改路由" : "新增路由" }}</h4>
-        <div class="row gen">
-          <input v-model="routePattern" class="field" placeholder="example.com/*" spellcheck="false" autocomplete="off" />
-          <input v-model="routeScript" class="field" placeholder="Worker 名（留空 = 仅记录，不跑 Worker）" spellcheck="false" autocomplete="off" />
+      <div class="card" v-if="zoneName">
+        <div class="hd">
+          <h3 style="margin: 0">{{ zoneName }} · Workers 路由（{{ (routes.data || []).length }}）</h3>
+          <button class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
         </div>
-        <p class="small muted">
-          pattern 必须属于 {{ zoneName }}，并以 <code>*</code> 结尾；上游 POST/PUT/DELETE 三条同一路径。
-          这条写需要令牌带 Workers Routes Write，缺权限时 CF 回 403，会原样显示。
-        </p>
-        <p class="small errtext" v-if="routeErr">{{ routeErr }}</p>
-        <div class="row" style="gap: 8px">
-          <button class="ghost sm" :disabled="!writesOn" @click="askSaveRoute">预览并确认</button>
-          <button class="ghost sm" @click="routeOpen = false">取消</button>
-        </div>
-      </div>
+        <ErrorNote :err="routes.err" />
 
-      <div class="list" v-if="(routes.data || []).length">
-        <div v-for="r in routes.data" :key="r.id" class="item">
-          <div class="k">{{ r.pattern }}</div>
-          <div class="v">
-            {{ r.script || "仅记录" }}
-            <div class="small">{{ shortId(r.id, 6) }}</div>
-            <div class="row" style="gap: 6px; margin-top: 4px">
-              <button class="ghost sm" :disabled="!writesOn" @click="openRouteEdit(r)">编辑</button>
-              <button class="ghost sm danger" :disabled="!writesOn" @click="askDeleteRoute(r)">删除</button>
-            </div>
+        <div v-if="routeOpen" class="editor">
+          <h4>{{ routeEditing ? "修改路由" : "新增路由" }}</h4>
+          <div class="row gen">
+            <input v-model="routePattern" class="field" placeholder="example.com/*" spellcheck="false" autocomplete="off" />
+            <input v-model="routeScript" class="field" placeholder="Worker 名（留空 = 仅记录，不跑 Worker）" spellcheck="false" autocomplete="off" />
+          </div>
+          <p class="small muted">
+            pattern 必须属于 {{ zoneName }}，并以 <code>*</code> 结尾；上游 POST/PUT/DELETE 三条同一路径。
+            这条写需要令牌带 Workers Routes Write，缺权限时 CF 回 403，会原样显示。
+          </p>
+          <p class="small errtext" v-if="routeErr">{{ routeErr }}</p>
+          <div class="row" style="gap: 8px">
+            <button class="ghost sm" :disabled="!writesOn" @click="askSaveRoute">预览并确认</button>
+            <button class="ghost sm" @click="routeOpen = false">取消</button>
           </div>
         </div>
-      </div>
-      <div v-else-if="!routes.err" class="empty">这个站点没有 Workers 路由</div>
-      <p class="small muted" style="margin-top: 8px" v-if="!writesOn">上面「本机写开关」没打开，路由的增删改按钮是灰的。</p>
-    </div>
 
-    <div class="card" v-if="zoneName">
-      <h3>WAF / 防火墙规则（只读，共 {{ waf.data?.ruleCount ?? 0 }} 条）</h3>
-      <ErrorNote :err="waf.err" />
-      <div class="list">
-        <div v-for="p in wafPhases" :key="p.phase" class="item" style="align-items: flex-start">
-          <div style="min-width: 0">
-            <div class="k">{{ p.label }}</div>
-            <div class="small muted">{{ p.note || (p.rules.length ? `规则集 ${p.name} · 版本 ${p.version} · 最后修改于 ${dt(p.last_updated)}` : "规则集为空") }}</div>
-            <div v-for="r in p.rules" :key="String(r.id)" style="margin-top: 6px">
-              <div class="small">
-                <span class="badge" :class="{ live: r.enabled }">{{ r.action }}{{ r.enabled ? "" : " · 已停用" }}</span>
-                {{ r.description || "无描述" }}
+        <div class="list" v-if="(routes.data || []).length">
+          <div v-for="r in routes.data" :key="r.id" class="item">
+            <div class="k">{{ r.pattern }}</div>
+            <div class="v">
+              {{ r.script || "仅记录" }}
+              <div class="small">{{ shortId(r.id, 6) }}</div>
+              <div class="row" style="gap: 6px; margin-top: 4px">
+                <button class="ghost sm" :disabled="!writesOn" @click="openRouteEdit(r)">编辑</button>
+                <button class="ghost sm danger" :disabled="!writesOn" @click="askDeleteRoute(r)">删除</button>
               </div>
-              <div class="small" style="word-break: break-all"><code>{{ r.expression }}</code></div>
             </div>
           </div>
-          <div class="v">
-            <span class="badge" :class="{ live: WAF_STATE[p.state]?.live }">{{ WAF_STATE[p.state]?.text || p.state }}</span>
-            <div class="small">{{ p.rules.length }} 条</div>
+        </div>
+        <div v-else-if="!routes.err" class="empty">这个站点没有 Workers 路由</div>
+        <p class="small muted" style="margin-top: 8px" v-if="!writesOn">「站点状态」那行的本机写开关没打开，路由的增删改按钮是灰的。</p>
+      </div>
+    </details>
+
+    <!-- 运维工具（折叠）：清缓存 + DNS 配置向导。两个都是低频操作，不该占首屏 -->
+    <details class="grp">
+      <summary>运维工具<span class="gs">清缓存 · 配置向导</span></summary>
+
+      <div class="card" v-if="zoneName">
+        <div class="hd">
+          <h3>按 URL 清理缓存</h3>
+          <button class="ghost sm" @click="purgeOpen = !purgeOpen">{{ purgeOpen ? "收起" : "展开" }}</button>
+        </div>
+        <div v-if="purgeOpen" style="margin-top: 8px">
+          <DnsPurgeForm :zone-id="zoneId" :zone-name="currentZoneName" @preview="onPurgePreview" />
+        </div>
+        <div v-else class="small muted">上限 30 条 URL，逐条回显后再发；默认不预填任何 URL。</div>
+      </div>
+
+      <div class="card">
+        <div class="hd">
+          <h3>DNS 配置向导</h3>
+          <button class="ghost sm" @click="wizardOpen = !wizardOpen">{{ wizardOpen ? "收起" : "展开" }}</button>
+        </div>
+        <DnsSetupWizard v-if="wizardOpen" :domains="domains.data || []" :zones="zones.data || []" @suggest="onWizardSuggest" />
+        <div v-else class="small muted">给自定义域名验证提示该填什么记录；判定规则是本控制台自研，界面上会写清。</div>
+      </div>
+    </details>
+
+    <!-- 安全规则（折叠）：WAF 只读。规则条数多且平时不用看，收起时给出条数 -->
+    <details class="grp">
+      <summary>安全规则<span class="gs">WAF {{ waf.data?.ruleCount ?? 0 }} 条 · 只读</span></summary>
+
+      <div class="card" v-if="zoneName">
+        <h3>WAF / 防火墙规则（只读，共 {{ waf.data?.ruleCount ?? 0 }} 条）</h3>
+        <ErrorNote :err="waf.err" />
+        <div class="list">
+          <div v-for="p in wafPhases" :key="p.phase" class="item" style="align-items: flex-start">
+            <div style="min-width: 0">
+              <div class="k">{{ p.label }}</div>
+              <div class="small muted">{{ p.note || (p.rules.length ? `规则集 ${p.name} · 版本 ${p.version} · 最后修改于 ${dt(p.last_updated)}` : "规则集为空") }}</div>
+              <div v-for="r in p.rules" :key="String(r.id)" style="margin-top: 6px">
+                <div class="small">
+                  <span class="badge" :class="{ live: r.enabled }">{{ r.action }}{{ r.enabled ? "" : " · 已停用" }}</span>
+                  {{ r.description || "无描述" }}
+                </div>
+                <div class="small" style="word-break: break-all"><code>{{ r.expression }}</code></div>
+              </div>
+            </div>
+            <div class="v">
+              <span class="badge" :class="{ live: WAF_STATE[p.state]?.live }">{{ WAF_STATE[p.state]?.text || p.state }}</span>
+              <div class="small">{{ p.rules.length }} 条</div>
+            </div>
           </div>
         </div>
+        <div class="small muted" style="margin-top: 8px">
+          只读展示，不含命中次数（原因见 docs/14 §8）。
+        </div>
       </div>
-      <div class="small muted" style="margin-top: 8px">
-        只读展示，不含命中次数（原因见 docs/14 §8）。
-      </div>
-    </div>
+    </details>
 
     <ConfirmSheet :preview="sheet.preview" :busy="sheet.busy" :error="sheet.error" @confirm="confirmSheet" @cancel="cancelSheet" />
   </div>
@@ -454,9 +462,6 @@ async function confirmSheet() {
 .zdot[data-s="pending"] { background: #d29922; }
 .hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .hd h3 { margin: 0; }
-.wsw { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; cursor: pointer; }
-.wsw input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex: none; }
-.wsw b { font-size: 13px; }
 .editor { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 10px 0; background: var(--panel-2); }
 .editor h4 { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
 .whyline.ok { color: var(--ok); background: rgb(var(--ok-rgb) / .08); border-left-color: var(--ok); }

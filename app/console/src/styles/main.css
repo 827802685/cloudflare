@@ -270,6 +270,60 @@ body {
 }
 .cfg:hover, .cfg:focus-visible { color: var(--accent); border-color: var(--accent-dim); }
 .cfg.on { color: var(--accent); border-color: var(--accent-dim); transform: rotate(35deg); }
+
+/* ---------- 顶栏右侧动作组（2026-10-25 三件套：账号胶囊 / 刷新 / 设置） ----------
+   原来每屏右上角各有一个「刷新」，6 个键合成顶栏 1 个；刷新怎么刷仍由各屏自己决定，
+   这里只负责把"请求一次刷新"这个意图发出去（lib/bus.ts）。 */
+.tb-act { display: flex; align-items: center; gap: 6px; flex: none; }
+
+/* 账号胶囊：只有直连模式（APK）显示 —— 网页模式的身份是网关设备令牌，没有账号可切 */
+.who {
+  display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--panel);
+  color: var(--fg-2); font-size: var(--t-2xs); max-width: 132px; cursor: pointer;
+  transition: color .16s ease, border-color .16s ease;
+}
+.who:hover, .who:focus-visible, .who.on { color: var(--accent); border-color: var(--accent-dim); }
+.who-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who svg { flex: none; }
+
+/* 刷新键：与齿轮同尺寸；转圈只转图标，按钮本体不动（导航键不做位移那套） */
+.tbtn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--panel); color: var(--muted); cursor: pointer;
+  transition: color .16s ease, border-color .16s ease;
+}
+.tbtn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+.tbtn.spin { color: var(--accent); border-color: var(--accent-dim); }
+.tbtn.spin svg { animation: tbtn-spin .7s linear infinite; }
+@keyframes tbtn-spin { to { transform: rotate(360deg); } }
+
+/* 账号下拉的透明遮罩：点空白处关闭（层级在 pop 之下、内容之上） */
+.who-scrim { position: fixed; inset: 0; z-index: 15; background: transparent; }
+
+/* 账号下拉：贴顶栏下沿。right 与顶栏内边距对齐，窄屏不越界 */
+.who-pop {
+  position: absolute; right: 10px; top: calc(100% - 3px); z-index: 20;
+  min-width: 196px; max-width: min(280px, calc(100vw - 24px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--e-2); padding: 5px;
+}
+.who-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  width: 100%; padding: 8px 9px; border: 0; border-radius: 8px;
+  background: none; color: var(--fg); font-size: var(--t-sm); text-align: left; cursor: pointer;
+}
+.who-item:hover { background: var(--panel-2); }
+.who-item.on { color: var(--accent); font-weight: 600; }
+.who-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-id { flex: none; color: var(--muted); font-family: var(--font-num); font-size: var(--t-2xs); }
+.who-more {
+  width: 100%; padding: 8px 9px; border: 0; border-top: 1px solid var(--line-soft);
+  background: none; color: var(--muted); font-size: var(--t-xs); text-align: left; cursor: pointer;
+}
+.who-more:hover { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .tbtn.spin svg { animation: none; } }
 .dot {
   width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none;
   box-shadow: 0 0 0 3px rgb(var(--ok-rgb) / .16);
@@ -304,7 +358,8 @@ code { font-family: var(--font-num); background: var(--panel-2); padding: 1px 5p
 .tab:active .ico { transform: translateY(1px); }
 /* 选中态除了变色，头顶再压一道 20px 短轨——拇指在底部扫的时候不用辨认文字也知道在哪一屏 */
 .tab.on::before { content: ""; position: absolute; top: 0; width: 20px; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent); }
-.tab .ico { font-size: 17px; line-height: 1; }
+/* 图标已换成 SVG（2026-10-25）：尺寸走 width/height，原来那套 font-size 只对字符图标有意义 */
+.tab .ico { display: block; width: 17px; height: 17px; flex: none; }
 
 /* ---------- 通用块 ---------- */
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -517,6 +572,31 @@ svg.chart { width: 100%; display: block; }
 .nowrap { white-space: nowrap; }
 .unit { font-family: var(--font-num); }
 
+/* ---------- 折叠组（2026-10-25：设置页与域名页共用同一套语言） ----------
+   summary 是区块眉题（不是卡片壳），展开后里面仍是正常的 .card —— 卡片永远是页面上唯一的"纸"，
+   不出现纸上叠纸。眉题右侧的 .gs 放一行摘要（计数/状态），让收起时也知道里面有什么。 */
+.grp { border: 0; }
+.grp > summary {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+  margin: 0 2px 10px; padding-bottom: 7px; border-bottom: 1px solid var(--line-soft);
+  font-size: var(--t-xs); font-weight: 650; color: var(--fg-2); letter-spacing: .05em;
+}
+.grp > summary::-webkit-details-marker { display: none; }
+.grp > summary .gs {
+  margin-left: auto; color: var(--muted); font-weight: 400;
+  font-size: var(--t-2xs); letter-spacing: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;
+}
+/* 折叠箭头：收起朝右、展开朝下（两个方向差 90°，只转不缩放） */
+.grp > summary::before {
+  content: ""; width: 6px; height: 6px; flex: none; margin-left: 1px;
+  border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted);
+  transform: rotate(-45deg); transition: transform .18s ease;
+}
+.grp[open] > summary::before { transform: rotate(45deg); }
+.grp > .card { margin-bottom: 10px; }
+.grp > .card:last-child { margin-bottom: 0; }
+
 /* ---------- 读数轨：这一块到底有没有真数 ---------- */
 /* 状态类由 AsyncBlock 按它自己那份 kind/has 挂上来（逻辑没动，只是把已有的三态暴露给 CSS）。
    轨色必须和屏上的四态措辞讲同一件事，所以这里一个词都不写，只给颜色。 */
@@ -585,7 +665,7 @@ svg.chart { width: 100%; display: block; }
   .rail-brand { display: block; padding: 15px 14px 11px; font-size: var(--t-sm); letter-spacing: .04em;
     color: var(--muted); border-bottom: 1px solid var(--line-soft); }
   .tab { flex-direction: row; justify-content: flex-start; gap: 10px; height: 44px; padding: 0 14px; font-size: var(--t-sm); }
-  .tab .ico { font-size: 15px; }
+  .tab .ico { width: 15px; height: 15px; }
   /* 选中轨跟着转到左沿：底栏是"头顶一道"，竖栏必须是"左沿一道"，否则拇指语义就断了 */
   .tab.on::before { top: 9px; bottom: 9px; left: 0; right: auto; width: 2px; height: auto; border-radius: 0 2px 2px 0; }
   .tab:hover { background: var(--panel-2); }

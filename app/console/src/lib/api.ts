@@ -736,50 +736,6 @@ export function previewPurge(zoneId: string, zoneName: string, files: string[]):
   return { method: "POST", path: zonePath(zoneId) + "/purge_cache", body: { files: list }, title: `清理 ${list.length} 个 URL 的缓存`, lines: [{ k: "Zone", v: zoneName }, { k: "条数", v: String(list.length) }, ...list.map((u, i) => ({ k: "URL " + (i + 1), v: u }))], danger: "normal" };
 }
 
-/**
- * Pages 回滚：把指定部署重新设为当前。上游 2026-10-21 实测 POST …/rollback + 空 body → 200。
- * 后果要写死在预览里：Pages 的回滚**同时作用于生产与预览两个环境**，接口没有环境开关。
- */
-export function previewPagesRollback(project: string, dep: Record<string, any>): WritePreview {
-  const id = String(dep?.id ?? "").trim();
-  if (!project || !id) bad("缺少项目名或部署 id，这条请求不发");
-  return {
-    method: "POST",
-    path: `/v1/pages/${encodeURIComponent(project)}/deployments/${encodeURIComponent(id)}/rollback`,
-    body: {},
-    title: `回滚到部署 ${id.slice(0, 8)}`,
-    lines: [
-      { k: "项目", v: project },
-      { k: "部署 ID", v: id },
-      { k: "构建时间", v: String(dep?.created_on ?? "—") },
-      { k: "当前内容", v: String(dep?.build_result?.status ?? dep?.status ?? "—") },
-      { k: "影响环境", v: "生产与预览同时切换（Pages 接口不分环境）" },
-      { k: "路由状态", v: "上游形状 2026-10-21 实测：POST …/deployments/{id}/rollback，空 body → 200" },
-    ],
-    danger: "normal",
-  };
-}
-
-/** Pages 重试构建：只有 Git 构建的部署能重试，Direct Upload 部署上游会回 400 8000055（原样上屏） */
-export function previewPagesRetry(project: string, dep: Record<string, any>): WritePreview {
-  const id = String(dep?.id ?? "").trim();
-  if (!project || !id) bad("缺少项目名或部署 id，这条请求不发");
-  return {
-    method: "POST",
-    path: `/v1/pages/${encodeURIComponent(project)}/deployments/${encodeURIComponent(id)}/retry`,
-    body: {},
-    title: `重试构建 ${id.slice(0, 8)}`,
-    lines: [
-      { k: "项目", v: project },
-      { k: "部署 ID", v: id },
-      { k: "构建时间", v: String(dep?.created_on ?? "—") },
-      { k: "前提", v: "只有 Git 构建的部署能重试；Direct Upload 部署上游回 400 (8000055)" },
-      { k: "路由状态", v: "上游形状 2026-10-21 实测：POST …/deployments/{id}/retry，空 body" },
-    ],
-    danger: "normal",
-  };
-}
-
 /* ---------- 自定义域名 / 站点路由 / Pages 环境变量 / workers.dev 开关的预览 ----------
  * 校验与网关 catalog 同一套规则：前端负责别让人白填，网关负责真正拦住。
  */

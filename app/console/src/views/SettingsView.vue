@@ -8,6 +8,7 @@ import { beginOAuthLogin, oauthClientCfg, saveOAuthClientCfg, REDIRECT_HINT, rev
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
 import { LIST_PRESETS, listCount, setListCount } from "../lib/lists";
+import { boardPrefs, SUB_TILE_LABELS, toggleSubTile } from "../lib/boardPrefs";
 import { dt } from "../lib/fmt";
 import { useGatewayStore } from "../stores/gateway";
 import { APP_VERSION, ACCEL_BASES, checkUpdate, type UpdateInfo } from "../lib/version";
@@ -344,6 +345,12 @@ async function doCheckUpdate() {
 
 <template>
   <div class="set">
+    <!-- 设置页原来是 10 张卡片平铺（一屏要滚很久）。按"你会为什么来这一屏"切成 5 组，
+         组标题做成区块眉题、内容默认只展开第一组：连接是必看项，其余都是改一次就不再动的配置。
+         组用 <details>：原生折叠、键盘可达、无 JS 状态要维护。 -->
+    <details class="grp" open>
+      <summary>连接<span class="gs">{{ directMode ? "APK 直连" : savedBase.from }}</span></summary>
+
     <!-- ============ 连接 ============ -->
     <div class="card wide">
       <h3>{{ directMode ? "连接（APK 直连）" : "网关配置" }}</h3>
@@ -394,6 +401,10 @@ async function doCheckUpdate() {
         <dt>账号</dt><dd>{{ result.account || "—" }}</dd>
       </dl>
     </div>
+    </details>
+
+    <details class="grp">
+      <summary>外观与更新<span class="gs">深浅 · 强调色 · 列表条数 · 版本</span></summary>
 
     <!-- ============ 外观：深浅档 + 强调色档 ============ -->
     <div class="card">
@@ -434,6 +445,21 @@ async function doCheckUpdate() {
           >{{ p.label }}</button>
         </div>
       </div>
+      <div class="opt">
+        <div class="opt-h">副表盘显示</div>
+        <div class="small muted" style="margin: 0 0 6px">
+          看板主读数下面那排小格（2026-10-25 从看板挪到这里）。主表盘「总请求」不在其中 ——
+          它是这屏的主读数，本来就不该被藏掉。
+        </div>
+        <div class="row" style="gap: 6px">
+          <button
+            v-for="t in SUB_TILE_LABELS" :key="t.id" class="chip"
+            :class="{ on: !boardPrefs.hidden.includes(t.id) }"
+            :title="boardPrefs.hidden.includes(t.id) ? '点一下加回看板' : '点一下从看板隐藏'"
+            @click="toggleSubTile(t.id)"
+          >{{ t.label }}</button>
+        </div>
+      </div>
       <!-- 各档位的设计考量与生效范围见 docs/14 §2，界面不再复述 -->
     </div>
 
@@ -454,6 +480,10 @@ async function doCheckUpdate() {
       <div v-else-if="checked" class="small muted" style="margin-top: 8px">已是最新版本。</div>
       <div v-if="updateErr" class="small" style="color: var(--bad); margin-top: 8px">{{ updateErr }}</div>
     </div>
+    </details>
+
+    <details class="grp">
+      <summary>账号与授权<span class="gs">{{ acctState.list.length }} 个账号</span></summary>
 
     <!-- ============ 账号（CF 令牌，本机保管）============ -->
     <div class="card wide">
@@ -589,6 +619,10 @@ async function doCheckUpdate() {
         </div>
       </div>
     </div>
+    </details>
+
+    <details class="grp">
+      <summary>写操作与请求预算<span class="gs">本机开关 · 调度账本</span></summary>
 
     <!-- ============ 写闸门 ============ -->
     <div class="card wide">
@@ -651,6 +685,10 @@ async function doCheckUpdate() {
 
     <!-- 看板上的「取不到」清单搬到这里了（10-11：读数面只放数，介绍进设置） -->
     <div class="wide"><UnavailableNote /></div>
+    </details>
+
+    <details class="grp">
+      <summary>本机与边界<span class="gs">存了什么 · 能做什么</span></summary>
 
     <!-- ============ 说明 ============ -->
     <div class="card">
@@ -664,21 +702,20 @@ async function doCheckUpdate() {
     <div class="card">
       <h3>已就绪与未开放</h3>
       <div class="small muted">
-        已就绪：DNS 增删改、清缓存、版本切换 / 回滚 / 灰度（见「写操作」的本机开关，默认关）。<br />
-        未开放：版本删除、Pages 部署、写 secret、改 cron、实时日志（Tail）—— 原因与实测依据见 <code>docs/14</code> §7。
+        已就绪：DNS 增删改、清缓存、版本切换 / 回滚 / 灰度、版本本体删除、Pages 回滚与重试、写 secret、改 cron、批量清理旧部署记录。全部受「写操作」本机开关管辖（默认关）。<br />
+        边界：版本本体删除对 API Token 上游回 405（CF 侧限制，界面如实报错）；实时日志（Tail）未开放 —— wss 端点本机网络不可达、中继未实测，见 <code>docs/14</code> §7。
       </div>
     </div>
+    </details>
   </div>
 </template>
 
 <style scoped>
-/* 设置页排版：窄屏单列，宽屏两列；正文/输入类卡片横跨整行，紧凑卡片并排。
-   只动排版，卡片壳与读数轨仍走全局 .card，不改观感语义。 */
-.set { display: grid; gap: 12px; grid-template-columns: 1fr; align-items: start; }
-@media (min-width: 880px) {
-  .set { grid-template-columns: 1fr 1fr; }
-  .set > .wide { grid-column: 1 / -1; }
-}
+/* 设置页排版（2026-10-25 改）：原来是 10 张卡平铺 + 宽屏两列。
+   现在按用途切成 5 组折叠，**一律单列** —— 两列在手机上本来就没生效，
+   在桌面上把"连接"和"外观"并排反而更难扫。组标题是眉题不是卡片（details 本身不画壳），
+   这样卡片仍是页面上唯一的"纸"，不会出现纸上叠纸。 */
+.set { display: flex; flex-direction: column; gap: 14px; }
 .set > .card { margin-bottom: 0; }
 .set > .wide :deep(.card) { margin-bottom: 0; }
 .opt { margin-bottom: 12px; }

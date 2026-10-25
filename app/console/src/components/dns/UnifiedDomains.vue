@@ -17,7 +17,27 @@ export default { name: "UnifiedDomains" };
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { shortId } from "../../lib/fmt";
+import { useRouter } from "vue-router";
+
+const nav = useRouter();
+
+/**
+ * 跨屏联动（2026-10-25）：这一列本来就是"资源之间的血缘"清单 ——
+ * 每行都写着它属于哪个 Worker / 哪个 Pages 项目。既然写得出归属，就该点得过去；
+ * 以前整行只做「复制域名」，等于把这份关系摊在纸上却不让用。
+ * 复制挪到行尾的小键上，行的主体变成跳转。
+ * 落点带 ?c= 对应卡片：跳到 Worker 的「自定义域名」那一张、Pages 的「自定义域名」那一张。
+ */
+function goWorker(d: any) {
+  const s = String(d?.service ?? "").trim();
+  if (!s) return;
+  nav.push(`/workers/${encodeURIComponent(s)}?c=domains`);
+}
+function goProject(p: string) {
+  const name = String(p ?? "").trim();
+  if (!name) return;
+  nav.push(`/pages/${encodeURIComponent(name)}?c=domains`);
+}
 
 const props = defineProps<{
   /** /v1/domains 的 Worker 自定义域名（可用） */
@@ -64,12 +84,13 @@ const pageHost = (d: any) => String(d?.name ?? d?.domain ?? d?.hostname ?? "");
       <span class="kind">→ 类型: 子域</span>
     </div>
 
-    <!-- Worker 自定义域名：数据现成 -->
+    <!-- Worker 自定义域名：数据现成。点行进那个 Worker 的详情（自定义域名那张卡） -->
     <div
       v-for="d in workerDomains"
       :key="d.id"
       class="urow tap"
-      @click="copy(d.hostname, d.hostname)"
+      :title="'进入 Worker ' + (d.service || '') + ' 的自定义域名'"
+      @click="goWorker(d)"
     >
       <div class="lead">
         <div class="host">{{ d.hostname }}</div>
@@ -78,7 +99,9 @@ const pageHost = (d: any) => String(d?.name ?? d?.domain ?? d?.hostname ?? "");
           <span class="badge" :class="{ live: !!d.cert_id }">{{ d.cert_id ? "有证书" : "无证书记录" }}</span>
         </div>
       </div>
-      <span class="kind">{{ shortId(d.id, 6) }}</span>
+      <span class="kind">
+        <button class="mini" type="button" @click.stop="copy(d.hostname, d.hostname)">复制</button>
+      </span>
     </div>
 
     <!-- Pages 域名：按项目分组；没项目 / 0 条 / 取失败三种状态分开 -->
@@ -108,7 +131,7 @@ const pageHost = (d: any) => String(d?.name ?? d?.domain ?? d?.hostname ?? "");
 
     <template v-else>
       <div v-for="g in pagesGroupList" :key="g.project">
-        <div v-for="(d, i) in g.domains" :key="g.project + ':' + i" class="urow tap" @click="copy(pageHost(d), pageHost(d))">
+        <div v-for="(d, i) in g.domains" :key="g.project + ':' + i" class="urow tap" :title="'进入 Pages 项目 ' + g.project" @click="goProject(g.project)">
           <div class="lead">
             <div class="host">
               {{ pageHost(d) || "（这条没有域名值）" }}
@@ -120,7 +143,9 @@ const pageHost = (d: any) => String(d?.name ?? d?.domain ?? d?.hostname ?? "");
               <span v-if="d.created_on" class="muted"> · 绑定于 {{ d.created_on.slice(0, 10) }}</span>
             </div>
           </div>
-          <span class="kind">点击复制</span>
+          <span class="kind">
+            <button class="mini" type="button" @click.stop="copy(pageHost(d), pageHost(d))">复制</button>
+          </span>
         </div>
         <div v-if="g.err" class="urow na">
           <div class="lead">
@@ -166,5 +191,12 @@ const pageHost = (d: any) => String(d?.name ?? d?.domain ?? d?.hostname ?? "");
 .kind { color: var(--muted); font-size: 12px; text-align: right; flex: none; max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
 .badge.blue { color: var(--pending-ink); border-color: rgb(var(--pending-rgb) / .45); background: rgb(var(--pending-rgb) / .1); }
 .badge.live { color: var(--ok); border-color: rgb(var(--ok-rgb) / .4); }
+/* 行尾的复制键：行的主体已经改成"跳到那个资源"，复制让位成一个小键 */
+.mini {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+  font-size: var(--t-2xs); line-height: 1; padding: 4px 9px; border-radius: 999px; cursor: pointer;
+  transition: color .18s ease, border-color .18s ease;
+}
+.mini:hover { color: var(--accent); border-color: var(--accent-dim); }
 code { font-family: var(--font-num); }
 </style>

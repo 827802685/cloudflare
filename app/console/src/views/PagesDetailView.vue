@@ -18,9 +18,11 @@
  * 所以入口保留、如实显示"这次没有日志"，而不是假装有数据。
  */
 import { computed, nextTick, onMounted, ref, watch, type Ref } from "vue";
+import { reloadTick } from "../lib/bus";
 import { useRoute, useRouter } from "vue-router";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
 import ErrorNote from "../components/ErrorNote.vue";
+import WriteGate from "../components/WriteGate.vue";
 import { useFold } from "../lib/lists";
 import {
   api,
@@ -29,7 +31,6 @@ import {
   previewPageDomainAdd,
   previewPageDomainDelete,
   previewPageEnv,
-  setWritesOptIn,
   writesOptIn,
   type PageEnvironment,
   type PageEnvVars,
@@ -242,12 +243,23 @@ async function toggleLogs(d: any) {
   }
 }
 
-/* ---------- 写侧：回滚 / 重试（都归两道写闸门） ---------- */
-const optIn = ref(writesOptIn());
-function toggleOptIn(v: boolean) {
-  setWritesOptIn(v);
-  optIn.value = writesOptIn();
+/**
+ * 部署详情里的「构建日志」按钮现在不再就地展开，而是跳到下面那张「构建日志」卡并顺手取这一次。
+ * 原因（2026-10-25 联动修复）：顶部 chip「构建日志」跳到的那张卡原先只有一段说明文字 ——
+ * 点了等于空跳转。现在那一张卡本身就是日志区：选部署、取日志、看得见结果。
+ */
+async function gotoLogs(d: any) {
+  jumpTo("logs");
+  if (logFor.value !== String(d?.id ?? "")) await toggleLogs(d);
 }
+
+/** 日志区可选的部署：最近 8 次（再多的没必要，日志是逐次看的） */
+const logDeps = computed(() => ((deps.value?.data ?? []) as any[]).slice(0, 8));
+const depLabel = (d: any) => `${shortId(String(d?.id ?? ""), 8)} · ${dt(d?.created_on)}`;
+
+/* ---------- 写侧：回滚 / 重试（都归两道写闸门） ---------- */
+/** 写开关状态只留给按钮 disabled 判断；读写与文案在 WriteGate 组件里 */
+const optIn = ref(writesOptIn());
 
 const preview = ref<WritePreview | null>(null);
 type PendingAct =
@@ -459,6 +471,8 @@ async function confirmAct() {
   }
 }
 
+/** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
+watch(reloadTick, () => { void refresh(); });
 function refresh() {
   forceFreshWindow();
   loadAll();
@@ -472,7 +486,6 @@ function refresh() {
         <button class="ghost" type="button" @click="nav.push('/compute')">← 计算</button>
         <h2 style="margin: 0; font-size: 17px; overflow: hidden; text-overflow: ellipsis">{{ name }}</h2>
       </div>
-      <button class="ghost" :disabled="proj.loading" @click="refresh">{{ proj.loading ? "加载中" : "刷新" }}</button>
     </div>
 
     <div class="row" style="gap: 6px; flex-wrap: wrap; margin-bottom: 10px">
@@ -536,10 +549,7 @@ function refresh() {
     <div class="card" id="c-deps">
       <div class="row" style="justify-content: space-between; align-items: flex-start; gap: 10px">
         <h3 style="margin: 0">部署历史（{{ deps.data?.length ?? 0 }} 条）</h3>
-        <label class="small muted" style="display: flex; align-items: center; gap: 6px; white-space: nowrap">
-          <input type="checkbox" :checked="optIn" @change="toggleOptIn(($event.target as HTMLInputElement).checked)" />
-          本机写开关
-        </label>
+        <WriteGate v-model="optIn" variant="inline" />
       </div>
       <div class="small muted" style="margin: 6px 0 8px">
         点部署行展开完整信息；回滚与重试都要过两道闸门：这台设备的写开关（上面）→ 网关的 WRITE_ENABLED。开关关着时请求不会发出。
@@ -611,7 +621,6 @@ function refresh() {
             </div>
 
             <div class="row" style="gap: 6px; flex-wrap: wrap; margin-top: 10px">
-              <button class="ghost" type="button" :disabled="!optIn || busy || String(d.id) === currentId" @click.stop="askRollback(d)">回滚到此</button>
               <button
                 class="ghost"
                 type="button"
@@ -619,20 +628,9 @@ function refresh() {
                 :title="d.deployment_trigger?.type === 'ad_hoc' ? '直传部署不能重试（实测 400 8000055）' : ''"
                 @click.stop="askRetry(d)"
               >重试构建</button>
-              <button class="ghost" type="button" :class="{ on: logFor === d.id }" @click.stop="toggleLogs(d)">
-                {{ logFor === d.id ? "收起日志" : "构建日志" }}
+              <button class="ghost" type="button" @click.stop="gotoLogs(d)">
+                构建日志
               </button>
-            </div>
-
-            <div v-if="logFor === d.id" style="margin-top: 8px">
-              <div v-if="logLoading" class="small muted">构建日志加载中…</div>
-              <ErrorNote v-else-if="logErr" :err="logErr" />
-              <div v-else-if="logRows.length" class="logbox mono">
-                <div v-for="(l, i) in logRows" :key="i">{{ l.ts ? `[${l.ts}] ` : "" }}{{ l.line }}</div>
-              </div>
-              <div v-else class="small muted">
-                这次部署没有返回构建日志行。直传（ad_hoc）部署实测 data=[]；git 构建的日志要等上游返回。
-              </div>
             </div>
           </div>
         </div>
@@ -765,14 +763,34 @@ function refresh() {
       </template>
     </div>
 
+    <!-- 构建日志区（2026-10-25：原来这张卡只有一段说明文字，顶部 chip 跳过来等于空跳转。
+         现在它就是日志区：选一次部署 → 取日志 → 结果就地显示。） -->
     <div class="card" id="c-logs">
       <h3>构建日志</h3>
       <div class="small muted">
-        入口在「部署历史」里：展开任意一次部署，点「构建日志」就会真发
-        <code>GET …/deployments/{id}/history/logs</code>，返回的 data 行原样上屏。
-        直传（ad_hoc）部署实测 data=[]（没有日志行），所以那里会如实显示"这次没有返回日志"，
+        选一次部署取它的构建日志：<code>GET …/deployments/{id}/history/logs</code>，返回的 data 行原样上屏。
+        直传（ad_hoc）部署实测 data=[]（没有日志行），所以那里会如实显示「这次没有返回日志」，
         不拿部署对象冒充日志。
       </div>
+
+      <div class="row" style="margin-top: 8px; gap: 6px; flex-wrap: wrap" v-if="logDeps.length">
+        <button
+          v-for="d in logDeps" :key="d.id" class="chip" :class="{ on: logFor === d.id }"
+          :disabled="logLoading" @click="toggleLogs(d)"
+        >{{ depLabel(d) }}</button>
+      </div>
+
+      <div v-if="logFor" style="margin-top: 8px">
+        <div v-if="logLoading" class="small muted">构建日志加载中…</div>
+        <ErrorNote v-else-if="logErr" :err="logErr" />
+        <div v-else-if="logRows.length" class="logbox mono">
+          <div v-for="(l, i) in logRows" :key="i">{{ l.ts ? `[${l.ts}] ` : "" }}{{ l.line }}</div>
+        </div>
+        <div v-else class="small muted">
+          这次部署没有返回构建日志行。直传（ad_hoc）部署实测 data=[]；git 构建的日志要等上游返回。
+        </div>
+      </div>
+      <div v-else-if="!logDeps.length" class="empty">这个项目还没有部署记录，没有日志可取。</div>
     </div>
   </div>
 

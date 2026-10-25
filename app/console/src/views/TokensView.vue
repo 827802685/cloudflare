@@ -21,7 +21,8 @@
  */
 import { computed, onMounted, ref } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
-import { GwError, isNativeApp, requireDirectCtx, setWritesOptIn, writesOptIn } from "../lib/api";
+import WriteGate from "../components/WriteGate.vue";
+import { GwError, isNativeApp, requireDirectCtx, writesOptIn } from "../lib/api";
 import {
   accountTokensDirect,
   createAccountTokenDirect,
@@ -58,11 +59,8 @@ const actErr = ref<GwError | null>(null);
 const groups = ref<any[] | null>(null);
 const groupsErr = ref<GwError | null>(null);
 
+/** 这屏每个动作都是写操作，所以是"整页前提"的形态：不给开关，只给一个开闸键（WriteGate button 变体） */
 const allowed = ref(writesOptIn());
-function openWrites() {
-  setWritesOptIn(true);
-  allowed.value = true;
-}
 
 async function loadTokens() {
   if (!native || !accountId.value) return;
@@ -265,9 +263,9 @@ const listEmpty = computed(() => !loading.value && tokens.value?.length === 0 &&
           建出来的令牌明文<b>只显示一次</b>，本应用不保存；用到它的地方请当场复制走。
         </div>
 
-        <div v-if="!allowed" class="row" style="margin-top: 12px; align-items: center">
-          <button class="primary" @click="openWrites">打开本机写开关</button>
-          <span class="small muted">创建 / 轮转 / 删除都会真实改变账号上的令牌，先开闸。</span>
+        <div class="row" style="margin-top: 12px; align-items: center">
+          <WriteGate v-model="allowed" variant="button" />
+          <span v-if="!allowed" class="small muted">创建 / 轮转 / 删除都会真实改变账号上的令牌，先开闸。</span>
         </div>
 
         <div class="row" style="margin-top: 12px">

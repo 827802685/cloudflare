@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { reloadTick } from "../lib/bus";
 import { useRouter } from "vue-router";
 import ErrorNote from "../components/ErrorNote.vue";
 import RowCard from "../components/RowCard.vue";
@@ -38,13 +39,16 @@ const shownWorkers = computed(() => {
     : arr.sort((a, b) => String(b.modified_on || "").localeCompare(String(a.modified_on || "")));
 });
 
+/** 宫格与 Worker 详情页的分区一一对应（9 张卡 9 个入口，不再有"这张卡没有入口"的情况） */
 const workerCards = [
   { ico: "versions", label: "版本列表", c: "versions" },
   { ico: "deployments", label: "部署历史", c: "deployments" },
+  { ico: "traffic", label: "流量归属", c: "traffic" },
+  { ico: "globe", label: "自定义域名", c: "domains" },
   { ico: "settings", label: "配置信息", c: "settings" },
+  { ico: "link", label: "绑定", c: "bindings" },
   { ico: "secrets", label: "Secret", c: "secrets" },
   { ico: "crons", label: "定时触发", c: "crons" },
-  { ico: "traffic", label: "流量归属", c: "traffic" },
   { ico: "switch", label: "版本切换", c: "switch" },
 ];
 
@@ -109,6 +113,8 @@ function onProjectGo(p: any, a: any) {
 
 /** 「刷新」绕过两层缓存真出一次 */
 const quotaTick = ref(0);
+/** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
+watch(reloadTick, () => { void refresh(); });
 function refresh() { forceFreshWindow(); loadWorkers(); loadPages(); quotaTick.value++; }
 
 onMounted(() => { loadWorkers(); loadPages(); });
@@ -127,7 +133,6 @@ function toggleClean(w: string) {
   <div>
     <div class="row" style="justify-content: space-between; margin-bottom: 10px">
       <span class="muted small">计算资源：{{ workers.length }} 个 Worker · {{ pages.length }} 个 Pages 项目</span>
-      <button class="ghost" :disabled="workersLoading || pagesLoading" @click="refresh">{{ (workersLoading || pagesLoading) ? "加载中" : "刷新" }}</button>
     </div>
 
     <!-- Workers / Pages 分段切换：两个区块不是同一类资源，但常要对着看，所以给「全部」也留着 -->
@@ -147,10 +152,12 @@ function toggleClean(w: string) {
       <div v-if="workers.length" style="margin-bottom: 10px">
         <div class="row" style="margin-bottom: 8px">
           <input v-model="wq" class="field" style="max-width: 200px" placeholder="搜索 Worker 名称" />
-          <div class="row" style="gap: 4px">
-            <button class="chip" :class="{ on: wsort === 'modified' }" @click="wsort = 'modified'">按修改时间</button>
-            <button class="chip" :class="{ on: wsort === 'name' }" @click="wsort = 'name'">按名称排序</button>
-          </div>
+          <!-- 排序并成一个键：两个 chip 只切一个状态，占一行不值当 -->
+          <button
+            class="chip"
+            :title="wsort === 'modified' ? '当前按修改时间排序，点一下改成按名称' : '当前按名称排序，点一下改成按修改时间'"
+            @click="wsort = wsort === 'modified' ? 'name' : 'modified'"
+          >{{ wsort === "modified" ? "按修改时间" : "按名称" }}</button>
         </div>
       </div>
       <div class="empty" v-if="workersLoading && !shownWorkers.length">加载中…</div>
@@ -160,6 +167,7 @@ function toggleClean(w: string) {
           :key="workerName(w)"
           :title="workerName(w)"
           :meta="`${rel(w.modified_on)} 修改 · ${dt(w.created_on, false)} 创建`"
+          :max="6"
           :badges="[
             ...(w.tail_consumers && w.tail_consumers.length ? [{ text: '实时日志', title: '字段 tail_consumers：这个 Worker 挂了 Workers Tail 消费者（实时日志流）' }] : []),
             ...(w.logpush ? [{ text: '日志推送', title: '字段 logpush：日志往外推给第三方（Logpush）' }] : []),
@@ -174,25 +182,32 @@ function toggleClean(w: string) {
       <div v-else-if="!workersLoading && !workersErr" class="empty">这个账号里没有 Worker</div>
     </div>
 
-    <!-- 版本清理：批量删旧部署记录（不碰版本本体），候选必须手勾 -->
-    <div class="card" v-if="kind !== 'pages'">
-      <h3>版本清理（批量删旧部署记录）</h3>
-      <div class="small muted" style="margin-bottom: 8px">
-        勾选要清理的 Worker → 「分析」→ 只删超出保留窗口、且不包含运行中版本的<b>部署记录</b>。
-        删除版本本体那条路由 CF 对 API Token 一律 405，所以这里不走它。
+    <!-- 版本清理：低频运维功能，默认收起（2026-10-25）。
+         收起之前它跟上面的 Worker 列表摆成"两份清单"，看着像重复数据。
+         展开后仍是原来那块：候选必须手勾，默认空。 -->
+    <details class="foldcard" v-if="kind !== 'pages'">
+      <summary>
+        <span>版本清理</span>
+        <span class="fc-s">批量删旧部署记录</span>
+      </summary>
+      <div class="fc-body">
+        <div class="small muted" style="margin-bottom: 8px">
+          勾选要清理的 Worker → 「分析」→ 只删超出保留窗口、且不包含运行中版本的<b>部署记录</b>。
+          删除版本本体那条路由 CF 对 API Token 一律 405，所以这里不走它。
+        </div>
+        <div class="row" style="flex-wrap: wrap; gap: 4px; margin-bottom: 10px">
+          <button
+            v-for="w in workers"
+            :key="workerName(w)"
+            class="chip"
+            :class="{ on: cleanSel.includes(workerName(w)) }"
+            type="button"
+            @click="toggleClean(workerName(w))"
+          >{{ workerName(w) }}</button>
+        </div>
+        <CleanupPanel :workers="cleanSel" @changed="refresh" />
       </div>
-      <div class="row" style="flex-wrap: wrap; gap: 4px; margin-bottom: 10px">
-        <button
-          v-for="w in workers"
-          :key="workerName(w)"
-          class="chip"
-          :class="{ on: cleanSel.includes(workerName(w)) }"
-          type="button"
-          @click="toggleClean(workerName(w))"
-        >{{ workerName(w) }}</button>
-      </div>
-      <CleanupPanel :workers="cleanSel" @changed="refresh" />
-    </div>
+    </details>
 
     <!-- Pages 区块 -->
     <div class="card" v-if="kind !== 'workers'">
@@ -222,3 +237,22 @@ function toggleClean(w: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 版本清理的折叠卡：低频运维功能默认收起，展开后内容与原来那张卡一致。
+   折叠壳不画卡片壳（只一个眉题 + 浅底），里面的内容仍走全局 .card 的读数轨语义。 */
+.foldcard { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel-2); margin-bottom: 12px; overflow: hidden; }
+.foldcard > summary {
+  display: flex; align-items: center; gap: 8px; padding: 11px 13px;
+  cursor: pointer; list-style: none; font-size: var(--t-sm); font-weight: 650; color: var(--fg-2);
+}
+.foldcard > summary::-webkit-details-marker { display: none; }
+.foldcard > summary::before {
+  content: ""; width: 6px; height: 6px; flex: none;
+  border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted);
+  transform: rotate(-45deg); transition: transform .18s ease;
+}
+.foldcard[open] > summary::before { transform: rotate(45deg); }
+.fc-s { margin-left: auto; font-size: var(--t-2xs); font-weight: 400; color: var(--muted); }
+.fc-body { padding: 0 12px 12px; }
+</style>

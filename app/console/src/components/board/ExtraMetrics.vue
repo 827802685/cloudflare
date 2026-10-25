@@ -9,13 +9,24 @@
  *     → 这一格是「源站响应请求数」，不是「源站流量(字节)」；字节那项要网关改 SQL 才有（见交付说明）。
  *  2. adaptive 是**采样**数据集，且网关固定 limit:8 → 命中率的分母是这 8 桶之和，不是全量。
  */
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import AsyncBlock from "./AsyncBlock.vue";
 import MetricTile, { type PrevState } from "./MetricTile.vue";
 import { api, GwError, type SqlResult } from "../../lib/api";
 import { compact, num } from "../../lib/fmt";
+import { enumLabel } from "../../lib/drillLabels";
 
-const props = defineProps<{ range: string; rangeLabel: string }>();
+const props = defineProps<{
+  range: string;
+  rangeLabel: string;
+  /**
+   * 进屏就取数（2026-10-25 加）。
+   * 首屏（BoardView）不传：那边只允许 1 次请求，这两格必须点了才发。
+   * 二级页（BoardDeepView）传 true：用户是主动点「深度分析」进来的，要看的就是这些，
+   * 再让他点一次「取这两格的数」，等于把已经表达的意图又问一遍。
+   */
+  auto?: boolean;
+}>();
 
 const open = ref(false);
 const loading = ref(false);
@@ -33,6 +44,13 @@ watch(
     if (loaded.value) stale.value = true;
   },
 );
+
+/** auto：进屏即展开并取数（二级页用；load 是函数声明，提升可用） */
+onMounted(() => {
+  if (!props.auto) return;
+  open.value = true;
+  void load();
+});
 
 function toErr(e: unknown): GwError {
   return e instanceof GwError ? e : new GwError("unknown", 0, null, String((e as Error)?.message || e));
@@ -69,19 +87,23 @@ const originAvgMs = computed(() => {
 const cacheTotal = computed(() => cacheRows.value.reduce((s, r) => s + (Number(r.reqs) || 0), 0));
 const hit = computed(() => cacheRows.value.filter((r) => /hit/i.test(String(r.k)) && !/miss/i.test(String(r.k))).reduce((s, r) => s + (Number(r.reqs) || 0), 0));
 const hitRate = computed(() => (cacheTotal.value ? (hit.value / cacheTotal.value) * 100 : null));
-const cacheItems = computed(() => cacheRows.value.map((r) => ({ label: String(r.k ?? "未知"), value: Number(r.reqs) })));
+/** 缓存状态也是 CF 的英文枚举（hit/miss/none/dynamic/bypass…），同一个翻译表管 */
+const cacheItems = computed(() => cacheRows.value.map((r) => ({ label: enumLabel("cache", r.k), value: Number(r.reqs) })));
 
 const none: PrevState = { state: "out", why: "上一窗：这几格的环比网关契约里没有（契约只给 请求/流量/访客/威胁 四项）" };
 </script>
 
 <template>
   <div class="card">
-    <h3>补充指标（要点才取数）</h3>
-    <div class="row">
+    <h3>补充指标{{ auto ? "" : "（要点才取数）" }}</h3>
+    <div class="row" v-if="!auto">
       <button class="ghost" :disabled="loading" @click="open ? (open = false) : ((open = true), load())">
         {{ loading ? "取数中" : open ? "收起" : "取这两格的数" }}
       </button>
       <span class="small muted">展开会多打 2 次网关请求（origin + adaptive/cache），所以不放首屏</span>
+    </div>
+    <div class="small muted" v-else style="margin-top: 2px">
+      这一页进来就取这两块（origin + adaptive/cache，共 2 条请求）
     </div>
 
     <template v-if="open">

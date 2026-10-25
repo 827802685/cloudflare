@@ -22,7 +22,8 @@ import { computed, reactive, ref, watch } from "vue";
 import ConfirmSheet from "../ConfirmSheet.vue";
 import type { RunningModel } from "./RunningBadge.vue";
 import { runningModel } from "./RunningBadge.vue";
-import { api, dropMem, GwError, gwWrite, setWritesOptIn, writesOptIn, type WritePreview } from "../../lib/api";
+import WriteGate from "../WriteGate.vue";
+import { api, dropMem, GwError, gwWrite, writesOptIn, type WritePreview } from "../../lib/api";
 import { dt, shortId } from "../../lib/fmt";
 
 const props = defineProps<{ workers: string[] }>();
@@ -75,12 +76,8 @@ const analyzing = ref(false);
 const armed = ref(false);
 const log = ref<{ text: string; ok: boolean }[]>([]);
 
-/** 本机写开关：默认关（api.ts 的写侧契约第 3 条 —— 关着就根本不出网） */
+/** 本机写开关：状态只留给批量删除按钮的 disabled 判断；读写与文案在 WriteGate 里 */
 const optIn = ref(writesOptIn());
-function toggleOptIn(v: boolean) {
-  setWritesOptIn(v);
-  optIn.value = writesOptIn();
-}
 
 function syncSelection() {
   // 选中集变了就重建面板状态，默认全部未勾选
@@ -274,13 +271,10 @@ function cancelBatch() {
       候选默认一条都不勾，要自己勾。
     </p>
 
-    <div class="switchline">
-      <label class="row" style="gap: 6px">
-        <input type="checkbox" class="switch" :checked="optIn" @change="toggleOptIn(($event.target as HTMLInputElement).checked)" />
-        <span>本机写开关：{{ optIn ? "已打开" : "未打开" }}</span>
-      </label>
-      <span class="small muted">{{ optIn ? "确认后请求会真的发到网关（网关那一侧还有一道 WRITE_ENABLED 闸门）。" : "关着的时候 gwWrite 会当场返回 writesDisabled，请求不会离开这台设备。" }}</span>
-    </div>
+    <WriteGate
+      v-model="optIn" variant="bar"
+      :note="optIn ? '确认后请求会真的发到网关（网关那一侧还有一道 WRITE_ENABLED 闸门）。' : '关着的时候 gwWrite 会当场返回 writesDisabled，请求不会离开这台设备。'"
+    />
 
     <div class="empty" v-if="!states.length">先在上方「版本清理」卡片里勾选要处理的 Worker。</div>
 

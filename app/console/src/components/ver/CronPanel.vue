@@ -15,7 +15,8 @@ export default { name: "VerCronPanel" };
 import { computed, ref } from "vue";
 import ConfirmSheet from "../ConfirmSheet.vue";
 import AsyncBlock from "./AsyncBlock.vue";
-import { GwError, gwWrite, setWritesOptIn, writesOptIn, type WritePreview } from "../../lib/api";
+import WriteGate from "../WriteGate.vue";
+import { GwError, gwWrite, writesOptIn, type WritePreview } from "../../lib/api";
 import { dt } from "../../lib/fmt";
 
 const props = withDefaults(
@@ -112,11 +113,8 @@ const busy = ref(false);
 const sheetErr = ref("");
 const log = ref<{ text: string; ok: boolean }[]>([]);
 const pending = ref<string[] | null>(null);
+/** 写开关状态只留给提交按钮的 disabled 判断；读写与文案在 WriteGate 里 */
 const optIn = ref(writesOptIn());
-function toggleOptIn(v: boolean) {
-  setWritesOptIn(v);
-  optIn.value = writesOptIn();
-}
 
 function ask(a: { next: string[]; title: string; desc: string }) {
   pending.value = a.next;
@@ -175,10 +173,7 @@ function dash(v: unknown) {
 <template>
   <div class="cron">
     <div class="switchline">
-      <label class="row" style="gap: 6px">
-        <input type="checkbox" class="switch" :checked="optIn" @change="toggleOptIn(($event.target as HTMLInputElement).checked)" />
-        <span>本机写开关：{{ optIn ? "已打开" : "未打开" }}</span>
-      </label>
+      <WriteGate v-model="optIn" variant="inline" />
       <span class="small muted">定时触发按 <b>UTC</b> 执行；这一屏所有输入都按 <b>UTC+8（北京）</b> 理解、提交前换算成 UTC。</span>
     </div>
 

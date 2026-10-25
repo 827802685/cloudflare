@@ -291,7 +291,7 @@ const clean =
 console.log(`副本目录：${OUT}`);
 console.log(`  复制 ${copied} 个文件到副本，跳过凭据文件 ${skipped.length} 个：${skipped.join(", ") || "无"}`);
 console.log(`  按 .gitignore 跳过 ${skippedByIgnore.length} 个未入库文件：${skippedByIgnore.join(", ") || "无"}`);
-console.log(`  化名化：Account ID ×1 直接屏蔽；32 位 id ${stats.ids} 个 → HMAC 稳定假 id；主机名 ${stats.hosts} 个 → example.*；邮箱 ${stats.emails} 个 → user3@example.com`);
+console.log(`  化名化：Account ID ×1 直接屏蔽；32 位 id ${stats.ids} 个 → HMAC 稳定假 id；主机名 ${stats.hosts} 个 → example.*；邮箱 ${stats.emails} 个 → user5@example.com`);
 console.log(`  屏蔽：.dev.vars 那把令牌/设备令牌各 1 处 + 仓库内其它硬编码令牌 ${tokenMap.size} 把 → «REMOVED_CF_API_TOKEN_n» 占位`);
 console.log(`  残留断言：Account ID ${residue.account} · CF Token ${residue.token} · 令牌形态 ${residue.tokenShape} · 设备令牌 ${residue.device} · 邮箱 ${residue.email} · 个人主机名 ${residue.realHost} · 本机路径 ${residue.localPath}（另有 ${residue.keptPublic} 个 *.workers.dev / *.pages.dev 公共域名按设计保留）`);
 if (tokenResidueFiles.length) console.log(`  ❗ 仍带令牌形态的文件：${[...new Set(tokenResidueFiles)].join(", ")}`);

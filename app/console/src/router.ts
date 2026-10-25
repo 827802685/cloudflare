@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import BoardView from "./views/BoardView.vue";
+import BoardDeepView from "./views/BoardDeepView.vue";
 import ComputeView from "./views/ComputeView.vue";
 import DomainsView from "./views/DomainsView.vue";
 import SettingsView from "./views/SettingsView.vue";
@@ -22,6 +23,8 @@ export const router = createRouter({
     { path: "/domains", name: "domains", component: DomainsView, meta: { tab: "domains", title: "域名" } },
     { path: "/compute", name: "compute", component: ComputeView, meta: { tab: "compute", title: "计算" } },
     { path: "/board", name: "board", component: BoardView, meta: { tab: "board", title: "看板" } },
+    // 看板二级页：补充指标 + 下钻 Top 20（2026-10-25 从首屏拆出，首屏只留读数）
+    { path: "/board/deep", name: "board-deep", component: BoardDeepView, meta: { tab: "board", title: "深度分析" } },
     { path: "/database", name: "database", component: DatabaseView, meta: { tab: "database", title: "数据库" } },
     { path: "/kv", redirect: (to) => ({ path: "/database", query: { ...to.query, store: "kv" } }) },
     { path: "/zero-trust", name: "zero-trust", component: ZeroTrustView, meta: { tab: "zt", title: "Zero Trust" } },

@@ -8,66 +8,26 @@
  * 只读屏：这里不出现任何写请求。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { reloadTick } from "../lib/bus";
 import AsyncBlock from "../components/board/AsyncBlock.vue";
-import ExtraMetrics from "../components/board/ExtraMetrics.vue";
 import MetricTile, { type PrevState } from "../components/board/MetricTile.vue";
-import StatusLamp from "../components/board/StatusLamp.vue";
+import StatusDialog from "../components/board/StatusDialog.vue";
 import WorldMap from "../components/board/WorldMap.vue";
 import BarList from "../components/BarList.vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import LineChart from "../components/LineChart.vue";
 import { api, forceFreshWindow, gwMeta, GwError, type Overview } from "../lib/api";
+import { boardPrefs, CHARTS, RANGES, toggleSubTile, type ChartKey, type RangeKey } from "../lib/boardPrefs";
 import { countryName } from "../lib/country";
 import { bytes, compact, dt, hourLabel, num } from "../lib/fmt";
+import { foldText, useFold } from "../lib/lists";
 
-type RangeKey = "24h" | "7d" | "30d";
-type ChartKey = "series" | "daily" | "status" | "countries";
-
-const RANGES: Array<{ k: RangeKey; label: string }> = [
-  { k: "24h", label: "24 小时" },
-  { k: "7d", label: "7 天" },
-  { k: "30d", label: "30 天" },
-];
-const CHARTS: Array<{ k: ChartKey; label: string }> = [
-  { k: "series", label: "请求时序" },
-  { k: "daily", label: "按天请求" },
-  { k: "status", label: "状态码分布" },
-  { k: "countries", label: "来源国家" },
-];
-
-/* ---------------- 偏好持久化（竞品是 dashboard_prefs，这里用 localStorage） ---------------- */
-/** 键名跟 api.ts 里那套内存缓存键同一风格；只存「选了哪个窗 / 哪张图 / 藏了哪些瓦片」，不存数据 */
-const PREF_KEY = "cfconsole.board.prefs.v1";
-interface BoardPrefs { range: RangeKey; chart: ChartKey; hidden: string[] }
-function readPrefs(): BoardPrefs {
-  const fallback: BoardPrefs = { range: "7d", chart: "series", hidden: [] };
-  try {
-    const raw = localStorage.getItem(PREF_KEY);
-    if (!raw) return fallback;
-    const p = JSON.parse(raw) as Partial<BoardPrefs>;
-    const range = RANGES.some((r) => r.k === p.range) ? (p.range as RangeKey) : fallback.range;
-    const chart = CHARTS.some((c) => c.k === p.chart) ? (p.chart as ChartKey) : fallback.chart;
-    const hidden = Array.isArray(p.hidden) ? p.hidden.map(String) : [];
-    return { range, chart, hidden };
-  } catch {
-    return fallback;
-  }
-}
-const prefs = readPrefs();
-const range = ref<RangeKey>(prefs.range);
-const chart = ref<ChartKey>(prefs.chart);
-const hidden = ref<Set<string>>(new Set(prefs.hidden));
-/** 只在用户真的改过之后才写盘：首屏初始化那一次不该产生动作 */
-let prefsReady = false;
-onMounted(() => { prefsReady = true; });
-watch([range, chart, hidden], () => {
-  if (!prefsReady) return;
-  try {
-    localStorage.setItem(PREF_KEY, JSON.stringify({ range: range.value, chart: chart.value, hidden: [...hidden.value] }));
-  } catch {
-    /* 隐私模式存不下也不影响功能，本次会话内偏好仍然有效 */
-  }
-}, { flush: "post" });
+/* ---------------- 偏好：住在 lib/boardPrefs.ts（2026-10-25 起设置页也要改它） ----------------
+ * 这里用 computed 代理，是为了让本文件里 range.value / chart.value 那一大堆写法一个字都不用改。
+ * hidden 用 computed 出一份 Set，模板里 hidden.has(id) 照旧。写盘在模块里做。 */
+const range = computed({ get: () => boardPrefs.range, set: (v: RangeKey) => { boardPrefs.range = v; } });
+const chart = computed({ get: () => boardPrefs.chart, set: (v: ChartKey) => { boardPrefs.chart = v; } });
+const hidden = computed(() => new Set(boardPrefs.hidden));
 
 const rangeLabel = computed(() => "过去 " + (RANGES.find((r) => r.k === range.value)?.label ?? ""));
 const axisLabel = computed(() => (range.value === "24h" ? "横轴按小时" : "横轴按天"));
@@ -113,6 +73,8 @@ onMounted(load);
 watch(range, load);
 
 /** 「刷新」= 明确要新数据：绕过前端 5 分钟内存 + 网关 5 分钟缓存，两层一起破 */
+/** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
+watch(reloadTick, () => { void refresh(); });
 function refresh() { forceFreshWindow(); load(); }
 
 /**
@@ -290,12 +252,50 @@ const tiles = computed<TileSpec[]>(() => [
     caliber: "派生自 series 卡：sum(edgeResponseBytes) / count()，SQL 采样面",
   },
 ]);
-const shownTiles = computed(() => tiles.value.filter((t) => !hidden.value.has(t.id)));
+/* ---------------- 图表里的长列表：遵守设置页那一档「长列表默认显示」（lib/lists.ts） ----------------
+ * 用户明确要求「按天请求 / 状态码分布」跟那一档走：30 天窗就是 30 根条，
+ * 不折的话光图表卡就比整个看板还长。点「展开更多」只影响这一条列表，不改全局档位。 */
+const dailyFold = useFold(() => dailyItems.value);
+const statusFold = useFold(() => statusItems.value);
+
+/**
+ * 主表盘 / 副表盘（2026-10-25）：原来 8 格等大平铺，信息密度均匀 = 视觉重点为零。
+ * 现在「总请求」单独提成主表盘（44px 数字 + 迷你走纸），其余 7 格做副表盘横滑。
+ * 主表盘不参与隐藏偏好 —— 它是这屏的主读数，藏了就没有"这是一台读数仪"的意思了。
+ */
+const mainTile = computed(() => tiles.value.find((t) => t.id === "requests") ?? null);
+/** 副表盘可隐藏的 7 格（chip 行只列这些，原来连总请求也能藏） */
+const subTiles = computed(() => tiles.value.filter((t) => t.id !== "requests"));
+const shownTiles = computed(() => subTiles.value.filter((t) => !hidden.value.has(t.id)));
+
+/** 主表盘的迷你走纸：24h 用按小时曲线，7d/30d 用按天。都出自首屏那一条响应，不额外发请求 */
+const sparkPoints = computed(() =>
+  range.value === "24h"
+    ? seriesPoints.value
+    : dailyItems.value.map((d) => ({ x: d.label, y: Number(d.value) || 0 })),
+);
+
+/** 主表盘的环比：跟 MetricTile 同一套 prev 契约，只是这里要一句话而不是一整块 */
+const mainDelta = computed((): { text: string; tone: string } => {
+  const p = prevOf("reqs");
+  if (p.state === "absent") return { text: "上一窗：网关未提供环比", tone: "muted" };
+  if (p.state === "pending") return { text: "上一窗：取数中…", tone: "muted" };
+  if (p.state === "out") return { text: p.why || "上一窗无可比数据", tone: "muted" };
+  if (p.state === "error") return { text: "上一窗取数失败", tone: "warn" };
+  if (p.state === "novalue") return { text: "上一窗：网关返回空值（不是 0）", tone: "muted" };
+  const prev = Number(p.value);
+  if (!Number.isFinite(prev) || prev <= 0) return { text: "上一窗为 0，环比不成立", tone: "muted" };
+  const d = ((requests.value - prev) / Math.abs(prev)) * 100;
+  const up = d > 0;
+  return {
+    text: (up ? "▲ +" : "▼ −") + Math.abs(d).toFixed(1) + "% · 上一窗 " + compact(prev),
+    tone: up ? "up" : "down",
+  };
+});
+
+/** 副表盘显隐：写进共享偏好（设置页里是同一份开关，两边永远一致） */
 function toggleTile(id: string) {
-  const next = new Set(hidden.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  hidden.value = next;
+  toggleSubTile(id);
 }
 
 /* ---------------- 状态灯：阈值自研，规则原文要能被看到 ---------------- */
@@ -335,38 +335,26 @@ const lamp = computed<{ level: "ok" | "warn" | "bad" | "unknown"; text: string; 
   return { level: "ok", text: parts.join("、") + "，都在自研阈值线内。", basis };
 });
 
-/* ---- 下钻：默认不发请求，点了才发（限流约 1200 请求/5 分钟/IP） ---- */
-/** host/path/bot 走 Analytics SQL；cache/device 只有 GraphQL adaptive 有这两列，网关内部换面 */
-type Dim = "host" | "path" | "bot" | "cache" | "device";
-const DIMS: Array<{ k: Dim; label: string }> = [
-  { k: "host", label: "域名" },
-  { k: "path", label: "路径" },
-  { k: "bot", label: "Bot" },
-  { k: "cache", label: "缓存状态" },
-  { k: "device", label: "设备类型" },
-];
-const SQL_DIMS: Dim[] = ["host", "path", "bot"];
-const dim = ref<Dim>("host");
-const drill = ref<Array<{ k: string; reqs: number }> | null>(null);
-const drillVia = ref("");
-const drillErr = ref<GwError | null>(null);
-const drillLoading = ref(false);
-async function loadDrill() {
-  drillLoading.value = true;
-  drillErr.value = null;
-  try {
-    const r = SQL_DIMS.includes(dim.value)
-      ? await api.top(range.value, dim.value as "host" | "path" | "bot")
-      : await api.adaptive(range.value, dim.value as "cache" | "device");
-    drill.value = r.rows as any;
-    drillVia.value = "source" in r ? String((r as any).source) : "analytics-sql";
-  } catch (e) {
-    drillErr.value = e instanceof GwError ? e : new GwError("unknown", 0, null, String(e));
-  } finally {
-    drillLoading.value = false;
-  }
+/* ---- 状态弹窗（2026-10-25）：bad/warn 自动弹一次，「今天不再提醒」只管当天 ---- */
+const ALERT_KEY = "cfconsole.board.alert.v1";
+const alertOpen = ref(false);
+/** YYYY-MM-DD：sv-SE 的日期格式正好是 ISO，省掉手拼补零 */
+const today = () => new Date().toLocaleDateString("sv-SE");
+function quietToday(): boolean {
+  try { return localStorage.getItem(ALERT_KEY) === today(); } catch { return false; }
 }
-const drillItems = computed(() => (drill.value ?? []).map((r) => ({ label: String(r.k ?? "(空)"), value: Number(r.reqs) })));
+function closeAlert(quiet: boolean) {
+  alertOpen.value = false;
+  if (quiet) { try { localStorage.setItem(ALERT_KEY, today()); } catch { /* 隐私模式 */ } }
+}
+/** 数据落到 bad/warn 的那一刻弹一次；已经在弹就不重复开 */
+watch(lamp, (l) => {
+  if (alertOpen.value) return;
+  if ((l.level === "bad" || l.level === "warn") && !quietToday()) alertOpen.value = true;
+});
+
+/* ---- 下钻 Top 20 与补充指标已搬到 /board/deep（二级页，见 views/BoardDeepView.vue）。
+   搬走的原因：它们都是"点了才取数"的深挖，留在首屏既占长度又多一套三态状态。 ---- */
 
 /**
  * 从读数脸上撤下来的介绍话，集中收进这一屏的「口径与说明」折叠里
@@ -386,7 +374,7 @@ const notesOpen = ref(false);
 
 <template>
   <div>
-    <!-- 工具栏：时间窗分段控制 + 数据年龄 + 刷新，收进一张卡，读数区从它下面开始 -->
+    <!-- 工具栏：时间窗分段控制 + 数据年龄（刷新已收进顶栏，这里不再重复一个键） -->
     <div class="card toolbar">
       <div class="seg" role="tablist" aria-label="时间窗">
         <button v-for="k in RANGES" :key="k.k" class="seg-b" :class="{ on: range === k.k }" role="tab" :aria-selected="range === k.k" @click="range = k.k">
@@ -395,30 +383,44 @@ const notesOpen = ref(false);
       </div>
       <div class="tl">
         <span v-if="updatedAt" class="age">{{ updatedAt }} · {{ sourceNote }}</span>
-        <button class="ghost sm" :disabled="loading" @click="refresh">{{ loading ? "加载中" : "刷新" }}</button>
       </div>
     </div>
 
     <ErrorNote :err="err" />
 
-    <!-- 状态总览卡：左边条按灯色着色，一眼分档 -->
-    <div class="card hd" :class="'lv-' + lamp.level">
-      <h3>仪表盘概览 · {{ rangeLabel }}</h3>
-      <StatusLamp :level="lamp.level" :text="lamp.text" :rules="RULES" :basis="lamp.basis" />
-    </div>
+    <!-- 状态条（2026-10-25）：原来是一整张卡，现在压成一行；bad/warn 会自己弹窗。
+         点这一行随时能把弹窗叫回来（当天勾过"不再提醒"也一样，手动点永远能看）。 -->
+    <button class="statline" :class="'lv-' + lamp.level" @click="alertOpen = true">
+      <span class="sd" />
+      <span class="st">{{ lamp.text }}</span>
+      <span class="sa">详情</span>
+    </button>
 
-    <!-- §5.1 第 4 行：指标瓦片网格，每格 数值 + 单位 + 环比涨跌 -->
-    <div class="row picks">
-      <button
-        v-for="t in tiles" :key="t.id" class="chip" :class="{ on: !hidden.has(t.id) }"
-        :title="hidden.has(t.id) ? '显示这一格' : '隐藏这一格'" @click="toggleTile(t.id)"
-      >{{ t.label }}</button>
-    </div>
-    <div class="small muted" style="margin: 4px 2px 8px">
-      点名字收起/放开某一格（会记住）· 显示 {{ shownTiles.length }} / {{ tiles.length }}
-    </div>
+    <StatusDialog
+      v-if="alertOpen" :level="lamp.level" :text="lamp.text" :rules="RULES" :basis="lamp.basis"
+      @close="closeAlert"
+    />
 
-    <div class="grid tiles">
+    <!-- 主表盘：这一屏的主读数。44px 数字 + 迷你走纸，口径小字挂在读数行下面 -->
+    <AsyncBlock :loading="loading && !ov" :err="mainTile?.err" :has="!!mainTile && mainTile.value !== '—'" :empty-text="blankNote">
+      <div class="dial">
+        <div class="dial-h">
+          <h3>总请求</h3>
+          <span class="dial-at">{{ rangeLabel }}<template v-if="updatedAt"> · 至 {{ updatedAt }}</template></span>
+        </div>
+        <div class="dial-v">
+          <b class="dial-n">{{ mainTile?.value ?? "—" }}</b>
+          <span class="dial-u">{{ mainTile?.unit || "次" }}</span>
+        </div>
+        <div class="dial-d" :class="mainDelta.tone">{{ mainDelta.text }}</div>
+        <div class="spark" v-if="sparkPoints.length > 1">
+          <LineChart :points="sparkPoints" :height="34" :format="compact" bare />
+        </div>
+      </div>
+    </AsyncBlock>
+
+    <!-- 副表盘：其余 7 格横滑（手机上拇指扫，桌面上铺网格）。层级比主表盘低一档，靠字号区分，不靠染色 -->
+    <div class="dials" v-if="shownTiles.length">
       <AsyncBlock
         v-for="t in shownTiles" :key="t.id"
         :loading="loading && !ov" :err="t.err" :has="t.value !== '—'"
@@ -429,6 +431,12 @@ const notesOpen = ref(false);
           :current="t.current" :prev="t.prev" :better-up="t.betterUp" hideable @hide="toggleTile(t.id)"
         />
       </AsyncBlock>
+    </div>
+
+    <!-- 显隐开关已挪到设置页（外观与更新 → 副表盘显示）。
+         看板上不再摆一排"管理这个屏自己"的按钮 —— 那是配置，不是读数。 -->
+    <div class="small muted" v-if="hidden.size" style="margin: 4px 2px 8px">
+      副表盘已隐藏 {{ hidden.size }} 格 · 在「设置 → 外观与更新」里加回来
     </div>
 
     <!-- 介绍类的话从读数面撤到这里（10-11 他要求：「介绍给我删了要么丢进介绍页」）。
@@ -485,7 +493,10 @@ const notesOpen = ref(false);
         :has="dailyItems.length > 0"
         empty-text="1dGroups 这一窗没返回任何自然日"
       >
-        <BarList :items="dailyItems" :format="compact" />
+        <BarList :items="dailyFold.shown" :format="compact" />
+        <button v-if="dailyFold.rest" class="ghost fold-more" @click="dailyFold.open = !dailyFold.open">
+          {{ dailyFold.label }}
+        </button>
         <div class="small muted under">{{ rangeLabel }}数据 · GraphQL 1dGroups（控制台同口径，按自然日）</div>
       </AsyncBlock>
 
@@ -495,7 +506,10 @@ const notesOpen = ref(false);
         :has="statusItems.length > 0"
         empty-text="状态码这块这一窗没返回条目"
       >
-        <BarList :items="statusItems" :format="compact" />
+        <BarList :items="statusFold.shown" :format="compact" />
+        <button v-if="statusFold.rest" class="ghost fold-more" @click="statusFold.open = !statusFold.open">
+          {{ statusFold.label }}
+        </button>
         <div class="small muted under">{{ rangeLabel }}数据 · SQL edgeResponseStatus（Top 12 码，所以分母比 1dGroups 小）</div>
       </AsyncBlock>
 
@@ -511,30 +525,15 @@ const notesOpen = ref(false);
       </AsyncBlock>
     </div>
 
-    <ExtraMetrics :range="range" :range-label="rangeLabel" />
-
-    <div class="card">
-      <h3>下钻 Top 20</h3>
-      <div class="row" style="margin-bottom: 8px">
-        <button v-for="d in DIMS" :key="d.k" class="chip" :class="{ on: dim === d.k }" @click="dim = d.k; drill = null">
-          {{ d.label }}
-        </button>
-        <button class="ghost" :disabled="drillLoading" @click="loadDrill">{{ drillLoading ? "查询中" : drill ? "重新查询" : "开始查询" }}</button>
+    <!-- 二级页入口：补充指标（点了才取数）与下钻 Top 20 都是"深挖"，不该占首屏。
+         搬走之后首屏只剩 主表盘 → 副表盘 → 图表，一屏能看完。 -->
+    <RouterLink class="deep" to="/board/deep">
+      <div class="deep-l">
+        <span class="deep-t">深度分析</span>
+        <span class="deep-s">补充指标（点了才取数）· 下钻 Top 20</span>
       </div>
-      <!-- 同样是三态（`09` §E17）：还没查 / 正在查 / 查完确实为空，各说各的话，别共用一句口径说明 -->
-      <AsyncBlock
-        v-if="!!drill || drillLoading || !!drillErr"
-        :loading="drillLoading" :err="drillErr" :has="drillItems.length > 0"
-        loading-text="查询中…"
-        empty-text="查询完成了，这一档确实没返回条目（采样后为空）"
-      >
-        <BarList :items="drillItems" :format="compact" />
-      </AsyncBlock>
-      <div v-else class="empty">
-        还没查：{{ SQL_DIMS.includes(dim) ? "这一档来自 Analytics SQL（采样），数字与控制台会有几个百分点出入" : "这一档来自 GraphQL adaptive（采样）；SQL 面没有缓存/设备两列" }}
-      </div>
-      <div class="small muted" v-if="drillVia" style="margin-top: 6px">数据来源：{{ drillVia }}</div>
-    </div>
+      <span class="deep-a" aria-hidden="true">›</span>
+    </RouterLink>
   </div>
 </template>
 
@@ -547,15 +546,85 @@ const notesOpen = ref(false);
 .seg-b.on { background: var(--accent); color: var(--on-accent, #fff); font-weight: 600; }
 .tl { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .age { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 状态总览卡：左边条 3px 按灯色着色（ok/warn/bad/unknown），与状态灯互证 */
-.hd { border-left-width: 3px; }
-.hd.lv-ok { border-left-color: var(--ok, #2f9e5f); }
-.hd.lv-warn { border-left-color: #d29922; }
-.hd.lv-bad { border-left-color: var(--bad, #d64545); }
-.hd.lv-unknown { border-left-color: var(--line); }
-.hd h3 { margin-bottom: 6px; }
+/* ---------- 状态条（替掉原来那张常驻状态卡）：一行，点开才看详情 ---------- */
+.statline {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin: 2px 0 10px; padding: 9px 11px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  text-align: left; font: inherit; color: var(--fg-2); cursor: pointer;
+}
+.statline.lv-ok { border-color: rgb(var(--ok-rgb) / .3); }
+.statline.lv-warn { border-color: rgb(var(--warn-rgb) / .38); }
+.statline.lv-bad { border-color: rgb(var(--bad-rgb) / .42); }
+.sd { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+.lv-ok .sd { background: var(--ok); }
+.lv-warn .sd { background: var(--warn); }
+.lv-bad .sd { background: var(--bad); }
+/* 一句话最多两行：完整结论与判定规则在弹窗里 */
+.st { flex: 1; min-width: 0; font-size: var(--t-xs); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sa { flex: none; font-size: var(--t-2xs); color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- 二级页入口（补充指标 + 下钻） ---------- */
+.deep {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  padding: 12px 14px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+  color: var(--fg); text-decoration: none;
+  box-shadow: var(--e-soft);
+  transition: border-color .16s ease, transform .2s ease;
+}
+.deep:hover { border-color: var(--accent-dim); transform: translateY(-1px); }
+.deep-l { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.deep-t { font-size: var(--t-sm); font-weight: 650; }
+.deep-s { font-size: var(--t-2xs); color: var(--muted); }
+.deep-a { margin-left: auto; font-size: 20px; color: var(--muted); line-height: 1; }
+
+/* 图表卡里的「展开更多」：跟别处列表按钮同一语汇，不抢主行动 */
+.fold-more { margin-top: 8px; }
 .picks { margin-top: 4px; }
 .tiles { margin-bottom: 4px; }
+
+/* ---------- 主表盘（2026-10-25）：一屏只有一个"主读数"，44px 起 ----------
+   和副表盘的区别只在字号与留白，不动颜色：这套界面的颜色已经被四态轨占满了，
+   再给主表盘上色会让"橙 = 有真数"这条编码失效。 */
+.dial {
+  position: relative; background: var(--panel);
+  border-radius: 20px; padding: 14px 16px 10px; margin-bottom: 12px;
+  box-shadow: var(--e-soft), 0 0 0 1px var(--line-soft);
+  overflow: hidden;
+}
+/* 主表盘不画左沿轨道：它本身就是"有数"，那道 2px 留给分块数据 */
+.dial-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dial-h h3 { margin: 0; font-size: var(--t-xs); color: var(--muted); font-weight: 600; letter-spacing: .06em; }
+.dial-at { font-size: var(--t-2xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dial-v { display: flex; align-items: baseline; gap: 7px; margin-top: 6px; }
+/* clamp：320px 窄屏上 "1,234,567" 用 44px 会溢出，按视口收，上限仍是 44 */
+.dial-n { font-family: var(--font-num); font-size: clamp(32px, 11vw, 44px); line-height: 1.05;
+  font-weight: 700; letter-spacing: -.03em; color: var(--fg); }
+.dial-u { font-size: var(--t-sm); color: var(--muted); font-family: var(--font-num); }
+.dial-d { margin-top: 3px; font-size: var(--t-xs); font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.dial-d.up { color: var(--ok); }
+.dial-d.down { color: var(--bad); }
+.dial-d.warn { color: var(--warn); }
+.dial-d.muted { color: var(--muted); }
+.spark { margin-top: 8px; }
+.spark :deep(.chart) { height: 34px !important; }
+
+/* ---------- 副表盘：手机横滑，桌面上铺成网格 ---------- */
+.dials {
+  display: grid; gap: 10px;
+  grid-auto-flow: column; grid-auto-columns: minmax(176px, 64%);
+  overflow-x: auto; padding-bottom: 6px; margin-bottom: 6px;
+  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+}
+.dials > * { scroll-snap-align: start; }
+@media (min-width: 700px) {
+  .dials {
+    grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    overflow: visible; scroll-snap-type: none;
+  }
+}
 /* 「口径与说明」：介绍类的话都住在这里，默认收起，所以它不能长得像一块数据 */
 .notes { margin: 12px 2px 0; border: 1px solid var(--line-soft); border-radius: var(--radius-s); background: var(--panel-2); }
 .notes-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%;

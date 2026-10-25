@@ -2,7 +2,8 @@
 import { computed } from "vue";
 
 const props = defineProps<{
-  items: Array<{ label: string; value: number }>;
+  /** readonly：useFold 折叠出来的切片是只读的，这里不该要求可写数组（只读地遍历它就够了） */
+  items: ReadonlyArray<{ label: string; value: number }>;
   format?: (v: number) => string;
   max?: number;
 }>();
@@ -14,7 +15,7 @@ const fmt = computed(() => props.format ?? ((v: number) => String(v)));
 
 <template>
   <div>
-    <div v-for="i in items" :key="i.label" class="bar">
+    <div v-for="(i, idx) in items" :key="i.label + '#' + idx" class="bar">
       <span class="name" :title="i.label">{{ i.label }}</span>
       <span class="track"><span class="fill" :style="{ width: Math.max(2, (Number(i.value) / top) * 100) + '%' }" /></span>
       <span class="n">{{ fmt(Number(i.value)) }}</span>

@@ -5,6 +5,9 @@ import { useGatewayStore } from "./stores/gateway";
 import { gwHealth, isNativeApp } from "./lib/api";
 import { checkUpdate, type UpdateInfo } from "./lib/version";
 import UpdateDialog from "./components/UpdateDialog.vue";
+import Icon from "./components/Icon.vue";
+import { acctState, labelOf, type CfAccount } from "./lib/accounts";
+import { reloading, requestReload } from "./lib/bus";
 
 const route = useRoute();
 const nav = useRouter();
@@ -35,11 +38,11 @@ onMounted(async () => {
  * 设置不占底栏一条，是顶栏**右上角**的齿轮（同一轮里他从左上角改到右上角的）。
  */
 const tabs = [
-  { key: "domains", label: "域名", to: "/domains", icon: "◎" },
-  { key: "compute", label: "计算", to: "/compute", icon: "◈" },
-  { key: "board", label: "看板", to: "/board", icon: "▦" },
-  { key: "database", label: "数据库", to: "/database", icon: "⛁" },
-  { key: "zt", label: "Zero Trust", to: "/zero-trust", icon: "⛨" },
+  { key: "domains", label: "域名", to: "/domains", icon: "globe" },
+  { key: "compute", label: "计算", to: "/compute", icon: "compute" },
+  { key: "board", label: "看板", to: "/board", icon: "board" },
+  { key: "database", label: "数据库", to: "/database", icon: "disc" },
+  { key: "zt", label: "Zero Trust", to: "/zero-trust", icon: "shield" },
 ];
 
 const activeTab = computed(() => String(route.meta.tab ?? "board"));
@@ -53,10 +56,33 @@ function toggleSettings() {
 const needSetup = computed(() => !gw.configured && activeTab.value !== "settings");
 
 /**
- * 顶栏只剩"当前屏名 + 右上角设置"两件事。原来右上角那条网关地址/账号名搬进了设置屏
- * （10-11 他点的：设置挪到右上角，右上角原来的塞进设置里）—— 它本来也是"这台设备的配置"，
- * 不是"这一屏的内容"，放在标题旁边会让人误读成数据口径。地址三级回落的判断（本机填写 /
- * 打包默认 / 同源 /api）在 SettingsView 里用同一个 baseSource() 算，逻辑没变。
+ * 顶栏账号胶囊（2026-10-25）：多账号是这个 App 的核心能力，但切换原来埋在设置页第 6 张卡里。
+ * 只有直连模式（APK）才有"账号"这回事 —— 网页模式的身份是网关设备令牌，没有账号可切。
+ * 切换动作仍走 gw.save（配置落本机），切完请求一次全局刷新：缓存键含 account，不会串数据，
+ * 但屏上仍是旧账号的数值，得让各屏自己重取。
+ */
+const showWho = computed(() => native && acctState.list.length > 0);
+const whoLabel = computed(() => {
+  const hit = acctState.list.find((a) => a.id === gw.config.account);
+  if (hit) return labelOf(hit);
+  return acctState.list.length ? "选择账号" : "未配账号";
+});
+const whoOpen = ref(false);
+function pickWho(a: CfAccount) {
+  whoOpen.value = false;
+  if (a.id === gw.config.account) return;
+  gw.save({ account: a.id, accountName: labelOf(a) });
+  requestReload();
+}
+function goManage() {
+  whoOpen.value = false;
+  nav.push("/settings");
+}
+
+/**
+ * 顶栏现在三件：屏名 / 账号胶囊（仅直连）/ 刷新 / 设置。它们都是"设备与这一屏"的控制，
+ * 不是数据口径，所以放顶栏；网关地址与账号详情仍在设置屏（10-11 他点的：设置挪右上角，
+ * 右上角原来那条塞进设置里）。地址三级回落的判断在 SettingsView 里用同一个 baseSource() 算。
  */
 </script>
 
@@ -67,8 +93,36 @@ const needSetup = computed(() => !gw.configured && activeTab.value !== "settings
         <span class="dot" :class="{ off: !gw.configured }" />
         <b>{{ title }}</b>
       </div>
-      <!-- 设置挪到右上角（10-11 他改的口）；右上角原来那条地址/账号一起搬进设置屏，顶栏不再放副标题 -->
-      <button class="cfg" :class="{ on: activeTab === 'settings' }" :title="activeTab === 'settings' ? '返回' : '设置'" aria-label="设置" @click="toggleSettings">⚙</button>
+      <!-- 顶栏三件套（2026-10-25）：账号胶囊（仅直连）/ 刷新当前屏 / 设置。
+           各自只做一件事，原来散在各屏右上角的 6 个「刷新」键收进这里。 -->
+      <div class="tb-act">
+        <button
+          v-if="showWho" class="who" :class="{ on: whoOpen }" :title="'当前账号：' + whoLabel + '（点开切换）'"
+          :aria-expanded="whoOpen" @click="whoOpen = !whoOpen"
+        >
+          <Icon name="account" :size="12" />
+          <span class="who-t">{{ whoLabel }}</span>
+          <Icon name="chevron" :size="9" />
+        </button>
+        <button class="tbtn" :class="{ spin: reloading }" :disabled="reloading" title="刷新当前屏" aria-label="刷新当前屏" @click="requestReload">
+          <Icon name="refresh" :size="14" />
+        </button>
+        <button class="cfg" :class="{ on: activeTab === 'settings' }" :title="activeTab === 'settings' ? '返回' : '设置'" aria-label="设置" @click="toggleSettings"><Icon name="gear" :size="14" /></button>
+      </div>
+
+      <!-- 账号下拉：每行 = 一个账号（别名优先），底部一条去设置管理。
+           下面那层透明遮罩负责"点空白处关掉"——比 document 监听省事，也不会漏掉 iframe 之外的点击。 -->
+      <div v-if="whoOpen" class="who-scrim" @click="whoOpen = false" />
+      <div v-if="whoOpen" class="who-pop" role="menu">
+        <button
+          v-for="a in acctState.list" :key="a.id" class="who-item" role="menuitem"
+          :class="{ on: a.id === gw.config.account }" @click="pickWho(a)"
+        >
+          <span class="who-n">{{ labelOf(a) }}</span>
+          <span class="who-id">{{ a.id.slice(0, 8) }}…</span>
+        </button>
+        <button class="who-more" role="menuitem" @click="goManage">管理账号与令牌</button>
+      </div>
     </header>
 
     <main class="body">
@@ -100,7 +154,7 @@ const needSetup = computed(() => !gw.configured && activeTab.value !== "settings
         :aria-current="activeTab === t.key ? 'page' : undefined"
         @click="nav.push(t.to)"
       >
-        <span class="ico">{{ t.icon }}</span>
+        <Icon class="ico" :name="t.icon" :size="17" />
         <span>{{ t.label }}</span>
       </button>
     </nav>

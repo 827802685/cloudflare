@@ -18,6 +18,7 @@ export default { name: "VerBindingsPanel" };
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import ConfirmSheet from "../ConfirmSheet.vue";
 import { api, GwError, gwWrite, workerName, writesOptIn, type D1Database, type KvNamespace, type WritePreview } from "../../lib/api";
 import { shortId } from "../../lib/fmt";
@@ -41,6 +42,31 @@ const CATS = [
   { type: "d1_database", title: "D1 数据库", whyCatalog: "候选来自 GET /v1/d1（库列表），取不到时退回手填 database_name。" },
   { type: "service", title: "服务绑定", whyCatalog: "候选来自 GET /v1/workers（脚本名）；环境按 production 填，可手改。" },
 ];
+
+/**
+ * 跨屏联动（2026-10-25）：绑定这一栏就是"这个 Worker 牵着哪些资源"的清单，
+ * 写得出来归属就该点得过去 —— KV/D1/R2 落到数据库页对应分段，service 绑定落到另一个 Worker。
+ * 以前这里只有文字：看得到"绑了哪个库"，却走不到那个库。
+ */
+const nav = useRouter();
+function canGo(b: any): boolean {
+  if (b?.type === "service") return !!String(b?.service ?? "").trim();
+  return b?.type === "kv_namespace" || b?.type === "r2_bucket" || b?.type === "d1_database";
+}
+function goBinding(b: any) {
+  switch (b?.type) {
+    case "kv_namespace": nav.push("/database?store=kv"); return;
+    case "r2_bucket": nav.push("/database?store=r2"); return;
+    case "d1_database": nav.push("/database?store=d1"); return;
+    case "service": {
+      const s = String(b?.service ?? "").trim();
+      if (s) nav.push(`/workers/${encodeURIComponent(s)}`);
+      return;
+    }
+    default:
+      return;
+  }
+}
 
 function ofType(type: string): any[] {
   return (props.bindings ?? []).filter((b: any) => b?.type === type);
@@ -232,7 +258,12 @@ const noBindings = computed(() => !props.loading && !props.err && (props.binding
       <section v-for="c in CATS" :key="c.type" v-show="ofType(c.type).length" class="cat">
         <h4 class="ttl">{{ c.title }} · {{ ofType(c.type).length }}</h4>
         <div class="list">
-          <div v-for="(b, i) in ofType(c.type)" :key="c.type + i" class="item">
+          <div
+            v-for="(b, i) in ofType(c.type)" :key="c.type + i" class="item"
+            :class="{ tap: canGo(b) }"
+            :title="canGo(b) ? '点一下去看这个资源' : undefined"
+            @click="goBinding(b)"
+          >
             <div style="min-width: 0">
               <div class="k mono">{{ b.binding || b.name || "（无绑定名）" }}</div>
               <div class="small muted">{{ labelOf(b).sub }}</div>

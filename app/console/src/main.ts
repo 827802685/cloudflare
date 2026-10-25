@@ -3,7 +3,23 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import { router } from "./router";
 import { watchSystemTheme } from "./lib/theme";
+import { loadConfig, saveConfig } from "./lib/config";
 import "./styles/main.css";
+
+/* ---------- 开发期便利：本机令牌自动落位（只在 vite dev 生效） ----------
+ * 每次 `npm run dev` 都要先去设置页粘一遍设备令牌，纯属浪费 —— 令牌本来就在
+ * app/gateway/.device-token 里。约定：app/console/.env.local 写 VITE_DEVICE_TOKEN=<设备令牌>，
+ * 该文件已在 .gitignore 里（`.env.local`）。
+ * 只在本机还没存过令牌时补一次，之后设置页怎么改都听设置页的（不自作主张覆盖人的选择）。
+ * 打包产物里 import.meta.env.DEV 恒为 false，这段会被摇掉，令牌不会进 APK。
+ */
+if (import.meta.env.DEV) {
+  const seed = String(import.meta.env.VITE_DEVICE_TOKEN ?? "").trim();
+  if (seed) {
+    const c = loadConfig();
+    if (!c.deviceToken) saveConfig({ ...c, deviceToken: seed });
+  }
+}
 
 /**
  * 手机上真正跑的形态是 PWA（加到主屏），不是 APK：

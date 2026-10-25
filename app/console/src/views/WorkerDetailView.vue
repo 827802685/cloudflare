@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, type Ref } from "vue";
+import { reloadTick } from "../lib/bus";
 import { useRoute } from "vue-router";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import FoldNote from "../components/FoldNote.vue";
+import WriteGate from "../components/WriteGate.vue";
 import CronPanel from "../components/ver/CronPanel.vue";
 import VarsPanel from "../components/ver/VarsPanel.vue";
 import BindingsPanel from "../components/ver/BindingsPanel.vue";
@@ -16,7 +18,6 @@ import {
   previewWorkerDomainAttach,
   previewWorkerDomainDetach,
   previewWorkerSubdomain,
-  setWritesOptIn,
   writesOptIn,
   type WritePreview,
 } from "../lib/api";
@@ -117,6 +118,8 @@ async function loadAll() {
 onMounted(loadAll);
 
 /** 「刷新」= 这 8 块全部绕过缓存重来；平时切进切出走缓存，不再重复打 CF */
+/** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
+watch(reloadTick, () => { void refresh(); });
 function refresh() { forceFreshWindow(); loadAll(); }
 
 /** 列表页动作宫格跳进来时带 ?c=versions，滚到那张卡并闪一下。竞品用的是弹窗，我们是长页，锚点少一层状态 */
@@ -218,11 +221,8 @@ const domFull = computed(() => {
   return z ? `${p}.${z}` : p;
 });
 
+/** 写开关状态只留给按钮 disabled 判断；读写与文案在 WriteGate 组件里 */
 const optIn = ref(writesOptIn());
-function toggleOptIn(v: boolean) {
-  setWritesOptIn(v);
-  optIn.value = writesOptIn();
-}
 
 const preview = ref<WritePreview | null>(null);
 const busy = ref(false);
@@ -431,15 +431,16 @@ function isLive(versionId: unknown): boolean {
   <div>
     <div class="row" style="justify-content: space-between; margin-bottom: 10px">
       <h2 style="margin: 0; font-size: 17px">{{ name }}</h2>
-      <button class="ghost" :disabled="versions.loading" @click="refresh">{{ versions.loading ? "加载中" : "刷新" }}</button>
     </div>
 
     <div class="row" style="gap: 6px; flex-wrap: wrap; margin-bottom: 10px">
       <button class="chip" type="button" @click="jumpTo('current')">当前版本</button>
       <button class="chip" type="button" @click="jumpTo('versions')">版本列表 / 回滚</button>
       <button class="chip" type="button" @click="jumpTo('deployments')">部署历史</button>
+      <button class="chip" type="button" @click="jumpTo('traffic')">流量归属</button>
       <button class="chip" type="button" @click="jumpTo('domains')">自定义域名</button>
       <button class="chip" type="button" @click="jumpTo('settings')">配置信息</button>
+      <button class="chip" type="button" @click="jumpTo('bindings')">绑定</button>
       <button class="chip" type="button" @click="jumpTo('secrets')">Secret</button>
       <button class="chip" type="button" @click="jumpTo('crons')">定时触发</button>
     </div>
@@ -496,10 +497,7 @@ function isLive(versionId: unknown): boolean {
     <div class="card" id="c-domains">
       <div class="row" style="justify-content: space-between; align-items: flex-start; gap: 10px">
         <h3 style="margin: 0">自定义域名（{{ myDomains.length }} 个）</h3>
-        <label class="small muted" style="display: flex; align-items: center; gap: 6px; white-space: nowrap">
-          <input type="checkbox" :checked="optIn" @change="toggleOptIn(($event.target as HTMLInputElement).checked)" />
-          本机写开关
-        </label>
+        <WriteGate v-model="optIn" variant="inline" />
       </div>
       <ErrorNote :err="domains.err || zones.err" />
       <div class="small muted" style="margin: 6px 0 8px">
@@ -719,12 +717,11 @@ function isLive(versionId: unknown): boolean {
     <div class="card" id="c-switch">
       <h3>版本切换 / 回滚</h3>
       <div class="small muted" style="margin-bottom: 10px">
-        两个入口：<b>版本列表</b>里每个非运行中的版本行右侧有「回滚」；<b>部署历史</b>里单版本部署也有「回滚到此」。
-        点完会打开版本历史并预选那一版、直接展开回滚面板（滑杆选流量占比，100% 即整版回滚）。
+        回滚从两个地方发起：<b>版本列表</b>里每个非运行中的版本行右侧有「回滚」，<b>部署历史</b>里单版本部署有「回滚到此」。
+        点完会打开回滚面板并预选那一版（滑杆选流量占比，100% 即整版回滚）。
         确认后真发 <code>POST …/deployments</code>；APK 直连即时生效，网关模式还需网关侧
         <code>WRITE_ENABLED</code> 放行，关着会如实报 <code>501 writesDisabled</code>。
       </div>
-      <button class="ghost" type="button" @click="startRollback('')">打开版本历史 / 回滚</button>
     </div>
 
     <VersionDialog

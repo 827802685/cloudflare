@@ -15,6 +15,7 @@ export default { name: "VerVarsPanel" };
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import ConfirmSheet from "../ConfirmSheet.vue";
+import WriteGate from "../WriteGate.vue";
 import { GwError, gwWrite, writesOptIn, type WritePreview } from "../../lib/api";
 
 const props = withDefaults(
@@ -213,7 +214,9 @@ function cancelWrite() {
 
 <template>
   <div class="vars">
-    <p class="small muted">本机写开关：{{ optIn ? "已打开" : "未打开（点了也发不出去，只准备请求）" }}</p>
+    <!-- 原来这里只有一行"已打开/未打开"的文字，看得见却开不了；换成同一个开关组件，就地能开 -->
+    <WriteGate v-model="optIn" variant="inline" />
+    <p class="small muted" v-if="!optIn">关着时点保存只会准备请求、不发出。</p>
 
     <div class="small errtext" v-if="err && !loading">这块没读出来：{{ (err as any).message || "读取失败" }}</div>
     <div class="empty" v-else-if="loading">加载中…</div>

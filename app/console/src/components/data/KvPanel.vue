@@ -14,7 +14,8 @@ import RowCard from "../RowCard.vue";
 import FoldNote from "../FoldNote.vue";
 import { useFold } from "../../lib/lists";
 import StoreSplit from "./StoreSplit.vue";
-import { api, dropMem, forceFreshWindow, GwError, setWritesOptIn, writesOptIn, type KvNamespace, type KvKeysResult, type WritePreview } from "../../lib/api";
+import WriteGate from "../WriteGate.vue";
+import { api, dropMem, forceFreshWindow, GwError, writesOptIn, type KvNamespace, type KvKeysResult, type WritePreview } from "../../lib/api";
 
 type Slot<T> = { data: T | null; err: GwError | null; loading: boolean };
 const mk = <T,>(): Slot<T> => ({ data: null, err: null, loading: false });
@@ -101,8 +102,8 @@ async function copyContent(text: string) {
 
 /* ---------- 写侧：写键值 / 删键（2026-10-20 实测：上游 PUT values/{key} 要裸文本 body，
  * 两层把客户端 {value} 转成裸文本；DELETE 200、删后 GET 404。归写闸门/本机写开关管） ---------- */
+/** 写开关状态只留给写按钮的 disabled 判断；读写与文案在 WriteGate 里 */
 const optIn = ref(writesOptIn());
-function toggleOptIn(v: boolean) { setWritesOptIn(v); optIn.value = writesOptIn(); }
 
 const showWrite = ref(false);
 const wKey = ref("");
@@ -250,13 +251,10 @@ function cancelSheet() { preview.value = null; sheetErr.value = ""; }
             </button>
           </div>
         </div>
-        <div class="switchline">
-          <label class="row" style="gap: 6px">
-            <input type="checkbox" class="switch" :checked="optIn" @change="toggleOptIn(($event.target as HTMLInputElement).checked)" />
-            <span>本机写开关：{{ optIn ? "已打开" : "未打开" }}</span>
-          </label>
-          <span class="small muted">{{ optIn ? "确认后写请求会真的发出（网关模式还有 WRITE_ENABLED 一道）。" : "关着时写请求不会离开这台设备。" }}</span>
-        </div>
+        <WriteGate
+          v-model="optIn" variant="bar"
+          :note="optIn ? '确认后写请求会真的发出（网关模式还有 WRITE_ENABLED 一道）。' : '关着时写请求不会离开这台设备。'"
+        />
         <div v-if="showWrite" class="card" style="margin-top:8px;background:var(--panel-2)">
           <div class="row" style="gap:6px;align-items:center;margin-bottom:6px">
             <input v-model="wKey" class="field" placeholder="Key（≤512 字节）" style="flex:1;min-width:0;font-family:var(--font-num);font-size:12px" />

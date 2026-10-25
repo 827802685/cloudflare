@@ -52,7 +52,7 @@ await api("SQL AE 默认数据集名", "/analytics/sql", { method: "POST", body:
 console.log("\n=== 其余 ===");
 await api("d1 time_travel 候选", "/accounts/" + ACC + "/d1/database/84f4174e-c620-481a-bd3a-e1312dfbddee/time_travel");
 await api("zones/{z}/dns_records?type=A", "/zones/" + ZT + "/dns_records?type=A&per_page=10");
-await api("zones/{z}/dns_records/{id}", "/zones/" + ZT + "/dns_records/f2c7ec45a750517b4b8257f2a1b4dc47");
+await api("zones/{z}/dns_records/{id}", "/zones/" + ZT + "/dns_records/993ec836f8d85674ebe4e9f208dd40e9");
 await api("pages/{fake} 项目详情", "/accounts/" + ACC + "/pages/projects/__none__");
 await api("accounts/{a}/workers/services/environment", "/accounts/" + ACC + "/workers/services/rin-server/environments/production/scripts");
 await api("versions/{v}/secrets", "/accounts/" + ACC + "/workers/scripts/rin-server/versions/" + "e0b67a07-8532-4843-b2ff-f27029fc135b/secrets");

@@ -12,7 +12,8 @@
  * 四块各用自己的状态（和看板同一套约定）：一块 403 不拖累其余，"没取到"和"确实一条没配"
  * 必须是两句话（docs/09 §E16）。
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { reloadTick } from "../lib/bus";
 import ErrorNote from "../components/ErrorNote.vue";
 import RowCard from "../components/RowCard.vue";
 import { api, forceFreshWindow, GwError } from "../lib/api";
@@ -46,6 +47,8 @@ async function load() {
 }
 
 onMounted(load);
+/** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
+watch(reloadTick, () => { void refresh(); });
 function refresh() {
   forceFreshWindow();
   load();
@@ -62,7 +65,6 @@ const configuredNothing = computed(
   <div>
     <div class="row" style="justify-content: space-between; margin-bottom: 10px">
       <span class="muted small">Zero Trust · Cloudflare Access（只读）</span>
-      <button class="ghost" :disabled="org.loading" @click="refresh">{{ org.loading ? "加载中" : "刷新" }}</button>
     </div>
 
     <div class="card">

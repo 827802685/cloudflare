@@ -6,6 +6,8 @@ const props = defineProps<{
   height?: number;
   format?: (v: number) => string;
   color?: string;
+  /** 只出曲线，不出首/尾/峰值那行图例。主表盘里当 34px 迷你走纸用（底部那行会把数字挤走） */
+  bare?: boolean;
 }>();
 
 const W = 320;
@@ -42,7 +44,7 @@ const geo = computed(() => {
       <path :d="geo.area" :fill="color ?? 'var(--accent)'" opacity=".14" />
       <path :d="geo.line" fill="none" :stroke="color ?? 'var(--accent)'" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" />
     </svg>
-    <div class="row" style="justify-content: space-between">
+    <div class="row" style="justify-content: space-between" v-if="!bare">
       <span class="muted small">{{ geo.first }}</span>
       <span class="muted small">峰值 {{ geo.max }} · 谷值 {{ geo.min }}</span>
       <span class="muted small">{{ geo.last }}</span>

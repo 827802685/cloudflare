@@ -6,6 +6,7 @@
  *  · 只挂载当前这一块 —— 另两块连网关请求都不该发（免费档限流实测约 1200 请求/5 分钟/IP）。
  */
 import { computed, ref, watch } from "vue";
+import { reloadTick } from "../lib/bus";
 import { useRoute, useRouter } from "vue-router";
 import D1Panel from "../components/data/D1Panel.vue";
 import KvPanel from "../components/data/KvPanel.vue";
@@ -40,6 +41,11 @@ watch(
 
 const PANELS: Record<Store, unknown> = { d1: D1Panel, kv: KvPanel, r2: R2Panel };
 const panel = computed(() => PANELS[store.value]);
+
+/** 顶栏「刷新当前屏」：三块面板各自有 refresh，但没往外暴露（它们只认自己的状态）。
+ *  重挂是最省事又不会说谎的"整块重取"—— key 一变，组件销毁重建，onMounted 的取数照原样跑一遍。 */
+const reloadKey = ref(0);
+watch(reloadTick, () => { reloadKey.value++; });
 </script>
 
 <template>
@@ -50,7 +56,7 @@ const panel = computed(() => PANELS[store.value]);
         class="seg-b" :class="{ on: store === s.k }" @click="store = s.k"
       >{{ s.label }}</button>
     </div>
-    <component :is="panel" />
+    <component :is="panel" :key="store + ':' + reloadKey" />
   </div>
 </template>
 
