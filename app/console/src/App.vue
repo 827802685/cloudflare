@@ -1,17 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useGatewayStore } from "./stores/gateway";
 import { gwHealth, isNativeApp } from "./lib/api";
 import { checkUpdate, type UpdateInfo } from "./lib/version";
 import UpdateDialog from "./components/UpdateDialog.vue";
 import Icon from "./components/Icon.vue";
-import { acctState, labelOf, type CfAccount } from "./lib/accounts";
-import { reloading, requestReload } from "./lib/bus";
+import { acctState, labelOf, renameAccount, type CfAccount } from "./lib/accounts";
+import { agg, aggAccounts, aggReady, aggSkipped } from "./lib/aggregate";
+import { reloading, reloadTick, requestReload } from "./lib/bus";
 
 const route = useRoute();
 const nav = useRouter();
 const gw = useGatewayStore();
+/**
+ * 顶栏账号胶囊读的是 store 里的 config，而切号/合并后退出走的是 lib/config 的 saveConfig
+ * （focusAccount 只写本机配置，拿不到 store 上下文）。不在这里补一次重读，
+ * 就会出现"数据已经切到 B、顶栏还写着 A"。刷新总线一响就同步一次，代价只是读一遍 localStorage。
+ */
+watch(reloadTick, () => gw.reload());
 /** APK 直连模式：没有网关，进门条件就是"保险箱里有至少一把 CF 令牌" */
 const native = isNativeApp();
 
@@ -63,6 +70,7 @@ const needSetup = computed(() => !gw.configured && activeTab.value !== "settings
  */
 const showWho = computed(() => native && acctState.list.length > 0);
 const whoLabel = computed(() => {
+  if (agg.on) return `合并 ${aggAccounts().length} 账号`;
   const hit = acctState.list.find((a) => a.id === gw.config.account);
   if (hit) return labelOf(hit);
   return acctState.list.length ? "选择账号" : "未配账号";
@@ -70,13 +78,51 @@ const whoLabel = computed(() => {
 const whoOpen = ref(false);
 function pickWho(a: CfAccount) {
   whoOpen.value = false;
-  if (a.id === gw.config.account) return;
+  const wasAgg = agg.on;
+  agg.on = false;
+  if (a.id === gw.config.account) {
+    if (wasAgg) requestReload(); // 只是从合并视图退回单账号，数还得重取
+    return;
+  }
   gw.save({ account: a.id, accountName: labelOf(a) });
   requestReload();
 }
 function goManage() {
   whoOpen.value = false;
   nav.push("/settings");
+}
+
+/* ---------- 合并视图（只读）：入口在账号下拉，至少两个账号才出现 ---------- */
+function toggleAgg() {
+  whoOpen.value = false;
+  agg.on = !agg.on;
+  requestReload(); // 各屏 watch(reloadTick) 自己决定取数与切换视图
+}
+
+/* ---------- 下拉内联改名：只改本机显示名，令牌与账号 id 一律不动 ---------- */
+const renaming = ref("");
+const aliasDraft = ref("");
+const renameErr = ref("");
+function beginRename(a: CfAccount) {
+  renaming.value = a.id;
+  aliasDraft.value = a.alias || "";
+  renameErr.value = "";
+}
+function cancelRename() {
+  renaming.value = "";
+  aliasDraft.value = "";
+  renameErr.value = "";
+}
+async function saveRename(a: CfAccount) {
+  try {
+    const list = await renameAccount(a.id, aliasDraft.value);
+    const cur = list.find((x) => x.id === a.id);
+    // 改的是当前账号时，顶栏配置里那份显示名一起跟上（缓存键只看 id，不影响取数）
+    if (cur && gw.config.account === a.id) gw.save({ account: cur.id, accountName: labelOf(cur) });
+    cancelRename();
+  } catch (e) {
+    renameErr.value = String((e as Error)?.message || e);
+  }
 }
 
 /**
@@ -114,13 +160,35 @@ function goManage() {
            下面那层透明遮罩负责"点空白处关掉"——比 document 监听省事，也不会漏掉 iframe 之外的点击。 -->
       <div v-if="whoOpen" class="who-scrim" @click="whoOpen = false" />
       <div v-if="whoOpen" class="who-pop" role="menu">
-        <button
-          v-for="a in acctState.list" :key="a.id" class="who-item" role="menuitem"
-          :class="{ on: a.id === gw.config.account }" @click="pickWho(a)"
+        <div
+          v-for="a in acctState.list" :key="a.id" class="who-row"
+          :class="{ on: a.id === gw.config.account && !agg.on }"
         >
-          <span class="who-n">{{ labelOf(a) }}</span>
-          <span class="who-id">{{ a.id.slice(0, 8) }}…</span>
+          <template v-if="renaming === a.id">
+            <input
+              v-model="aliasDraft" class="who-edit" :placeholder="a.name || '本地显示名'"
+              spellcheck="false" autocomplete="off"
+              @keydown.enter.prevent="saveRename(a)" @keydown.esc.prevent="cancelRename"
+            />
+            <button class="who-save" @click="saveRename(a)">存</button>
+            <button class="who-x" @click="cancelRename">撤</button>
+          </template>
+          <template v-else>
+            <button class="who-item" role="menuitem" @click="pickWho(a)">
+              <span class="who-n">{{ labelOf(a) }}</span>
+              <span class="who-id">{{ a.id.slice(0, 8) }}…</span>
+            </button>
+            <button class="who-pen" :title="'重命名「' + labelOf(a) + '」（只改本机显示名）'" @click.stop="beginRename(a)">改</button>
+          </template>
+        </div>
+        <p v-if="renameErr" class="who-err">{{ renameErr }}</p>
+        <!-- 合并视图（只读）：一次性把两个以上账号的数据加起来看；切换/写操作仍回单账号 -->
+        <button v-if="aggReady()" class="who-agg" :class="{ on: agg.on }" role="menuitem" @click="toggleAgg">
+          {{ agg.on ? "退出合并视图" : `合并全部账号（${aggAccounts().length} 个 · 只读）` }}
         </button>
+        <p v-if="aggReady() && !agg.on && aggSkipped().length" class="who-note">
+          网页模式下 OAuth 账号拿不到令牌，合并时跳过 {{ aggSkipped().length }} 个。
+        </p>
         <button class="who-more" role="menuitem" @click="goManage">管理账号与令牌</button>
       </div>
     </header>

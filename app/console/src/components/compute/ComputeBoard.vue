@@ -17,6 +17,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import type { GwError } from "../../lib/api";
 import { pageDeployed, pageLastActivity, workerName } from "../../lib/api";
+import { focusAccount } from "../../lib/aggregate";
 import { num, rel } from "../../lib/fmt";
 
 const props = defineProps<{
@@ -25,6 +26,8 @@ const props = defineProps<{
   wErr: GwError | null;
   pErr: GwError | null;
   loading?: boolean;
+  /** 多账号合一：清单项带 __acc / __accName，点进详情前要先切回所属账号 */
+  agg?: boolean;
 }>();
 
 const nav = useRouter();
@@ -34,6 +37,9 @@ interface BoardRow {
   key: string;
   kind: Kind;
   name: string;
+  /** 合并模式才有：归属账号 id / 显示名 */
+  acc: string;
+  accName: string;
   /** 原始时间戳（ISO）；空 = 接口没给 */
   last: string;
   /** 这个时间是什么：Worker 的修改 / Pages 的部署或创建（没有部署记录时只能是创建） */
@@ -59,15 +65,18 @@ const rows = computed<BoardRow[]>(() => {
   for (const w of props.workers) {
     const name = workerName(w);
     if (!name) continue;
+    const acc = String(w?.__acc ?? "");
     const last = String(w?.modified_on ?? w?.created_on ?? "");
     const bits: string[] = [];
     if (w?.has_assets) bits.push("静态资源");
     if (w?.placement?.mode === "smart") bits.push("智能放置");
     if (w?.tail_consumers?.length) bits.push("实时日志消费者");
     out.push({
-      key: "w:" + name,
+      key: "w:" + acc + ":" + name,
       kind: "worker",
       name,
+      acc,
+      accName: String(w?.__accName ?? ""),
       last,
       lastWord: "修改",
       lastMs: ms(last),
@@ -83,6 +92,7 @@ const rows = computed<BoardRow[]>(() => {
   for (const p of props.pages) {
     const name = String(p?.name ?? "").trim();
     if (!name) continue;
+    const acc = String(p?.__acc ?? "");
     const deployed = pageDeployed(p);
     // 没有部署记录时只能拿项目创建时间，措辞也要跟着改成「创建」，别把创建说成部署
     const last = deployed ? pageLastActivity(p) : String(p?.created_on ?? "");
@@ -92,9 +102,11 @@ const rows = computed<BoardRow[]>(() => {
     const sub = String(p?.subdomain ?? "").trim();
     if (sub) bits.push(sub);
     out.push({
-      key: "p:" + name,
+      key: "p:" + acc + ":" + name,
       kind: "pages",
       name,
+      acc,
+      accName: String(p?.__accName ?? ""),
       last,
       lastWord: deployed ? "部署" : "创建",
       lastMs: ms(last),
@@ -112,6 +124,8 @@ const rows = computed<BoardRow[]>(() => {
 
 /* ---------- 4 格合计：全部由那两条列表派生 ---------- */
 const blank = computed(() => !!props.loading && rows.value.length === 0);
+/** 合并模式下清单覆盖了几个账号（0 = 单账号视图，不显示） */
+const acctN = computed(() => new Set(rows.value.map((r) => r.acc).filter(Boolean)).size);
 const wCount = computed(() => (props.wErr ? null : props.workers.length));
 const pCount = computed(() => (props.pErr ? null : props.pages.length));
 const assets = computed(() => props.workers.filter((w) => !!w?.has_assets).length);
@@ -139,6 +153,8 @@ const shownRows = computed(() => {
 });
 
 function open(r: BoardRow, c?: string) {
+  // 合并视图：详情页读的是"当前账号"，先切到条目所属账号（focusAccount 顺带退出合并视图）
+  if (props.agg && r.acc) focusAccount(r.acc);
   const base = r.kind === "worker" ? "/workers/" : "/pages/";
   nav.push(base + encodeURIComponent(r.name) + (c ? "?c=" + c : ""));
 }
@@ -148,7 +164,9 @@ function open(r: BoardRow, c?: string) {
   <div class="card board">
     <div class="bh">
       <h3>Workers + Pages 看板</h3>
-      <span class="small muted">共 {{ rows.length }} 项 • 按最近改动并成一份</span>
+      <span class="small muted">
+        {{ agg && acctN ? acctN + " 个账号 · 只读 · " : "" }}共 {{ rows.length }} 项 • 按最近改动并成一份
+      </span>
     </div>
 
     <div v-if="blank" class="empty">加载中…</div>
@@ -191,7 +209,11 @@ function open(r: BoardRow, c?: string) {
         <div v-for="r in shownRows" :key="r.key" class="brow" @click="open(r)">
           <span class="bp" :class="r.kind" :title="r.kind === 'worker' ? 'Worker' : 'Pages 项目'">{{ r.kind === "worker" ? "W" : "P" }}</span>
           <div class="bm">
-            <div class="bt">{{ r.name }}</div>
+            <div class="bt">
+              <span class="bname">{{ r.name }}</span>
+              <!-- 合并模式：同名资源可能来自不同账号，必须标清 -->
+              <span v-if="r.accName" class="bacc" :title="'归属账号 ' + r.acc">{{ r.accName }}</span>
+            </div>
             <div class="bmeta">
               <span v-if="r.last" class="last">{{ rel(r.last) }} {{ r.lastWord }}</span>
               <span v-else class="last">{{ r.kind === "worker" ? "没有修改时间字段" : "没有部署 / 创建时间" }}</span>
@@ -212,7 +234,7 @@ function open(r: BoardRow, c?: string) {
 
       <div v-if="!shownRows.length" class="empty">
         <template v-if="q">没有匹配「{{ q }}」的资源</template>
-        <template v-else>这个账号还没有 Worker 或 Pages 项目（不是没取到：两条列表都返回了空）</template>
+        <template v-else>{{ agg ? "这些账号还没有 Worker 或 Pages 项目" : "这个账号还没有 Worker 或 Pages 项目（不是没取到：两条列表都返回了空）" }}</template>
       </div>
     </template>
   </div>
@@ -262,7 +284,14 @@ function open(r: BoardRow, c?: string) {
 .bp.worker { color: var(--accent); border-color: var(--accent-dim); }
 .bm { flex: 1; min-width: 0; }
 .bt {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
   font-size: var(--t-sm); font-weight: 600;
+}
+.bname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 合并模式的账号标：与「已部署」同一行高，窄屏也不压名称 */
+.bacc {
+  flex: none; max-width: 88px; padding: 0 5px; border: 1px solid var(--line); border-radius: 5px;
+  color: var(--muted); background: var(--panel-2); font-size: var(--t-2xs); font-weight: 400;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .bmeta {

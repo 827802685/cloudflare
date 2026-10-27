@@ -309,15 +309,44 @@ body {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
   box-shadow: var(--e-2); padding: 5px;
 }
+/* 一行账号 = 选账号按钮 + 改名小键；改名时就地换成输入框（不跳设置页） */
+.who-row { display: flex; align-items: center; gap: 2px; border-radius: 8px; }
+.who-row:hover { background: var(--panel-2); }
+.who-row.on .who-item { color: var(--accent); font-weight: 600; }
 .who-item {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-  width: 100%; padding: 8px 9px; border: 0; border-radius: 8px;
+  flex: 1; min-width: 0; width: 100%; padding: 8px 9px; border: 0; border-radius: 8px;
   background: none; color: var(--fg); font-size: var(--t-sm); text-align: left; cursor: pointer;
 }
-.who-item:hover { background: var(--panel-2); }
-.who-item.on { color: var(--accent); font-weight: 600; }
+.who-pen {
+  flex: none; padding: 5px 6px; border: 0; border-radius: 7px; background: none;
+  color: var(--muted); font-size: var(--t-2xs); line-height: 1; cursor: pointer;
+}
+.who-pen:hover { color: var(--accent); background: var(--panel-3); }
+.who-edit {
+  flex: 1; min-width: 0; padding: 7px 8px; border: 1px solid var(--accent-dim);
+  border-radius: 8px; background: var(--panel); color: var(--fg); font-size: var(--t-sm);
+}
+.who-save, .who-x {
+  flex: none; padding: 6px 7px; border: 0; border-radius: 7px; background: none;
+  font-size: var(--t-2xs); line-height: 1; cursor: pointer;
+}
+.who-save { color: var(--accent); }
+.who-x { color: var(--muted); }
+.who-save:hover { background: var(--panel-3); }
+.who-x:hover { color: var(--bad); }
 .who-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who-id { flex: none; color: var(--muted); font-family: var(--font-num); font-size: var(--t-2xs); }
+.who-err { margin: 4px 6px 2px; font-size: var(--t-2xs); color: var(--bad); word-break: break-word; }
+/* 合并视图入口：与账号行同宽的一条，右侧写"只读"口径 */
+.who-agg {
+  width: 100%; margin-top: 4px; padding: 8px 9px; border: 1px solid var(--line-soft);
+  border-radius: 8px; background: var(--panel-2); color: var(--fg-2);
+  font-size: var(--t-xs); text-align: left; cursor: pointer;
+}
+.who-agg:hover { color: var(--accent); border-color: var(--accent-dim); }
+.who-agg.on { color: var(--accent); border-color: var(--accent-dim); font-weight: 600; }
+.who-note { margin: 4px 6px 0; font-size: var(--t-2xs); color: var(--muted); line-height: 1.5; }
 .who-more {
   width: 100%; padding: 8px 9px; border: 0; border-top: 1px solid var(--line-soft);
   background: none; color: var(--muted); font-size: var(--t-xs); text-align: left; cursor: pointer;

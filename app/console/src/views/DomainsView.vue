@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { reloadTick } from "../lib/bus";
+import { reloadTick, requestReload } from "../lib/bus";
 import ErrorNote from "../components/ErrorNote.vue";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
 import DnsRecordForm from "../components/dns/DnsRecordForm.vue";
@@ -11,6 +11,7 @@ import ZoneStatusCard from "../components/dns/ZoneStatusCard.vue";
 import WriteGate from "../components/WriteGate.vue";
 import {
   api,
+  apiAs,
   dropMem,
   forceFreshWindow,
   GwError,
@@ -22,6 +23,8 @@ import {
   type WritePreview,
 } from "../lib/api";
 import { dt } from "../lib/fmt";
+import { labelOf } from "../lib/accounts";
+import { agg, aggAccounts, aggSkipped, focusAccount, mapLimit } from "../lib/aggregate";
 
 type Slot<T> = { data: T | null; err: GwError | null; loading: boolean };
 const mk = <T,>(): Slot<T> => ({ data: null, err: null, loading: false });
@@ -36,6 +39,21 @@ const sub = ref<Slot<{ subdomain?: string }>>(mk());
 /** Pages 自定义域名：按项目分组。GET /v1/pages 拿到项目，再逐个 GET …/domains（上游没有账户级聚合口） */
 type PageDomainsGroup = { project: string; domains: any[]; err?: GwError };
 const pageDomains = ref<Slot<PageDomainsGroup[]>>(mk());
+
+/* ---------- 多账号合一（只读）：每个账号一份「站点 + 记录 + 路由 + 绑定」 ---------- */
+type AggZone = { id: string; zone: any; records: any[]; routes: any[] };
+type AggBundle = {
+  acc: string;
+  accName: string;
+  pending: boolean;
+  zones: AggZone[];
+  domains: any[];
+  pageDomains: PageDomainsGroup[];
+  errs: Array<{ label: string; err: GwError }>;
+};
+const aggData = ref<AggBundle[]>([]);
+const aggLoading = ref(false);
+const aggDone = ref(0);
 const zoneId = ref("");
 /** 当前选中 zone 的名称（用于写侧 preview* 回显） */
 const currentZoneName = computed(() => {
@@ -67,7 +85,71 @@ async function grab<T>(slot: { value: Slot<T> }, fn: () => Promise<T>) {
   catch (e) { slot.value = { data: slot.value.data, loading: false, err: e instanceof GwError ? e : new GwError("unknown", 0, null, String(e)) }; }
 }
 
+const arrOf = (r: any): any[] => (Array.isArray(r?.result) ? r.result : []);
+const asGw = (e: unknown): GwError => (e instanceof GwError ? e : new GwError("unknown", 0, null, String((e as Error)?.message || e)));
+
+/**
+ * 合并模式取数：一个账号一个 bundle，账号之间并发 2、同账号里 zone 之间并发 3。
+ * 每类请求各自 catch —— 一个 zone 的 DNS 403 不该让这个账号的其它 zone 一起消失，
+ * 更不该让另一个账号整屏没了。
+ */
+async function loadAgg() {
+  aggLoading.value = true;
+  aggDone.value = 0;
+  const accs = aggAccounts();
+  aggData.value = accs.map((a) => ({
+    acc: a.id, accName: labelOf(a), pending: true, zones: [], domains: [], pageDomains: [], errs: [],
+  }));
+  await mapLimit(accs, 2, async (a) => {
+    const b = aggData.value.find((x) => x.acc === a.id);
+    if (!b) return;
+    const e = apiAs(a.id);
+
+    try {
+      const zs = arrOf(await e.zones());
+      b.zones = await mapLimit(zs, 3, async (z: any) => {
+        const [rec, rt] = await Promise.allSettled([e.dnsRecords(String(z.id)), e.zoneRoutes(String(z.id))]);
+        if (rec.status === "rejected") b.errs.push({ label: `${z?.name || z?.id} · DNS`, err: asGw(rec.reason) });
+        if (rt.status === "rejected") b.errs.push({ label: `${z?.name || z?.id} · 路由`, err: asGw(rt.reason) });
+        return {
+          id: String(z?.id ?? ""),
+          zone: z,
+          records: rec.status === "fulfilled" ? arrOf(rec.value) : [],
+          routes: rt.status === "fulfilled" ? arrOf(rt.value) : [],
+        };
+      });
+    } catch (e2) {
+      b.errs.push({ label: "站点列表", err: asGw(e2) });
+    }
+
+    try { b.domains = arrOf(await e.domains()); }
+    catch (e2) { b.errs.push({ label: "Worker 自定义域名", err: asGw(e2) }); }
+
+    try {
+      const list = arrOf(await e.pages());
+      b.pageDomains = await mapLimit(list, 3, async (p: any) => {
+        const project = String(p?.name ?? "");
+        if (!project) return { project: "", domains: [] };
+        try { return { project, domains: arrOf(await e.pageDomains(project)) }; }
+        catch (e2) {
+          const err = asGw(e2);
+          // 单个项目读不到域名（403/404）不该静默吞掉，也不该影响同账号其它项目
+          b.errs.push({ label: `${project} · Pages 域名`, err });
+          return { project, domains: [], err };
+        }
+      });
+    } catch (e2) {
+      b.errs.push({ label: "Pages 域名", err: asGw(e2) });
+    }
+
+    b.pending = false;
+    aggDone.value++;
+  });
+  aggLoading.value = false;
+}
+
 async function loadTop() {
+  if (agg.on) { await loadAgg(); return; }
   await Promise.allSettled([
     grab(domains, async () => { const r: any = await api.domains(); return Array.isArray(r.result) ? r.result : (r.result ?? []); }),
     grab(zones, async () => { const r = await api.zones(); return Array.isArray(r.result) ? r.result : []; }),
@@ -96,6 +178,7 @@ async function loadTop() {
 }
 
 async function loadZone() {
+  if (agg.on) return; // 合并模式没有"当前站点"，记录随 bundle 一起取
   if (!zoneId.value) return;
   await Promise.allSettled([
     grab(records, async () => { const x = await api.dnsRecords(zoneId.value); return Array.isArray(x.result) ? x.result : []; }),
@@ -118,8 +201,8 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
 /** 「刷新」= 这一屏全部绕过两层缓存重来；平时进这屏只发命中的那几条 */
 /** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
 watch(reloadTick, () => { void refresh(); });
-async function refresh() { forceFreshWindow(); await loadTop(); await loadZone(); }
-watch(zoneId, () => { editorOpen.value = false; editorRecord.value = null; editorPreset.value = null; routeOpen.value = false; routeEditing.value = null; loadZone(); });
+async function refresh() { forceFreshWindow(); if (agg.on) { await loadAgg(); } else { await loadTop(); await loadZone(); } }
+watch(zoneId, () => { if (agg.on) return; editorOpen.value = false; editorRecord.value = null; editorPreset.value = null; routeOpen.value = false; routeEditing.value = null; loadZone(); });
 
 const zoneName = computed(() => (zones.value.data ?? []).find((z: any) => String(z.id) === zoneId.value)?.name ?? "");
 const currentZone = computed(() => (zones.value.data ?? []).find((z: any) => String(z.id) === zoneId.value) ?? null);
@@ -132,46 +215,111 @@ const zoneSummary = computed(() => {
 });
 const router = useRouter();
 
-/** 把 DNS 记录、Worker / Pages 自定义域名、Workers 路由按主机名合成一行 —— 同一个域名只出现一次 */
-type HostRow = { host: string; records: any[]; workers: any[]; pages: any[]; routes: any[] };
-function hostInZone(h: string): boolean {
-  const z = zoneName.value.toLowerCase();
+/** 把 DNS 记录、Worker / Pages 自定义域名、Workers 路由按主机名合成一行 —— 同一个域名只出现一次。
+ *  合并模式下键里再加账号 id：两个账号都有 example.com 时谁都不该覆盖谁。 */
+type HostRow = {
+  key: string;
+  host: string;
+  acc: string;
+  accName: string;
+  records: any[];
+  workers: any[];
+  pages: any[];
+  routes: any[];
+};
+
+function hostUnder(h: string, zone: string): boolean {
+  const z = zone.toLowerCase();
   if (!z) return true;
   const s = h.toLowerCase().replace(/^\*\./, "");
   return s === z || s.endsWith("." + z);
 }
+function hostInZone(h: string): boolean {
+  const z = zoneName.value.toLowerCase();
+  return !z || hostUnder(h, z);
+}
+
 const mergedRows = computed<HostRow[]>(() => {
   const map = new Map<string, HostRow>();
-  const get = (host: string): HostRow => {
-    const key = host.trim().toLowerCase();
+  const get = (acc: string, accName: string, host: string): HostRow => {
+    const key = (acc ? acc + "|" : "") + host.trim().toLowerCase();
     let row = map.get(key);
     if (!row) {
-      row = { host: host.trim(), records: [], workers: [], pages: [], routes: [] };
+      row = { key, host: host.trim(), acc, accName, records: [], workers: [], pages: [], routes: [] };
       map.set(key, row);
     }
     return row;
   };
+
+  if (agg.on) {
+    for (const b of aggData.value) {
+      const zNames = b.zones.map((z) => String(z.zone?.name ?? ""));
+      const inAny = (h: string) => !zNames.length || zNames.some((z) => hostUnder(h, z));
+      for (const z of b.zones) {
+        for (const r of z.records) {
+          const name = String(r?.name ?? "").trim();
+          if (name) get(b.acc, b.accName, name).records.push(r);
+        }
+        for (const rt of z.routes) {
+          const pattern = String(rt?.pattern ?? "").trim();
+          if (pattern) get(b.acc, b.accName, pattern.replace(/\/\*$/, "")).routes.push(rt);
+        }
+      }
+      for (const d of b.domains) {
+        const host = String(d?.hostname ?? "").trim();
+        if (host && inAny(host)) get(b.acc, b.accName, host).workers.push(d);
+      }
+      for (const g of b.pageDomains) {
+        for (const d of g.domains) {
+          const host = String(d?.name ?? d?.domain ?? d?.hostname ?? "").trim();
+          if (host && inAny(host)) get(b.acc, b.accName, host).pages.push({ ...d, project: g.project });
+        }
+      }
+    }
+    return [...map.values()].sort((a, b) => a.host.localeCompare(b.host) || a.accName.localeCompare(b.accName));
+  }
+
   for (const r of records.value.data ?? []) {
     const name = String(r?.name ?? "").trim();
-    if (name) get(name).records.push(r);
+    if (name) get("", "", name).records.push(r);
   }
   for (const d of domains.value.data ?? []) {
     const host = String(d?.hostname ?? "").trim();
-    if (host && hostInZone(host)) get(host).workers.push(d);
+    if (host && hostInZone(host)) get("", "", host).workers.push(d);
   }
   for (const g of pageDomains.value.data ?? []) {
     for (const d of g.domains ?? []) {
       const host = String(d?.name ?? d?.domain ?? d?.hostname ?? "").trim();
-      if (host && hostInZone(host)) get(host).pages.push({ ...d, project: g.project });
+      if (host && hostInZone(host)) get("", "", host).pages.push({ ...d, project: g.project });
     }
   }
   for (const rt of routes.value.data ?? []) {
     const pattern = String(rt?.pattern ?? "").trim();
     if (!pattern) continue;
-    get(pattern.replace(/\/\*$/, "")).routes.push(rt);
+    get("", "", pattern.replace(/\/\*$/, "")).routes.push(rt);
   }
   return [...map.values()].sort((a, b) => a.host.localeCompare(b.host));
 });
+
+/* ---------- 长记录折叠：只折"真的长"的值，短值不摆展开按钮 ---------- */
+const LONG_CHARS = 60;
+const openVals = ref<Set<string>>(new Set());
+function isLongValue(v: unknown): boolean {
+  const s = String(v ?? "");
+  return s.length > LONG_CHARS || s.includes("\n");
+}
+function valKey(row: HostRow, r: any): string {
+  return row.key + ":" + String(r?.id ?? "");
+}
+function isValOpen(row: HostRow, r: any): boolean {
+  return openVals.value.has(valKey(row, r));
+}
+function toggleVal(row: HostRow, r: any): void {
+  const k = valKey(row, r);
+  const s = new Set(openVals.value);
+  if (s.has(k)) s.delete(k); else s.add(k);
+  openVals.value = s;
+}
 
 const hostSearch = ref("");
 const filteredRows = computed(() => {
@@ -179,6 +327,7 @@ const filteredRows = computed(() => {
   if (!q) return mergedRows.value;
   return mergedRows.value.filter((row) =>
     row.host.toLowerCase().includes(q)
+    || row.accName.toLowerCase().includes(q)
     || row.records.some((r) => String(r.content ?? "").toLowerCase().includes(q) || String(r.type ?? "").toLowerCase().includes(q))
     || row.workers.some((w) => String(w.service ?? "").toLowerCase().includes(q))
     || row.pages.some((p) => String(p.project ?? "").toLowerCase().includes(q))
@@ -186,13 +335,47 @@ const filteredRows = computed(() => {
   );
 });
 
-function goWorker(service: string) {
-  const s = String(service ?? "").trim();
-  if (s) router.push(`/workers/${encodeURIComponent(s)}?c=domains`);
+/** 卡片头那行统计：单账号与合并模式各自的口径，不混着写 */
+const statsLine = computed(() => {
+  if (agg.on) {
+    const zs = aggData.value.reduce((n, b) => n + b.zones.length, 0);
+    const dns = aggData.value.reduce((n, b) => n + b.zones.reduce((m, z) => m + z.records.length, 0), 0);
+    const rt = aggData.value.reduce((n, b) => n + b.zones.reduce((m, z) => m + z.routes.length, 0), 0);
+    return `${aggData.value.length} 个账号 · ${zs} 个站点 · ${mergedRows.value.length} 个域名 · ${dns} 条 DNS 记录 · ${rt} 条 Workers 路由`;
+  }
+  return `${mergedRows.value.length} 个域名 · ${records.value.data?.length ?? 0} 条 DNS 记录 · ${routes.value.data?.length ?? 0} 条 Workers 路由`;
+});
+
+const aggErrList = computed(() =>
+  aggData.value.flatMap((b) => b.errs.map((x) => ({ ...x, accName: b.accName }))),
+);
+/** 单账号模式下 Pages 项目域名读失败的项目：按项目独立说明，不静默吞掉（合并模式的错误汇进 aggErrList） */
+const pageDomainErrs = computed(() =>
+  (pageDomains.value.data ?? [])
+    .filter((g) => !!g.err)
+    .map((g) => ({ project: g.project, err: g.err as GwError })),
+);
+const aggPending = computed(() => aggData.value.filter((b) => b.pending).map((b) => b.accName));
+/** 列表加载态：合并模式看聚合进度，单账号看当前站的记录 */
+const listLoading = computed(() => (agg.on ? aggLoading.value : records.value.loading));
+
+/** 退出合并视图：回到当前账号的单账号视图（顶栏下拉里也有同一个开关） */
+function exitAgg() {
+  agg.on = false;
+  requestReload();
 }
-function goProject(project: string) {
+
+function goWorker(service: string, acc = "") {
+  const s = String(service ?? "").trim();
+  if (!s) return;
+  if (agg.on && acc) focusAccount(acc);
+  router.push(`/workers/${encodeURIComponent(s)}?c=domains`);
+}
+function goProject(project: string, acc = "") {
   const p = String(project ?? "").trim();
-  if (p) router.push(`/pages/${encodeURIComponent(p)}?c=domains`);
+  if (!p) return;
+  if (agg.on && acc) focusAccount(acc);
+  router.push(`/pages/${encodeURIComponent(p)}?c=domains`);
 }
 function recTtl(r: any): string {
   return r?.ttl === 1 ? "自动" : `${r?.ttl ?? "?"}s`;
@@ -325,7 +508,7 @@ async function confirmSheet() {
 
 <template>
   <div>
-    <div class="row" style="justify-content: space-between; margin-bottom: 10px; gap: 10px">
+    <div class="row" style="justify-content: space-between; margin-bottom: 10px; gap: 10px" v-if="!agg.on">
       <!-- 站点切换器：折叠式下拉（跟旧版 select 一样收着），展开后带状态点与状态文字 -->
       <div class="zdd" ref="zddEl">
         <button class="zbtn" :aria-expanded="zopen" aria-haspopup="listbox" @click.stop="zopen = !zopen">
@@ -348,10 +531,27 @@ async function confirmSheet() {
       </div>
     </div>
 
+    <!-- 合并视图（只读）：没有"当前站点"这个概念，站点切换器换成这块状态条 -->
+    <div v-if="agg.on" class="aggbar">
+      <div class="aggtop">
+        <span class="aggt">合并视图 · {{ aggAccounts().length }} 个账号 · 只读</span>
+        <button class="ghost sm" @click="exitAgg">退出合并</button>
+      </div>
+      <div class="small muted" v-if="aggLoading">
+        正在取数：{{ aggDone }}/{{ aggAccounts().length }} 个账号已就绪{{ aggPending.length ? " · 等待 " + aggPending.join("、") : "" }}
+      </div>
+      <div class="small muted" v-else>点条目会先切到它所属账号再进详情；写操作请在单账号下进行。</div>
+      <div class="small muted" v-if="aggSkipped().length">网页模式跳过 {{ aggSkipped().length }} 个 OAuth 账号（拿不到令牌）。</div>
+      <!-- 按账号独立失败：一个账号的令牌过期只在这里说明，不拖垮其它账号 -->
+      <div v-for="(x, i) in aggErrList" :key="i" class="small agg-err">
+        {{ x.accName }} · {{ x.label }}：{{ x.err.hint }}
+      </div>
+    </div>
+
     <ErrorNote :err="domains.err || zones.err" />
 
     <!-- 站点状态折叠成一行摘要：站点名已经在上面的切换器里，这里不再重复；展开才铺 nameserver -->
-    <details class="grp" v-if="currentZone">
+    <details class="grp" v-if="currentZone && !agg.on">
       <summary>站点状态与 nameserver<span class="gs">{{ zoneSummary }}</span></summary>
       <div class="card">
         <ZoneStatusCard :zone="currentZone" />
@@ -360,21 +560,25 @@ async function confirmSheet() {
 
     <!-- 一个域名一行：DNS 记录、Worker / Pages 绑定、Workers 路由都并进同一行。
          以前用「记录 / 资产 / 路由」三个 tab，同一个域名要在两处各看一遍；现在一屏看全。 -->
-    <div class="card" v-if="zoneName">
+    <div class="card" v-if="zoneName || agg.on">
       <div class="hd">
-        <h3 style="margin: 0">域名与 DNS</h3>
-        <div class="row" style="gap: 10px; align-items: center; flex-wrap: wrap">
+        <h3 style="margin: 0">{{ agg.on ? "域名与 DNS（合并 · 只读）" : "域名与 DNS" }}</h3>
+        <div class="row" style="gap: 10px; align-items: center; flex-wrap: wrap" v-if="!agg.on">
           <WriteGate v-model="writesOn" variant="inline" />
           <button class="primary sm" :disabled="!zoneId" @click="openCreate">新增 DNS 记录</button>
           <button class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
         </div>
+        <span v-else class="small muted">合并模式不摆写入口</span>
       </div>
 
-      <div class="small muted" style="margin-bottom: 6px" v-if="mergedRows.length">
-        {{ mergedRows.length }} 个域名 · {{ records.data?.length ?? 0 }} 条 DNS 记录 · {{ routes.data?.length ?? 0 }} 条 Workers 路由
+      <div class="small muted" style="margin-bottom: 6px" v-if="mergedRows.length || agg.on">
+        {{ statsLine }}
       </div>
 
-      <ErrorNote :err="records.err || domains.err || routes.err" />
+      <ErrorNote :err="records.err || domains.err || routes.err" v-if="!agg.on" />
+      <div v-for="g in pageDomainErrs" :key="'pd-' + g.project" class="small agg-err">
+        {{ g.project }} · Pages 自定义域名读取失败：{{ g.err.hint }}
+      </div>
 
       <!-- 搜索：只要不止一条就出现。原来卡在「> 6 行」，5 个域名时反而没有入口，
            想按域名筛一下只能靠肉眼扫。 -->
@@ -414,34 +618,50 @@ async function confirmSheet() {
       </div>
 
       <div class="hlist" v-if="filteredRows.length">
-        <div v-for="row in filteredRows" :key="row.host" class="hrow">
+        <div v-for="row in filteredRows" :key="row.key" class="hrow">
           <div class="hhead">
             <div class="hname">{{ row.host }}</div>
+            <!-- 合并模式：同一个主机名可能来自不同账号，必须标清是哪一份 -->
+            <span v-if="agg.on && row.accName" class="badge acctag" :title="row.acc">{{ row.accName }}</span>
             <span v-if="row.records.some((r) => r.proxied)" class="badge prox">已代理</span>
             <span v-if="row.workers.length" class="badge blue">Worker</span>
             <span v-if="row.pages.length" class="badge blue">Pages</span>
             <span v-if="row.routes.length" class="badge">路由</span>
           </div>
 
-          <div v-for="r in row.records" :key="'dns-' + r.id" class="hline">
-            <span class="badge">{{ r.type }}</span>
-            <span class="hcontent mono" :title="String(r.content)">{{ r.content }}</span>
-            <span class="small muted">{{ recTtl(r) }} · {{ r.proxied ? "已代理" : "仅 DNS" }}</span>
-            <span class="ha">
-              <button class="ghost sm" @click="openEdit(r)">编辑</button>
-              <button class="ghost sm danger" @click="onDelete(r)">删除</button>
-            </span>
+          <!-- 记录行分两段：上行「类型 + 值」，下行「TTL / 代理 + 动作」。
+               长值（DKIM 公钥这类几百字符）默认折成两行，点「展开」才铺全 —— 卡片高度因此一致。 -->
+          <div v-for="r in row.records" :key="'dns-' + r.id" class="hline two">
+            <div class="hl-top">
+              <span class="badge">{{ r.type }}</span>
+              <span
+                class="hcontent mono"
+                :class="{ clamp: isLongValue(r.content) && !isValOpen(row, r) }"
+                :title="String(r.content)"
+              >{{ r.content }}</span>
+            </div>
+            <div class="hl-bot">
+              <span class="small muted">{{ recTtl(r) }} · {{ r.proxied ? "已代理" : "仅 DNS" }}</span>
+              <button
+                v-if="isLongValue(r.content)" class="linkbtn foldbtn" type="button"
+                @click="toggleVal(row, r)"
+              >{{ isValOpen(row, r) ? "收起" : "展开" }}</button>
+              <span class="ha" v-if="!agg.on">
+                <button class="ghost sm" @click="openEdit(r)">编辑</button>
+                <button class="ghost sm danger" @click="onDelete(r)">删除</button>
+              </span>
+            </div>
           </div>
 
           <div v-for="w in row.workers" :key="'w-' + (w.id || w.hostname)" class="hline">
             <span class="harrow">→ Worker</span>
-            <button class="linkbtn" type="button" @click="goWorker(w.service)">{{ w.service }}</button>
+            <button class="linkbtn" type="button" @click="goWorker(w.service, row.acc)">{{ w.service }}</button>
             <span class="small muted">{{ w.environment || "production" }}<template v-if="w.cert_id"> · 有证书</template></span>
           </div>
 
           <div v-for="(d, i) in row.pages" :key="'p-' + row.host + i" class="hline">
             <span class="harrow">→ Pages</span>
-            <button class="linkbtn" type="button" @click="goProject(d.project)">{{ d.project }}</button>
+            <button class="linkbtn" type="button" @click="goProject(d.project, row.acc)">{{ d.project }}</button>
             <span v-if="d.status" class="badge" :class="{ live: d.status === 'active' }">{{ d.status === "active" ? "已生效" : d.status }}</span>
           </div>
 
@@ -449,7 +669,7 @@ async function confirmSheet() {
             <span class="harrow">→ 路由</span>
             <span class="mono">{{ rt.pattern }}</span>
             <span class="small muted">{{ rt.script || "仅记录" }}</span>
-            <span class="ha">
+            <span class="ha" v-if="!agg.on">
               <button class="ghost sm" :disabled="!writesOn" @click="openRouteEdit(rt)">编辑</button>
               <button class="ghost sm danger" :disabled="!writesOn" @click="askDeleteRoute(rt)">删除</button>
             </span>
@@ -458,18 +678,21 @@ async function confirmSheet() {
           <div v-if="!row.records.length" class="hline small muted">没有 DNS 记录（仅靠路由 / 外部解析生效）</div>
         </div>
       </div>
-      <div v-else-if="!records.loading" class="empty">{{ hostSearch ? "没有匹配的域名" : "这个站点还没有 DNS 记录或绑定" }}</div>
+      <div v-else-if="!listLoading" class="empty">
+        {{ hostSearch ? "没有匹配的域名" : agg.on ? "这些账号里还没有 DNS 记录或绑定" : "这个站点还没有 DNS 记录或绑定" }}
+      </div>
       <div v-else class="empty">加载中…</div>
       <div class="whyline" v-if="doneMsg">{{ doneMsg }}</div>
 
-      <div class="small muted" style="margin-top: 8px" v-if="sub.data?.subdomain">
+      <div class="small muted" style="margin-top: 8px" v-if="sub.data?.subdomain && !agg.on">
         workers.dev 子域：<code>*.{{ sub.data.subdomain }}.workers.dev</code>
       </div>
-      <p class="small muted" style="margin-top: 8px" v-if="!writesOn">标题行右侧的本机写开关没打开，路由的增删改按钮是灰的。</p>
+      <p class="small muted" style="margin-top: 8px" v-if="!writesOn && !agg.on">标题行右侧的本机写开关没打开，路由的增删改按钮是灰的。</p>
     </div>
 
-    <!-- 运维工具（折叠）：清缓存 + DNS 配置向导。两个都是低频操作，不该占首屏 -->
-    <details class="grp">
+    <!-- 运维工具（折叠）：清缓存 + DNS 配置向导。两个都是低频操作，不该占首屏。
+         两者都绑"当前站点"，合并视图没有当前站点，整块收起。 -->
+    <details class="grp" v-if="!agg.on">
       <summary>运维工具<span class="gs">清缓存 · 配置向导</span></summary>
 
       <div class="card" v-if="zoneName">
@@ -494,7 +717,7 @@ async function confirmSheet() {
     </details>
 
     <!-- 安全规则（折叠）：WAF 只读。规则条数多且平时不用看，收起时给出条数 -->
-    <details class="grp">
+    <details class="grp" v-if="!agg.on">
       <summary>安全规则<span class="gs">WAF {{ waf.data?.ruleCount ?? 0 }} 条 · 只读</span></summary>
 
       <div class="card" v-if="zoneName">
@@ -569,7 +792,23 @@ button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .hline { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 7px;
   padding-top: 7px; border-top: 1px dashed var(--line-soft); font-size: 12.5px; }
 .hrow > .hline:first-of-type { border-top: 0; padding-top: 4px; }
+/* 记录行两段式：上行类型 + 值，下行 TTL / 代理 + 动作。长值折两行，卡片高度才一致 */
+.hline.two { flex-direction: column; align-items: stretch; gap: 4px; }
+.hl-top { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+.hl-top .hcontent { flex: 1; }
+.hl-bot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.foldbtn { flex: none; font-size: 11.5px; }
 .hcontent { color: var(--fg-2); min-width: 0; word-break: break-all; max-width: 100%; }
+/* 只折"真的长"的值（默认两行）；短值不加这个类，也不会摆展开按钮 */
+.hcontent.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* 合并视图的状态条：账号数 + 进度 + 逐账号错误，都在首屏顶部说清 */
+.aggbar { border: 1px solid var(--accent-dim); border-radius: 12px; padding: 9px 11px;
+  margin-bottom: 10px; background: rgb(var(--accent-rgb) / .06); }
+.aggtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.aggt { font-size: 13px; font-weight: 650; color: var(--accent); }
+.agg-err { color: var(--bad); margin-top: 3px; }
+.badge.acctag { color: var(--fg-2); border-color: var(--line); font-family: var(--font-num);
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ha { margin-left: auto; display: flex; gap: 5px; flex: none; }
 .harrow { color: var(--muted); font-size: 11.5px; flex: none; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }

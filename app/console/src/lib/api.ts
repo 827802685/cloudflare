@@ -69,8 +69,9 @@ export { isNativeApp };
  * OAuth 账号在这里是**异步**的：access token 只在内存，冷启动/过期时先用钥匙串里的
  * refresh token 换一次（oauth.ts 保证同一 credRef 的刷新串行）。API Token 账号仍然同步取值。
  */
-async function directCtx(cfg: Config, fresh: boolean): Promise<DirectCtx | null> {
-  const acc = cfg.account ? findAccount(cfg.account) : null;
+async function directCtx(cfg: Config, fresh: boolean, accId?: string): Promise<DirectCtx | null> {
+  const want = accId ?? cfg.account;
+  const acc = want ? findAccount(want) : null;
   if (!acc) return null;
   if (acc.auth === "oauth") {
     if (!acc.credRef) return null;
@@ -96,8 +97,9 @@ export async function requireDirectCtx(): Promise<DirectCtx> {
  * 也不该把长期凭据交给中间服务器）。与其静默回落到网关 env 令牌、把 A 账号的数据
  * 显示成 B 账号的，不如直接报错让人换认证方式。
  */
-function assertGatewayAuth(cfg: Config): void {
-  const acc = cfg.account ? findAccount(cfg.account) : null;
+function assertGatewayAuth(cfg: Config, accId?: string): void {
+  const want = accId ?? cfg.account;
+  const acc = want ? findAccount(want) : null;
   if (acc?.auth === "oauth") {
     throw new GwError("auth", 401, null, "OAuth 账号只能在 APK 直连模式使用；网页/网关模式请改用 API Token");
   }
@@ -136,8 +138,9 @@ function qs(query?: Record<string, string | number | undefined>): string {
  * 没选账号就一个头都不加，退回"设备令牌 + 网关 env 令牌"的老路子 —— 两条路网关都认。
  * 令牌每次请求现取现带，不在这里缓存；网关也不留副本。
  */
-function cfTokenHeader(cfg: Config): Record<string, string> {
-  const acc = cfg.account ? findAccount(cfg.account) : null;
+function cfTokenHeader(cfg: Config, accId?: string): Record<string, string> {
+  const want = accId ?? cfg.account;
+  const acc = want ? findAccount(want) : null;
   return acc ? { "x-cf-token": acc.token } : {};
 }
 
@@ -214,9 +217,29 @@ export function forceFreshWindow(ms = 20_000) {
 export const gwMeta = reactive({ state: "miss" as "hit" | "miss" | "mixed" | "fresh" | "local" | "direct", fetchedAt: 0, cfCalls: 0 });
 
 export async function gw<T>(path: string, query?: Record<string, string | number | undefined>): Promise<T> {
+  return gwCore<T>(path, query);
+}
+
+/**
+ * 按**指定账号**取数（多账号合一模式专用，2026-10-27）。
+ *
+ * 与 gw() 的唯一区别：账号与令牌都取传入的那个，而不是本机选中的那个。
+ * 缓存键里带 `acc:<id>`，所以合并视图与单账号视图不会互相喂脏数据；
+ * 写侧不走这里 —— 合并视图是只读的（见 lib/aggregate.ts 顶部的约束）。
+ */
+export async function gwAs<T>(accId: string, path: string, query?: Record<string, string | number | undefined>): Promise<T> {
+  return gwCore<T>(path, query, accId);
+}
+
+async function gwCore<T>(
+  path: string,
+  query?: Record<string, string | number | undefined>,
+  accId?: string,
+): Promise<T> {
   const cfg = loadConfig();
+  const acc = accId ?? cfg.account;
   const merged: Record<string, string | number | undefined> = {
-    ...(cfg.account && !NO_ACCOUNT_PARAM.has(path) ? { account: cfg.account } : {}),
+    ...(acc && !NO_ACCOUNT_PARAM.has(path) ? { account: acc } : {}),
     ...(query ?? {}),
   };
   const q = qs(Object.keys(merged).length ? merged : undefined);
@@ -228,7 +251,8 @@ export async function gw<T>(path: string, query?: Record<string, string | number
    * 两种模式都能命中（键里都有 `/v1/zones/{id}/...` 这一段）。
    */
   const url = effectiveBase(cfg) + path + q;
-  const key = native ? "direct|" + path + q : url;
+  // 指定账号时键里加一段：网关模式的 url 已经带 ?account=<id>，直连模式没有 url，必须自己补
+  const key = native ? "direct|" + (accId ? "acc:" + accId + "|" : "") + path + q : url;
   if (!fresh) {
     const hit = mem.get(key);
     if (hit && Date.now() - hit.at < MEM_TTL_MS) {
@@ -239,7 +263,7 @@ export async function gw<T>(path: string, query?: Record<string, string | number
     }
   }
   if (native) {
-    const ctx = await directCtx(cfg, fresh);
+    const ctx = await directCtx(cfg, fresh, accId);
     if (!ctx) throw noDirectCtxError(cfg);
     try {
       const data = await gwDirect<T>(path, merged, ctx);
@@ -254,11 +278,11 @@ export async function gw<T>(path: string, query?: Record<string, string | number
       throw asGwError(e);
     }
   }
-  assertGatewayAuth(cfg);
+  assertGatewayAuth(cfg, accId);
   const finalUrl = fresh ? url + (url.includes("?") ? "&" : "?") + "fresh=1" : url;
   let res: Response;
   try {
-    res = await fetchNetRetry(finalUrl, { headers: { "x-device-token": cfg.deviceToken, ...cfTokenHeader(cfg) }, signal: AbortSignal.timeout(25000) });
+    res = await fetchNetRetry(finalUrl, { headers: { "x-device-token": cfg.deviceToken, ...cfTokenHeader(cfg, accId) }, signal: AbortSignal.timeout(25000) });
   } catch (e) {
     if (e instanceof GwError) throw e;
     const isTimeout = (e as Error)?.name === "TimeoutError";
@@ -460,6 +484,23 @@ export type AccountsResult = R<Account[]> & {
   requested?: string | null;
   applied?: boolean;
 };
+
+/**
+ * 合并模式的按账号只读读数器（2026-10-27）。
+ * 故意只给读方法：合并视图是只读的，写必须发生在单账号上下文里（见 lib/aggregate.ts）。
+ */
+export function apiAs(acc: string) {
+  return {
+    zones: () => gwAs<R<any[]>>(acc, "/v1/zones"),
+    workers: () => gwAs<R<any[]>>(acc, "/v1/workers"),
+    pages: () => gwAs<R<any[]>>(acc, "/v1/pages"),
+    domains: () => gwAs<R<any[]>>(acc, "/v1/domains"),
+    accountSubdomain: () => gwAs<R<{ subdomain?: string }>>(acc, "/v1/workers/subdomain"),
+    dnsRecords: (zone: string) => gwAs<R<any[]>>(acc, "/v1/zones/" + encodeURIComponent(zone) + "/dns_records"),
+    zoneRoutes: (zone: string) => gwAs<R<any[]>>(acc, "/v1/zones/" + encodeURIComponent(zone) + "/routes"),
+    pageDomains: (p: string) => gwAs<R<any[]>>(acc, "/v1/pages/" + encodeURIComponent(p) + "/domains"),
+  };
+}
 
 export const api = {
   accounts: () => gw<AccountsResult>("/v1/accounts"),
