@@ -68,7 +68,20 @@ export function lock(): void {
   dataKey = null;
 }
 
+/**
+ * Web Crypto 只在**安全上下文**（https、localhost、APK 的 https://localhost）里提供。
+ * 用 http + 局域网 IP 打开时 `crypto.subtle` 是 undefined，不拦的话会抛
+ * "Cannot read properties of undefined (reading 'importKey')" —— 用户看不懂，
+ * 也不知道该换地址。这里先拦一道，把话说清楚。
+ */
+function ensureCrypto(): void {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("这个地址不是安全上下文（https 或 localhost），浏览器不提供 Web Crypto，无法加解密本机令牌 —— 请改用 https 或 localhost 打开；APK 直连模式不受影响。");
+  }
+}
+
 async function derive(pass: string, salt: Uint8Array, iter: number): Promise<CryptoKey> {
+  ensureCrypto();
   const base = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     { name: "PBKDF2", salt: buf(salt), iterations: iter, hash: "SHA-256" },
@@ -174,6 +187,7 @@ export function deviceVaultExists(): boolean {
 }
 
 async function deviceKey(): Promise<CryptoKey> {
+  ensureCrypto();
   let b64 = localStorage.getItem(DEVICE_KEY);
   if (!b64) {
     b64 = toB64(crypto.getRandomValues(new Uint8Array(32)));

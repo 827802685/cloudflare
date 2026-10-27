@@ -4,9 +4,10 @@ import { reloadTick } from "../lib/bus";
 import { useRouter } from "vue-router";
 import ErrorNote from "../components/ErrorNote.vue";
 import RowCard from "../components/RowCard.vue";
+import ComputeBoard from "../components/compute/ComputeBoard.vue";
 import WorkersQuota from "../components/ver/WorkersQuota.vue";
 import CleanupPanel from "../components/ver/CleanupPanel.vue";
-import { api, forceFreshWindow, GwError, workerName } from "../lib/api";
+import { api, forceFreshWindow, GwError, pageDeployed, pageLastActivity, workerName } from "../lib/api";
 import { dt, rel } from "../lib/fmt";
 
 const nav = useRouter();
@@ -47,8 +48,8 @@ const workerCards = [
   { ico: "globe", label: "自定义域名", c: "domains" },
   { ico: "settings", label: "配置信息", c: "settings" },
   { ico: "link", label: "绑定", c: "bindings" },
-  { ico: "secrets", label: "Secret", c: "secrets" },
-  { ico: "crons", label: "定时触发", c: "crons" },
+  { ico: "secrets", label: "变量与 Secret", c: "secrets" },
+  { ico: "crons", label: "定时触发器", c: "crons" },
   { ico: "switch", label: "版本切换", c: "switch" },
 ];
 
@@ -119,7 +120,8 @@ function refresh() { forceFreshWindow(); loadWorkers(); loadPages(); quotaTick.v
 
 onMounted(() => { loadWorkers(); loadPages(); });
 
-/** 顶部分段：Workers / Pages 各一屏太长，给一个明确的切换口，默认「全部」 */
+/** 顶部分段：默认「看板」= Workers + Pages 二合一（一块看板读完两类资源）；
+ *  「Workers」/「Pages」两档才是逐项动手的完整列表。 */
 const kind = ref<"all" | "workers" | "pages">("all");
 
 /** 版本清理面板要处理的 Worker 集合：默认空，必须手动勾，绝不默认全选 */
@@ -131,22 +133,30 @@ function toggleClean(w: string) {
 
 <template>
   <div>
-    <div class="row" style="justify-content: space-between; margin-bottom: 10px">
-      <span class="muted small">计算资源：{{ workers.length }} 个 Worker · {{ pages.length }} 个 Pages 项目</span>
-    </div>
-
-    <!-- Workers / Pages 分段切换：两个区块不是同一类资源，但常要对着看，所以给「全部」也留着 -->
+    <!-- Workers / Pages 分段：默认看板（二合一），另两档是逐项动手的完整列表。
+         原来这三档叫「全部 / Workers / Pages」，而「全部」只是把两张表上下拼起来，
+         数量与时间各写一遍 —— 现在「看板」真的是一块合并后的读数面。 -->
     <div class="row" style="gap: 4px; margin-bottom: 10px">
-      <button class="chip" :class="{ on: kind === 'all' }" @click="kind = 'all'">全部</button>
+      <button class="chip" :class="{ on: kind === 'all' }" @click="kind = 'all'">看板</button>
       <button class="chip" :class="{ on: kind === 'workers' }" @click="kind = 'workers'">Workers</button>
       <button class="chip" :class="{ on: kind === 'pages' }" @click="kind = 'pages'">Pages</button>
     </div>
 
-    <!-- Workers 每日额度：接口只给事件数，请求数与上限的来源在这块内部各自标清（docs/09 §E16） -->
+    <!-- 每日额度：接口只给事件数，请求数与上限的来源在这块内部各自标清（docs/09 §E16） -->
     <WorkersQuota v-if="kind !== 'pages'" :tick="quotaTick" />
 
-    <!-- Workers 区块 -->
-    <div class="card" v-if="kind !== 'pages'">
+    <!-- 二合一看看板：4 格合计 + 一份按最近改动并起来的清单（只用上面两条列表，不发额外请求） -->
+    <ComputeBoard
+      v-if="kind === 'all'"
+      :workers="workers"
+      :pages="pages"
+      :w-err="workersErr"
+      :p-err="pagesErr"
+      :loading="workersLoading || pagesLoading"
+    />
+
+    <!-- Workers 区块（逐项动手时才展开） -->
+    <div class="card" v-if="kind === 'workers'">
       <h3>Workers（{{ workers.length }} 个）</h3>
       <ErrorNote :err="workersErr" />
       <div v-if="workers.length" style="margin-bottom: 10px">
@@ -184,8 +194,8 @@ function toggleClean(w: string) {
 
     <!-- 版本清理：低频运维功能，默认收起（2026-10-25）。
          收起之前它跟上面的 Worker 列表摆成"两份清单"，看着像重复数据。
-         展开后仍是原来那块：候选必须手勾，默认空。 -->
-    <details class="foldcard" v-if="kind !== 'pages'">
+         展开后仍是原来那块：候选必须手勾，默认空。只看板不摆它，切到 Workers 档才出现。 -->
+    <details class="foldcard" v-if="kind === 'workers'">
       <summary>
         <span>版本清理</span>
         <span class="fc-s">批量删旧部署记录</span>
@@ -209,8 +219,8 @@ function toggleClean(w: string) {
       </div>
     </details>
 
-    <!-- Pages 区块 -->
-    <div class="card" v-if="kind !== 'workers'">
+    <!-- Pages 区块（逐项动手时才展开） -->
+    <div class="card" v-if="kind === 'pages'">
       <h3>Pages 项目（{{ pages.length }} 个）</h3>
       <ErrorNote :err="pagesErr" />
 
@@ -227,8 +237,8 @@ function toggleClean(w: string) {
           v-for="p in pages"
           :key="p.name"
           :title="String(p.name)"
-          :meta="`${p.production_branch || '无分支'} • ${p.subdomain || '—'} • ${rel(p.deployments?.[0]?.modified_on || p.created_on)}`"
-          :badges="[{ text: p.deployment_id ? '已部署' : '无部署', cls: p.deployment_id ? 'live' : undefined }]"
+          :meta="`${p.production_branch || '无分支'} • ${p.subdomain || '—'} • ${rel(pageLastActivity(p))}${pageDeployed(p) ? ' 部署' : ' 创建'}`"
+          :badges="[{ text: pageDeployed(p) ? '已部署' : '无部署', cls: pageDeployed(p) ? 'live' : undefined }]"
           :actions="projectActions"
           @open="openProject(p)"
           @go="(a) => onProjectGo(p, a)"

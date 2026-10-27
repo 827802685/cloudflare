@@ -195,9 +195,14 @@ const depStats = computed(() => {
 function jumpTo(c: string) {
   const el = document.getElementById("c-" + c);
   if (!el) return;
-  el.scrollIntoView({ block: "start" });
-  el.classList.add("flash");
-  setTimeout(() => el.classList.remove("flash"), 1400);
+  // 目标是折叠卡时先展开再滚：否则滚过去只看到一行摘要
+  const fold = el.closest("details");
+  if (fold && !fold.open) fold.open = true;
+  void nextTick(() => {
+    el.scrollIntoView({ block: "start" });
+    el.classList.add("flash");
+    setTimeout(() => el.classList.remove("flash"), 1400);
+  });
 }
 function jump() {
   const c = String(route.query.c || "");
@@ -693,7 +698,9 @@ function refresh() {
       </div>
     </div>
 
-    <div class="card" id="c-env">
+    <details class="foldcard" id="c-env">
+      <summary>环境变量与构建配置<span class="fc-s">{{ envKeys(productionEnv).length + envKeys(previewEnv).length }} 个变量</span></summary>
+      <div class="card">
       <h3>环境变量与构建配置</h3>
       <template v-if="pj">
         <div class="kv">
@@ -761,11 +768,14 @@ function refresh() {
           </div>
         </div>
       </template>
-    </div>
+      </div>
+    </details>
 
     <!-- 构建日志区（2026-10-25：原来这张卡只有一段说明文字，顶部 chip 跳过来等于空跳转。
          现在它就是日志区：选一次部署 → 取日志 → 结果就地显示。） -->
-    <div class="card" id="c-logs">
+    <details class="foldcard" id="c-logs">
+      <summary>构建日志<span class="fc-s">选一次部署查看</span></summary>
+      <div class="card">
       <h3>构建日志</h3>
       <div class="small muted">
         选一次部署取它的构建日志：<code>GET …/deployments/{id}/history/logs</code>，返回的 data 行原样上屏。
@@ -791,7 +801,8 @@ function refresh() {
         </div>
       </div>
       <div v-else-if="!logDeps.length" class="empty">这个项目还没有部署记录，没有日志可取。</div>
-    </div>
+      </div>
+    </details>
   </div>
 
   <ConfirmSheet :preview="preview" :busy="busy" :error="sheetErr" @confirm="confirmAct" @cancel="cancelSheet" />
@@ -830,4 +841,12 @@ button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .gen { flex-wrap: wrap; gap: 6px; }
 .gen .field { max-width: 200px; }
 .sel { width: auto; }
+/* 低频区块折叠：二级页默认只留概览 / 部署 / 域名，环境变量与日志收成一行摘要 */
+.foldcard { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel-2); margin-bottom: 12px; overflow: hidden; }
+.foldcard > summary { display: flex; align-items: center; gap: 8px; padding: 11px 13px; cursor: pointer; list-style: none; font-size: var(--t-sm); font-weight: 650; color: var(--fg-2); }
+.foldcard > summary::-webkit-details-marker { display: none; }
+.foldcard > summary::before { content: ""; width: 6px; height: 6px; flex: none; border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: rotate(-45deg); transition: transform .18s ease; }
+.foldcard[open] > summary::before { transform: rotate(45deg); }
+.foldcard .fc-s { margin-left: auto; font-size: var(--t-2xs); font-weight: 400; color: var(--muted); }
+.foldcard > .card { margin: 0 8px 8px; }
 </style>

@@ -1,13 +1,12 @@
 <script setup lang="ts">
+import { useRouter } from "vue-router";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { reloadTick } from "../lib/bus";
 import ErrorNote from "../components/ErrorNote.vue";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
-import DnsRecordList from "../components/dns/DnsRecordList.vue";
 import DnsRecordForm from "../components/dns/DnsRecordForm.vue";
 import DnsPurgeForm from "../components/dns/DnsPurgeForm.vue";
 import DnsSetupWizard from "../components/dns/DnsSetupWizard.vue";
-import UnifiedDomains from "../components/dns/UnifiedDomains.vue";
 import ZoneStatusCard from "../components/dns/ZoneStatusCard.vue";
 import WriteGate from "../components/WriteGate.vue";
 import {
@@ -22,7 +21,7 @@ import {
   type Waf,
   type WritePreview,
 } from "../lib/api";
-import { dt, shortId } from "../lib/fmt";
+import { dt } from "../lib/fmt";
 
 type Slot<T> = { data: T | null; err: GwError | null; loading: boolean };
 const mk = <T,>(): Slot<T> => ({ data: null, err: null, loading: false });
@@ -131,13 +130,73 @@ const zoneSummary = computed(() => {
   const ns = (Array.isArray(z.vanity_name_servers) && z.vanity_name_servers.length ? z.vanity_name_servers : z.name_servers) ?? [];
   return `${z.status || "未知状态"} · ${z.plan?.name || z.plan?.legacy_id || "套餐未知"} · NS ${ns.length} 条`;
 });
-/** 域名资产计数 = Worker 自定义域名 + 各 Pages 项目域名 */
-const assetCount = computed(() => {
-  const pages = (pageDomains.value.data ?? []).reduce((n, g) => n + (g.domains?.length ?? 0), 0);
-  return (domains.value.data?.length ?? 0) + pages;
+const router = useRouter();
+
+/** 把 DNS 记录、Worker / Pages 自定义域名、Workers 路由按主机名合成一行 —— 同一个域名只出现一次 */
+type HostRow = { host: string; records: any[]; workers: any[]; pages: any[]; routes: any[] };
+function hostInZone(h: string): boolean {
+  const z = zoneName.value.toLowerCase();
+  if (!z) return true;
+  const s = h.toLowerCase().replace(/^\*\./, "");
+  return s === z || s.endsWith("." + z);
+}
+const mergedRows = computed<HostRow[]>(() => {
+  const map = new Map<string, HostRow>();
+  const get = (host: string): HostRow => {
+    const key = host.trim().toLowerCase();
+    let row = map.get(key);
+    if (!row) {
+      row = { host: host.trim(), records: [], workers: [], pages: [], routes: [] };
+      map.set(key, row);
+    }
+    return row;
+  };
+  for (const r of records.value.data ?? []) {
+    const name = String(r?.name ?? "").trim();
+    if (name) get(name).records.push(r);
+  }
+  for (const d of domains.value.data ?? []) {
+    const host = String(d?.hostname ?? "").trim();
+    if (host && hostInZone(host)) get(host).workers.push(d);
+  }
+  for (const g of pageDomains.value.data ?? []) {
+    for (const d of g.domains ?? []) {
+      const host = String(d?.name ?? d?.domain ?? d?.hostname ?? "").trim();
+      if (host && hostInZone(host)) get(host).pages.push({ ...d, project: g.project });
+    }
+  }
+  for (const rt of routes.value.data ?? []) {
+    const pattern = String(rt?.pattern ?? "").trim();
+    if (!pattern) continue;
+    get(pattern.replace(/\/\*$/, "")).routes.push(rt);
+  }
+  return [...map.values()].sort((a, b) => a.host.localeCompare(b.host));
 });
-/** 首屏只显示一组内容：DNS 记录 / 域名资产 / Workers 路由，换 tab 而不是纵向堆三块 */
-const tab = ref<"records" | "assets" | "routes">("records");
+
+const hostSearch = ref("");
+const filteredRows = computed(() => {
+  const q = hostSearch.value.trim().toLowerCase();
+  if (!q) return mergedRows.value;
+  return mergedRows.value.filter((row) =>
+    row.host.toLowerCase().includes(q)
+    || row.records.some((r) => String(r.content ?? "").toLowerCase().includes(q) || String(r.type ?? "").toLowerCase().includes(q))
+    || row.workers.some((w) => String(w.service ?? "").toLowerCase().includes(q))
+    || row.pages.some((p) => String(p.project ?? "").toLowerCase().includes(q))
+    || row.routes.some((rt) => String(rt.pattern ?? "").toLowerCase().includes(q) || String(rt.script ?? "").toLowerCase().includes(q)),
+  );
+});
+
+function goWorker(service: string) {
+  const s = String(service ?? "").trim();
+  if (s) router.push(`/workers/${encodeURIComponent(s)}?c=domains`);
+}
+function goProject(project: string) {
+  const p = String(project ?? "").trim();
+  if (p) router.push(`/pages/${encodeURIComponent(p)}?c=domains`);
+}
+function recTtl(r: any): string {
+  return r?.ttl === 1 ? "自动" : `${r?.ttl ?? "?"}s`;
+}
 
 /** 三种"没有规则"的文案必须分开，这是实测出来的形状（docs/04 §8）：没配过 ≠ 没权限 ≠ 套餐不认 */
 const WAF_STATE: Record<string, { text: string; live: boolean }> = {
@@ -299,105 +358,114 @@ async function confirmSheet() {
       </div>
     </details>
 
-    <!-- DNS 记录 / 域名资产 / Workers 路由：同一张卡里换 tab。
-         以前是三块纵向堆叠，同一批域名在「DNS 记录」和「统一域名视图」里各出现一次，白占一屏。 -->
+    <!-- 一个域名一行：DNS 记录、Worker / Pages 绑定、Workers 路由都并进同一行。
+         以前用「记录 / 资产 / 路由」三个 tab，同一个域名要在两处各看一遍；现在一屏看全。 -->
     <div class="card" v-if="zoneName">
       <div class="hd">
         <h3 style="margin: 0">域名与 DNS</h3>
         <div class="row" style="gap: 10px; align-items: center; flex-wrap: wrap">
           <WriteGate v-model="writesOn" variant="inline" />
-          <button v-if="tab === 'records'" class="primary sm" :disabled="!zoneId" @click="openCreate">新增记录</button>
-          <button v-else-if="tab === 'routes'" class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
+          <button class="primary sm" :disabled="!zoneId" @click="openCreate">新增 DNS 记录</button>
+          <button class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
         </div>
       </div>
 
-      <div class="tabs" role="tablist">
-        <button class="tab" :class="{ on: tab === 'records' }" role="tab" :aria-selected="tab === 'records'" @click="tab = 'records'">
-          DNS 记录 <span class="cnt">{{ records.data?.length ?? 0 }}</span>
-        </button>
-        <button class="tab" :class="{ on: tab === 'assets' }" role="tab" :aria-selected="tab === 'assets'" @click="tab = 'assets'">
-          域名资产 <span class="cnt">{{ assetCount }}</span>
-        </button>
-        <button class="tab" :class="{ on: tab === 'routes' }" role="tab" :aria-selected="tab === 'routes'" @click="tab = 'routes'">
-          Workers 路由 <span class="cnt">{{ routes.data?.length ?? 0 }}</span>
-        </button>
+      <div class="small muted" style="margin-bottom: 6px" v-if="mergedRows.length">
+        {{ mergedRows.length }} 个域名 · {{ records.data?.length ?? 0 }} 条 DNS 记录 · {{ routes.data?.length ?? 0 }} 条 Workers 路由
       </div>
 
-      <!-- DNS 记录：整行点=编辑，新增走表单 → 预览 → 确认 -->
-      <div v-if="tab === 'records'" role="tabpanel">
-        <ErrorNote :err="records.err" />
+      <ErrorNote :err="records.err || domains.err || routes.err" />
 
-        <div v-if="editorOpen" class="editor">
-          <h4>{{ editorRecord ? '编辑记录' : '新增记录' }}</h4>
-          <DnsRecordForm
-            :key="String(editorRecord?.id || editorPreset?.name || 'new')"
-            :zone-id="zoneId"
-            :zone-name="currentZoneName"
-            :record="editorRecord"
-            :preset="editorPreset"
-            @preview="onFormPreview"
-            @cancel="editorOpen = false"
-          />
-        </div>
-
-        <DnsRecordList v-if="(records.data || []).length" :records="records.data!" @edit="openEdit" @del="onDelete" />
-        <div v-else-if="!records.err && !records.loading" class="empty">没有记录</div>
-        <div v-else-if="records.loading" class="empty">加载中…</div>
-        <div class="whyline" v-if="doneMsg">{{ doneMsg }}</div>
-        <!-- 交互说明（点行编辑 / 删除点名 / 501 原因）见 docs/14 §8 -->
+      <!-- 搜索：只要不止一条就出现。原来卡在「> 6 行」，5 个域名时反而没有入口，
+           想按域名筛一下只能靠肉眼扫。 -->
+      <div class="row" style="margin: 8px 0 10px; gap: 8px" v-if="mergedRows.length > 1">
+        <input v-model="hostSearch" class="field" style="max-width: 320px" placeholder="搜索域名 / 记录内容 / Worker / Pages" />
+        <span v-if="hostSearch" class="small muted">{{ filteredRows.length }} 条匹配</span>
       </div>
 
-      <!-- 域名资产：Worker / Pages / R2 的自定义域名（与 DNS 记录分开看，避免同一域名两次出现） -->
-      <div v-else-if="tab === 'assets'" role="tabpanel">
-        <ErrorNote :err="domains.err" />
-        <UnifiedDomains
-          :worker-domains="domains.data || []"
-          :pages-groups="pageDomains.data || []"
-          :pages-loading="pageDomains.loading"
-          :pages-err="pageDomains.err?.hint ?? pageDomains.err?.message ?? null"
-          :subdomain="sub.data?.subdomain || ''"
-          :sub-loading="sub.loading"
-          :sub-err="sub.err?.hint ?? null"
+      <div v-if="editorOpen" class="editor">
+        <h4>{{ editorRecord ? '编辑记录' : '新增记录' }}</h4>
+        <DnsRecordForm
+          :key="String(editorRecord?.id || editorPreset?.name || 'new')"
+          :zone-id="zoneId"
+          :zone-name="currentZoneName"
+          :record="editorRecord"
+          :preset="editorPreset"
+          @preview="onFormPreview"
+          @cancel="editorOpen = false"
         />
       </div>
 
-      <!-- Workers 路由：属于这个 zone 的 pattern → Worker 映射 -->
-      <div v-else role="tabpanel">
-        <ErrorNote :err="routes.err" />
-
-        <div v-if="routeOpen" class="editor">
-          <h4>{{ routeEditing ? "修改路由" : "新增路由" }}</h4>
-          <div class="row gen">
-            <input v-model="routePattern" class="field" placeholder="example.com/*" spellcheck="false" autocomplete="off" />
-            <input v-model="routeScript" class="field" placeholder="Worker 名（留空 = 仅记录，不跑 Worker）" spellcheck="false" autocomplete="off" />
-          </div>
-          <p class="small muted">
-            pattern 必须属于 {{ zoneName }}，并以 <code>*</code> 结尾；上游 POST/PUT/DELETE 三条同一路径。
-            这条写需要令牌带 Workers Routes Write，缺权限时 CF 回 403，会原样显示。
-          </p>
-          <p class="small errtext" v-if="routeErr">{{ routeErr }}</p>
-          <div class="row" style="gap: 8px">
-            <button class="ghost sm" :disabled="!writesOn" @click="askSaveRoute">预览并确认</button>
-            <button class="ghost sm" @click="routeOpen = false">取消</button>
-          </div>
+      <div v-if="routeOpen" class="editor">
+        <h4>{{ routeEditing ? "修改路由" : "新增路由" }}</h4>
+        <div class="row gen">
+          <input v-model="routePattern" class="field" placeholder="example.com/*" spellcheck="false" autocomplete="off" />
+          <input v-model="routeScript" class="field" placeholder="Worker 名（留空 = 仅记录，不跑 Worker）" spellcheck="false" autocomplete="off" />
         </div>
-
-        <div class="list" v-if="(routes.data || []).length">
-          <div v-for="r in routes.data" :key="r.id" class="item">
-            <div class="k">{{ r.pattern }}</div>
-            <div class="v">
-              {{ r.script || "仅记录" }}
-              <div class="small">{{ shortId(r.id, 6) }}</div>
-              <div class="row" style="gap: 6px; margin-top: 4px">
-                <button class="ghost sm" :disabled="!writesOn" @click="openRouteEdit(r)">编辑</button>
-                <button class="ghost sm danger" :disabled="!writesOn" @click="askDeleteRoute(r)">删除</button>
-              </div>
-            </div>
-          </div>
+        <p class="small muted">
+          pattern 必须属于 {{ zoneName }}，并以 <code>*</code> 结尾；上游 POST/PUT/DELETE 三条同一路径。
+          这条写需要令牌带 Workers Routes Write，缺权限时 CF 回 403，会原样显示。
+        </p>
+        <p class="small errtext" v-if="routeErr">{{ routeErr }}</p>
+        <div class="row" style="gap: 8px">
+          <button class="ghost sm" :disabled="!writesOn" @click="askSaveRoute">预览并确认</button>
+          <button class="ghost sm" @click="routeOpen = false">取消</button>
         </div>
-        <div v-else-if="!routes.err" class="empty">这个站点没有 Workers 路由</div>
-        <p class="small muted" style="margin-top: 8px" v-if="!writesOn">标题行右侧的本机写开关没打开，路由的增删改按钮是灰的。</p>
       </div>
+
+      <div class="hlist" v-if="filteredRows.length">
+        <div v-for="row in filteredRows" :key="row.host" class="hrow">
+          <div class="hhead">
+            <div class="hname">{{ row.host }}</div>
+            <span v-if="row.records.some((r) => r.proxied)" class="badge prox">已代理</span>
+            <span v-if="row.workers.length" class="badge blue">Worker</span>
+            <span v-if="row.pages.length" class="badge blue">Pages</span>
+            <span v-if="row.routes.length" class="badge">路由</span>
+          </div>
+
+          <div v-for="r in row.records" :key="'dns-' + r.id" class="hline">
+            <span class="badge">{{ r.type }}</span>
+            <span class="hcontent mono" :title="String(r.content)">{{ r.content }}</span>
+            <span class="small muted">{{ recTtl(r) }} · {{ r.proxied ? "已代理" : "仅 DNS" }}</span>
+            <span class="ha">
+              <button class="ghost sm" @click="openEdit(r)">编辑</button>
+              <button class="ghost sm danger" @click="onDelete(r)">删除</button>
+            </span>
+          </div>
+
+          <div v-for="w in row.workers" :key="'w-' + (w.id || w.hostname)" class="hline">
+            <span class="harrow">→ Worker</span>
+            <button class="linkbtn" type="button" @click="goWorker(w.service)">{{ w.service }}</button>
+            <span class="small muted">{{ w.environment || "production" }}<template v-if="w.cert_id"> · 有证书</template></span>
+          </div>
+
+          <div v-for="(d, i) in row.pages" :key="'p-' + row.host + i" class="hline">
+            <span class="harrow">→ Pages</span>
+            <button class="linkbtn" type="button" @click="goProject(d.project)">{{ d.project }}</button>
+            <span v-if="d.status" class="badge" :class="{ live: d.status === 'active' }">{{ d.status === "active" ? "已生效" : d.status }}</span>
+          </div>
+
+          <div v-for="rt in row.routes" :key="'rt-' + rt.id" class="hline">
+            <span class="harrow">→ 路由</span>
+            <span class="mono">{{ rt.pattern }}</span>
+            <span class="small muted">{{ rt.script || "仅记录" }}</span>
+            <span class="ha">
+              <button class="ghost sm" :disabled="!writesOn" @click="openRouteEdit(rt)">编辑</button>
+              <button class="ghost sm danger" :disabled="!writesOn" @click="askDeleteRoute(rt)">删除</button>
+            </span>
+          </div>
+
+          <div v-if="!row.records.length" class="hline small muted">没有 DNS 记录（仅靠路由 / 外部解析生效）</div>
+        </div>
+      </div>
+      <div v-else-if="!records.loading" class="empty">{{ hostSearch ? "没有匹配的域名" : "这个站点还没有 DNS 记录或绑定" }}</div>
+      <div v-else class="empty">加载中…</div>
+      <div class="whyline" v-if="doneMsg">{{ doneMsg }}</div>
+
+      <div class="small muted" style="margin-top: 8px" v-if="sub.data?.subdomain">
+        workers.dev 子域：<code>*.{{ sub.data.subdomain }}.workers.dev</code>
+      </div>
+      <p class="small muted" style="margin-top: 8px" v-if="!writesOn">标题行右侧的本机写开关没打开，路由的增删改按钮是灰的。</p>
     </div>
 
     <!-- 运维工具（折叠）：清缓存 + DNS 配置向导。两个都是低频操作，不该占首屏 -->
@@ -493,14 +561,20 @@ button.sm { padding: 4px 10px; font-size: 12px; }
 button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .gen { flex-wrap: wrap; gap: 6px; }
 .gen .field { max-width: 280px; }
-/* DNS / 域名 / 路由 三选一：换 tab 而不是把三块内容纵向堆一屏 */
-.tabs { display: flex; gap: 4px; margin: 10px 0 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid transparent;
-  border-bottom: 0; border-radius: 9px 9px 0 0; background: none; color: var(--muted);
-  font: inherit; font-size: 13px; cursor: pointer; margin-bottom: -1px; }
-.tab:hover { color: var(--fg); background: var(--panel-2); }
-.tab.on { color: var(--fg); font-weight: 600; background: var(--panel-2); border-color: var(--line); }
-.tab .cnt { font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line);
-  border-radius: 999px; padding: 0 6px; line-height: 16px; }
-.tab.on .cnt { color: var(--accent); border-color: rgb(var(--accent-rgb) / .4); }
+/* 一个域名一行：DNS / Worker / Pages / 路由都收在同一张行卡里，不再分三个 tab 重复列 */
+.hlist { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.hrow { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.hhead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hname { font-size: 14.5px; font-weight: 650; word-break: break-all; margin-right: 2px; }
+.hline { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 7px;
+  padding-top: 7px; border-top: 1px dashed var(--line-soft); font-size: 12.5px; }
+.hrow > .hline:first-of-type { border-top: 0; padding-top: 4px; }
+.hcontent { color: var(--fg-2); min-width: 0; word-break: break-all; max-width: 100%; }
+.ha { margin-left: auto; display: flex; gap: 5px; flex: none; }
+.harrow { color: var(--muted); font-size: 11.5px; flex: none; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.linkbtn:hover { color: var(--fg); }
+.badge.prox { color: var(--accent); border-color: rgb(var(--accent-rgb) / .45); }
+.badge.blue { color: var(--pending-ink); border-color: rgb(var(--pending-rgb) / .45); background: rgb(var(--pending-rgb) / .1); }
+.badge.live { color: var(--ok); border-color: rgb(var(--ok-rgb) / .4); }
 </style>

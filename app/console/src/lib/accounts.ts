@@ -187,6 +187,21 @@ export async function addAccount(a: CfAccount): Promise<CfAccount[]> {
   return acctState.list;
 }
 
+/**
+ * 只改本地显示名（alias），令牌、账号 id、认证方式一律不动 —— 重命名是纯本地操作，
+ * 影响面只有「界面上怎么称呼这个账号」。落盘走与 addAccount 同一条加密路径。
+ * alias 传空 = 清掉别名，显示名回退到 CF 账号名（labelOf 的口径）。
+ */
+export async function renameAccount(id: string, alias: string): Promise<CfAccount[]> {
+  const cur = acctState.list.find((x) => x.id === id);
+  if (!cur) throw new Error("找不到这个账号");
+  const clean: CfAccount = { ...cur, alias: alias.trim() };
+  acctState.list = acctState.list.map((x) => (x.id === id ? clean : x));
+  if (nativeMode) await vault.deviceSeal(acctState.list);
+  else if (!acctState.locked) await vault.seal(acctState.list);
+  return acctState.list;
+}
+
 export async function removeAccount(id: string): Promise<CfAccount[]> {
   acctState.list = acctState.list.filter((x) => x.id !== id);
   if (nativeMode) await vault.deviceSeal(acctState.list);

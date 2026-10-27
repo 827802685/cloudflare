@@ -578,6 +578,22 @@ export function workerName(w: any): string {
   return String(w?.id ?? w?.name ?? "");
 }
 
+/* ---------- Pages 项目的「是否已部署 / 最近改动」：列表与看板必须同一套判据 ----------
+ * 踩过的坑：计算页列表只看 `deployment_id`，看板只看 `latest_deployment`，
+ * 同一个项目在两张面上一个写「已部署」一个写「无部署」—— 自相矛盾。
+ * 三处（列表 / 看板 / 详情回退）现在都走这里，字段优先级也写死在这一个地方。 */
+export function pageDeploy(p: any): any {
+  return p?.latest_deployment ?? p?.canonical_deployment ?? null;
+}
+export function pageDeployed(p: any): boolean {
+  return !!pageDeploy(p) || !!p?.deployment_id;
+}
+/** 最近一次部署的时间（ISO）；没有部署记录时退回项目 created_on，实在没有就空串 */
+export function pageLastActivity(p: any): string {
+  const d = pageDeploy(p);
+  return String(d?.modified_on ?? d?.created_on ?? p?.created_on ?? "");
+}
+
 /* ============================================================================
  * 写侧契约（docs/12 §3 P3）。三条设计决定都来自实测，不是风格偏好：
  *

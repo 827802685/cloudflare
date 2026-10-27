@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import UnavailableNote from "../components/board/UnavailableNote.vue";
 import { api, gwHealth, gwMeta, GwError, isNativeApp, setWritesOptIn, writesOptIn, probeToken, type Account } from "../lib/api";
-import { acctState, addAccount, findAccount, removeAccount, labelOf, createVault, unlockAccounts, lockAccounts, destroyAll, type CfAccount } from "../lib/accounts";
+import { acctState, addAccount, findAccount, removeAccount, renameAccount, labelOf, createVault, unlockAccounts, lockAccounts, destroyAll, type CfAccount } from "../lib/accounts";
 import { beginOAuthLogin, oauthClientCfg, saveOAuthClientCfg, REDIRECT_HINT, revokeOAuth } from "../lib/oauth";
 import { baseSource } from "../lib/config";
 import { THEME_OPTIONS, loadThemePref, saveThemePref, type ThemePref, ACCENT_OPTIONS, loadAccentPref, saveAccentPref, type AccentPref } from "../lib/theme";
@@ -172,6 +172,42 @@ async function delAcc(a: CfAccount) {
     gw.save(next ? { account: next.id, accountName: labelOf(next) } : { account: "", accountName: "" });
   }
   await test();
+}
+
+/* ---------- 重命名（纯本地：只改显示名，不动令牌与账号 id） ---------- */
+/** 正在改名的账号 id；空 = 没有一栏在编辑态（同一时间只开一栏，省得两个输入框抢焦点） */
+const renameId = ref("");
+const renameVal = ref("");
+const renameBusy = ref(false);
+const renameErr = ref("");
+
+function beginRename(a: CfAccount) {
+  renameId.value = a.id;
+  renameVal.value = labelOf(a);
+  renameErr.value = "";
+}
+
+function cancelRename() {
+  renameId.value = "";
+  renameVal.value = "";
+  renameErr.value = "";
+}
+
+async function saveRename(a: CfAccount) {
+  const v = renameVal.value.trim();
+  if (!v) { renameErr.value = "名字不能为空（想清掉别名就把 CF 账号名留着）"; return; }
+  if (v === labelOf(a)) { cancelRename(); return; }
+  renameBusy.value = true;
+  try {
+    await renameAccount(a.id, v);
+    // 改的正是当前选中的账号 → 顶栏/设置页那处"当前账号"文案要跟着变，否则前后对不上
+    if (a.id === gw.config.account) gw.save({ accountName: v });
+    cancelRename();
+  } catch (e) {
+    renameErr.value = String((e as Error)?.message || e);
+  } finally {
+    renameBusy.value = false;
+  }
 }
 
 /* ============================================================================
@@ -543,17 +579,41 @@ async function doCheckUpdate() {
         </div>
 
         <div v-if="accts.length" class="list" style="margin-top: 12px">
-          <div v-for="a in accts" :key="a.id" class="item">
+          <div v-for="a in accts" :key="a.id" class="item accitem">
             <div class="k">
-              {{ labelOf(a) }}
-              <span v-if="a.auth === 'oauth'" class="badge live" style="margin-left: 6px">OAuth</span>
-              <div class="small muted">{{ a.id.slice(0, 8) }}…{{ a.name && a.name !== labelOf(a) ? " · " + a.name : "" }}</div>
+              <!-- 编辑态：只这一栏换成输入框，其余照旧显示（同一时间只开一栏） -->
+              <template v-if="renameId === a.id">
+                <input
+                  v-model="renameVal"
+                  class="field"
+                  style="max-width: 220px"
+                  :disabled="renameBusy"
+                  placeholder="给这个账号起个名字"
+                  spellcheck="false"
+                  @keyup.enter="saveRename(a)"
+                  @keyup.esc="cancelRename()"
+                />
+                <div v-if="renameErr" class="small" style="color: var(--bad); margin-top: 6px">{{ renameErr }}</div>
+                <div v-else class="small muted">只改本机显示名，令牌与账号 id 不动；回车保存，Esc 取消。</div>
+              </template>
+              <template v-else>
+                {{ labelOf(a) }}
+                <span v-if="a.auth === 'oauth'" class="badge live" style="margin-left: 6px">OAuth</span>
+                <div class="small muted">{{ a.id.slice(0, 8) }}…{{ a.name && a.name !== labelOf(a) ? " · " + a.name : "" }}</div>
+              </template>
             </div>
             <div class="row">
-              <button class="chip" :class="{ on: a.id === gw.config.account }" :disabled="switching" @click="pickAcc(a)">
-                {{ a.id === gw.config.account ? "使用中" : "用它" }}
-              </button>
-              <button class="chip" :disabled="switching" @click="delAcc(a)">删除</button>
+              <template v-if="renameId === a.id">
+                <button class="chip on" :disabled="renameBusy" @click="saveRename(a)">{{ renameBusy ? "保存中…" : "保存" }}</button>
+                <button class="chip" :disabled="renameBusy" @click="cancelRename()">取消</button>
+              </template>
+              <template v-else>
+                <button class="chip" :class="{ on: a.id === gw.config.account }" :disabled="switching" @click="pickAcc(a)">
+                  {{ a.id === gw.config.account ? "使用中" : "用它" }}
+                </button>
+                <button class="chip" :disabled="switching || !!renameId" @click="beginRename(a)">改名</button>
+                <button class="chip" :disabled="switching" @click="delAcc(a)">删除</button>
+              </template>
             </div>
           </div>
         </div>
@@ -720,6 +780,10 @@ async function doCheckUpdate() {
 .set > .wide :deep(.card) { margin-bottom: 0; }
 .opt { margin-bottom: 12px; }
 .oauth-pick { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+/* 账号行：多了「改名」按钮，窄屏要能换行；编辑态里 .k 得放得下输入框与提示文字
+   （全局 .item .k 是 nowrap + 省略号，那是给纯展示行写的，这里覆盖掉） */
+.accitem { flex-wrap: wrap; align-items: flex-start; }
+.accitem .k { flex: 1 1 180px; min-width: 0; white-space: normal; }
 .opt-h { font-size: var(--t-xs); color: var(--muted); letter-spacing: .04em; margin-bottom: 6px; }
 /* 强调色预览点：这是"选项本身"的固定色，不是界面当前色，所以写字面值 */
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgb(0 0 0 / .18); }

@@ -20,7 +20,8 @@ if (!fs.existsSync(modPath)) {
 const { gwDirect, writeDirect, dropDirect } = await import(modPath);
 
 const DIRECT_BASE = "https://api.cloudflare.com/client/v4";
-const ACC = "«ACCOUNT_ID»"; // 32 位 hex，形状与真实账号一致
+const ACC = "c".repeat(32); // 必须是真形状的 32 位 hex：直连层会 encodeURIComponent(account)，
+// 之前这里写成「«ACCOUNT_ID»」这种占位符，编码后变成 %C2%AB…%C2%BB，46 条断言全线误报。
 const ZONE = "b".repeat(32);
 const DEP = "5e310b27-4a39-4324-8f49-681f36184a30"; // Pages / Workers 部署 id 的 UUID 形状
 const CTX = { token: "test-token", account: ACC, fresh: false };

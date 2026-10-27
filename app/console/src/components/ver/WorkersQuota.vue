@@ -21,13 +21,9 @@ import { bytes, dt, num } from "../../lib/fmt";
 const FREE = {
   requests: 100_000,
   events: 200_000,
-  kvRead: 100_000,
-  kvWrite: 1_000,
-  d1Read: 5_000_000,
-  d1Write: 100_000,
 };
-/** ok=接口给了用量；failed=这次该取但没取到；na=接口根本不提供这条用量 */
-type QuotaKind = "ok" | "failed" | "na";
+/** ok=接口给了用量；failed=这次该取但没取到 */
+type QuotaKind = "ok" | "failed";
 interface QuotaRow { key: string; name: string; usage: number | null; limit: number; kind: QuotaKind; extra?: string }
 
 const props = defineProps<{ /** 父屏「刷新」自增，用来带动这块重新取数 */ tick?: number }>();
@@ -69,30 +65,21 @@ watch(() => props.tick, () => { load(); loadPlans(); });
 const events = computed(() => (typeof usage.value?.events === "number" ? usage.value.events : null));
 const reqErrors = computed(() => (typeof usage.value?.reqErrors === "number" ? usage.value.reqErrors : null));
 
-/** 六条每日额度：能测的用量的排前面（按消耗率降序），测不出的排最后 */
+/** 两条每日额度：只保留接口真能给出用量的（KV / D1 没有任何用量接口，已整块删掉） */
 const quotaRows = computed<QuotaRow[]>(() => {
   const u = usage.value;
   const reqNum = typeof u?.requests === "number" ? u.requests : null;
   const rows: QuotaRow[] = [
     { key: "requests", name: "Workers 请求数", usage: reqNum, limit: FREE.requests, kind: reqNum !== null ? "ok" : "failed", extra: u?.requestsErr || "" },
     { key: "events", name: "Workers 可观测性事件", usage: events.value, limit: FREE.events, kind: events.value !== null ? "ok" : "failed" },
-    { key: "kvRead", name: "KV 读取", usage: null, limit: FREE.kvRead, kind: "na" },
-    { key: "kvWrite", name: "KV 写入 / 删除 / 列举", usage: null, limit: FREE.kvWrite, kind: "na" },
-    { key: "d1Read", name: "D1 行读取", usage: null, limit: FREE.d1Read, kind: "na" },
-    { key: "d1Write", name: "D1 行写入", usage: null, limit: FREE.d1Write, kind: "na" },
   ];
   const score = (r: QuotaRow) => (r.usage === null ? -1 : r.usage / r.limit);
   return rows.sort((a, b) => score(b) - score(a));
 });
-/** 能测的（Workers 请求 / 事件）与测不出的（KV / D1）分开：前者走"只留最高那条"的极值读数 */
-const okRows = computed(() => quotaRows.value.filter((r) => r.kind !== "na"));
-/** 后者用量根本没有任何接口，摊在读数面上只是四条横线，单独默认折起 */
-const naRows = computed(() => quotaRows.value.filter((r) => r.kind === "na"));
+const okRows = computed(() => quotaRows.value);
 const VISIBLE_QUOTA = 1;
 const showAllQuota = ref(false);
 const shownOk = computed(() => (showAllQuota.value ? okRows.value : okRows.value.slice(0, VISIBLE_QUOTA)));
-const naOpen = ref(false);
-const shownQuotas = computed(() => (naOpen.value ? [...shownOk.value, ...naRows.value] : shownOk.value));
 const restBytes = computed(() => (usage.value?.breakdown ?? []).reduce((s, r) => s + (r.eventSize ?? 0), 0));
 
 /** 按 Worker 的事件分布：同样默认只显最多那条 */
@@ -132,33 +119,28 @@ const windowLabel = computed(() => {
     <div v-if="windowLabel" class="small muted line">窗口 {{ windowLabel }}</div>
 
     <div class="cal-x" v-if="calOpen">
-      <p>这块列的是本账号免费档<b>按日（UTC 午夜）重置</b>的额度，覆盖 Workers + KV + D1。所有上限（10 万 / 20 万 / 500 万 …）都是 Cloudflare <b>公开文档值</b>，没有任何接口返回配额；能读到订阅时把套餐标在上面。</p>
+      <p>这块列的是本账号免费档<b>按日（UTC 午夜）重置</b>的 Workers 额度。两条上限（10 万 / 20 万）都是 Cloudflare <b>公开文档值</b>，没有任何接口返回配额；能读到订阅时把套餐标在上面。</p>
       <p><b>Workers 请求数</b>来自网关在同一条 <code>/v1/workers/usage</code> 里并的 GraphQL 账号级数据集 <code>workersInvocationsAdaptive.sum.requests</code>（2026-10-11 实测，与 CF 控制台 Workers 分析页同源）。它是 Workers 口径，跟看板那个<b>站点（zone）HTTP 请求数</b>不是一回事，两块不能互相当分子。这条 best-effort：万一这次没取到，会退回"没取到"而不是 0。</p>
       <p><b>Workers 可观测性事件</b>来自 <code>observability/usage</code>，是<b>事件数</b>不是请求数；下面那条按 Worker 的分布同理。</p>
-      <p><b>KV 读 / KV 写删列 / D1 行读 / D1 行写</b>：本机实测这些产品的<b>每日用量没有任何接口暴露</b>（GraphQL 账号级无对应数据集、Analytics Engine 系统数据集被 API 拒、D1 列表不返回 size），所以只列文档上限、用量标"—（接口不提供）"，绝不编数或显示 0。</p>
       <p>额度按 UTC 午夜重置，界面上的窗口时间是本地时间。</p>
     </div>
 
     <AsyncBlock :loading="loading && !usage" :err="err" :has="events !== null" empty-text="这个窗口里没有事件（不是没取到）" can-retry @retry="load">
-      <!-- 每日额度：能测的默认只显消耗最高的那条；KV / D1 那几条用量接口不提供，另折一刀，默认不收进读数面 -->
-      <div v-for="q in shownQuotas" :key="q.key" class="quota" :class="{ na: q.kind !== 'ok' }">
+      <!-- 每日额度：只留接口能给准的两条（Workers 请求数 / 可观测性事件） -->
+      <div v-for="q in shownOk" :key="q.key" class="quota" :class="{ na: q.kind !== 'ok' }">
         <div class="qhead">
           <span class="qname">{{ q.name }}</span>
           <span v-if="q.kind === 'ok'" class="qnum">{{ num(q.usage) }}<span class="qlim"> / {{ num(q.limit) }}</span></span>
-          <span v-else class="qnum miss">{{ q.kind === "na" ? "—" : "没取到" }}<span class="qlim">（上限 {{ num(q.limit) }}/日）</span></span>
+          <span v-else class="qnum miss">没取到<span class="qlim">（上限 {{ num(q.limit) }}/日）</span></span>
         </div>
         <div class="track"><span v-if="q.kind === 'ok'" class="fill" :style="{ width: pct(q.usage ?? 0, q.limit) + '%' }" /><span v-else class="fill none" /></div>
         <div v-if="q.kind === 'ok'" class="small muted line">
           接口值 · {{ pct(q.usage ?? 0, q.limit).toFixed(2) }}%<span v-if="q.key === 'requests' && reqErrors !== null"> · 错误 {{ num(reqErrors) }}</span><span v-if="q.key === 'events'"> · {{ bytes(restBytes) }}</span>
         </div>
-        <div v-else-if="q.kind === 'na'" class="small muted line">用量接口不提供 · 上限是文档值</div>
         <div v-else class="small muted line"><b>不是 0</b>：这条这次没取到{{ q.extra ? "（" + q.extra + "）" : "" }}</div>
       </div>
       <button v-if="okRows.length > VISIBLE_QUOTA" type="button" class="fold" @click="showAllQuota = !showAllQuota">
         {{ showAllQuota ? "收起（只看最多那条）" : `展开可测额度（还有 ${okRows.length - VISIBLE_QUOTA} 条）` }}
-      </button>
-      <button v-if="naRows.length" type="button" class="fold" @click="naOpen = !naOpen">
-        {{ naOpen ? "收起（KV / D1 那几条）" : `KV / D1 每日额度（${naRows.length} 条）· 用量接口不提供 · 展开` }}
       </button>
 
       <!-- ③ 按 Worker 的事件分布：和额度一样默认只显最高那条，不跟「长列表默认显示」这一档走 -->

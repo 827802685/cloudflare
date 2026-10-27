@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, type Ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch, type Ref } from "vue";
 import { reloadTick } from "../lib/bus";
 import { useRoute } from "vue-router";
 import ConfirmSheet from "../components/ConfirmSheet.vue";
@@ -126,9 +126,14 @@ function refresh() { forceFreshWindow(); loadAll(); }
 function jumpTo(c: string) {
   const el = document.getElementById("c-" + c);
   if (!el) return;
-  el.scrollIntoView({ block: "start" });
-  el.classList.add("flash");
-  setTimeout(() => el.classList.remove("flash"), 1400);
+  // 目标是折叠卡时先展开再滚：否则滚过去只看到一行 summary
+  const fold = el.closest("details");
+  if (fold && !fold.open) fold.open = true;
+  void nextTick(() => {
+    el.scrollIntoView({ block: "start" });
+    el.classList.add("flash");
+    setTimeout(() => el.classList.remove("flash"), 1400);
+  });
 }
 function jump() {
   const c = String(route.query.c || "");
@@ -441,8 +446,8 @@ function isLive(versionId: unknown): boolean {
       <button class="chip" type="button" @click="jumpTo('domains')">自定义域名</button>
       <button class="chip" type="button" @click="jumpTo('settings')">配置信息</button>
       <button class="chip" type="button" @click="jumpTo('bindings')">绑定</button>
-      <button class="chip" type="button" @click="jumpTo('secrets')">Secret</button>
-      <button class="chip" type="button" @click="jumpTo('crons')">定时触发</button>
+      <button class="chip" type="button" @click="jumpTo('secrets')">变量与 Secret</button>
+      <button class="chip" type="button" @click="jumpTo('crons')">定时触发器</button>
     </div>
 
     <div class="card" id="c-current">
@@ -465,7 +470,9 @@ function isLive(versionId: unknown): boolean {
       <div v-else-if="!deployments.err" class="empty">没有部署记录</div>
     </div>
 
-    <div class="card" id="c-traffic">
+    <details class="foldcard" id="c-traffic">
+      <summary>流量归属<span class="fc-s">近 7 天 · 按主机名</span></summary>
+      <div class="card">
       <h3>流量归属（近 7 天 · 按主机名）</h3>
       <ErrorNote :err="traffic.err" />
       <template v-if="traffic.data">
@@ -492,7 +499,8 @@ function isLive(versionId: unknown): boolean {
         </div>
       </template>
       <div class="empty" v-else-if="!traffic.err && traffic.loading">加载中…</div>
-    </div>
+      </div>
+    </details>
 
     <div class="card" id="c-domains">
       <div class="row" style="justify-content: space-between; align-items: flex-start; gap: 10px">
@@ -639,7 +647,9 @@ function isLive(versionId: unknown): boolean {
       </button>
     </div>
 
-    <div class="card" id="c-settings">
+    <details class="foldcard" id="c-settings">
+      <summary>配置信息<span class="fc-s">compat · 放置 · 可观测性 · workers.dev</span></summary>
+      <div class="card">
       <h3>配置信息</h3>
       <ErrorNote :err="settings.err || scriptSettings.err" />
       <div class="kv" v-if="settings.data || scriptSettings.data">
@@ -677,9 +687,12 @@ function isLive(versionId: unknown): boolean {
         observability 与 logpush 只来自 <code>/script-settings</code> —— 两条不同路由，实测字段几乎不重叠（docs/08 §6.1）。
         同一个 <code>tags</code> 在 <code>/settings</code> 里是空数组、在 <code>/script-settings</code> 里是 <code>null</code>，所以这里标的是"哪种空"而不是统一写"无"。
       </FoldNote>
-    </div>
+      </div>
+    </details>
 
-    <div class="card" id="c-secrets">
+    <details class="foldcard" id="c-secrets">
+      <summary>变量与 Secret<span class="fc-s">{{ secrets.data?.length ?? 0 }} 条</span></summary>
+      <div class="card">
       <h3>变量与 Secret</h3>
       <VarsPanel
         :name="name"
@@ -689,9 +702,12 @@ function isLive(versionId: unknown): boolean {
         :err="secrets.err || settings.err"
         @changed="refresh"
       />
-    </div>
+      </div>
+    </details>
 
-    <div class="card" id="c-bindings">
+    <details class="foldcard" id="c-bindings">
+      <summary>绑定<span class="fc-s">{{ bindingKinds.length ? bindingKinds.join("、") : "KV / R2 / D1 / Service" }}</span></summary>
+      <div class="card">
       <h3>绑定（KV / R2 / D1 / Service）</h3>
       <BindingsPanel
         :name="name"
@@ -700,9 +716,12 @@ function isLive(versionId: unknown): boolean {
         :err="settings.err"
         @changed="refresh"
       />
-    </div>
+      </div>
+    </details>
 
-    <div class="card" id="c-crons">
+    <details class="foldcard" id="c-crons">
+      <summary>定时触发器<span class="fc-s">{{ crons.data?.length ?? 0 }} 条 cron</span></summary>
+      <div class="card">
       <h3>定时触发器</h3>
       <CronPanel
         :name="name"
@@ -712,9 +731,12 @@ function isLive(versionId: unknown): boolean {
         @retry="loadAll"
         @changed="refresh"
       />
-    </div>
+      </div>
+    </details>
 
-    <div class="card" id="c-switch">
+    <details class="foldcard" id="c-switch">
+      <summary>版本切换 / 回滚<span class="fc-s">滑杆选流量占比</span></summary>
+      <div class="card">
       <h3>版本切换 / 回滚</h3>
       <div class="small muted" style="margin-bottom: 10px">
         回滚从两个地方发起：<b>版本列表</b>里每个非运行中的版本行右侧有「回滚」，<b>部署历史</b>里单版本部署有「回滚到此」。
@@ -722,7 +744,8 @@ function isLive(versionId: unknown): boolean {
         确认后真发 <code>POST …/deployments</code>；APK 直连即时生效，网关模式还需网关侧
         <code>WRITE_ENABLED</code> 放行，关着会如实报 <code>501 writesDisabled</code>。
       </div>
-    </div>
+      </div>
+    </details>
 
     <VersionDialog
       v-if="showSwitch"
@@ -751,4 +774,12 @@ button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .gen { flex-wrap: wrap; gap: 6px; }
 .gen .field { max-width: 280px; }
 .sel { width: auto; }
+/* 低频区块折叠：二级页默认只留当前版本 / 域名 / 版本 / 部署，其余收成一行摘要 */
+.foldcard { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel-2); margin-bottom: 12px; overflow: hidden; }
+.foldcard > summary { display: flex; align-items: center; gap: 8px; padding: 11px 13px; cursor: pointer; list-style: none; font-size: var(--t-sm); font-weight: 650; color: var(--fg-2); }
+.foldcard > summary::-webkit-details-marker { display: none; }
+.foldcard > summary::before { content: ""; width: 6px; height: 6px; flex: none; border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: rotate(-45deg); transition: transform .18s ease; }
+.foldcard[open] > summary::before { transform: rotate(45deg); }
+.foldcard .fc-s { margin-left: auto; font-size: var(--t-2xs); font-weight: 400; color: var(--muted); }
+.foldcard > .card { margin: 0 8px 8px; }
 </style>

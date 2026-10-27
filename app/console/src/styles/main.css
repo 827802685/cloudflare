@@ -522,13 +522,21 @@ label.lbl { display: block; font-size: var(--t-xs); color: var(--muted); margin:
 .lrow .meta { color: var(--muted); font-size: var(--t-xs); margin-top: 3px; word-break: break-all;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lrow .right { display: flex; align-items: center; gap: 5px; flex: none; flex-wrap: wrap; justify-content: flex-end; max-width: 46%; }
-.lrow .fold { background: var(--panel); border: none; border-radius: 999px; color: var(--muted); font-size: var(--t-2xs); padding: 4px 11px;
-  box-shadow: inset 2px 2px 4px var(--neu-dark), inset -2px -2px 4px var(--panel), 0 0 0 1px var(--line);
-  transition: color .25s ease, box-shadow .25s ease; }
-.lrow .fold:hover { color: var(--accent); box-shadow: inset 2px 2px 4px var(--neu-dark), inset -2px -2px 4px var(--panel), 0 0 0 1px var(--accent); }
-.acts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+/* 「更多 N」是列表里的次级开关，不是主行动：只留一条下划线文字，不画药丸底。
+   原来套了内阴影药丸，行内还有橙色徽章时会被读成"选中态"（与 .chip.on 撞色）。 */
+.lrow .fold { background: none; border: none; border-radius: 0; color: var(--muted); font-size: var(--t-2xs);
+  padding: 2px 0; box-shadow: none; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.lrow .fold:hover { color: var(--accent); background: none; box-shadow: none; }
+/* 动作宫格：默认 4 列。动作数不总是 4 的倍数（Workers 收起 6、Pages 5），
+   固定 4 列会在末行留下空槽，看着像少画了一块 —— 对 5 / 6 / 10 个动作换成
+   5 / 3 / 5 列的整除排法。旧内核不支持 :has 时退回 4 列，只是不齐，不影响功能。 */
+.acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.acts:has(> .act:nth-child(5):last-child),
+.acts:has(> .act:nth-child(10):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.acts:has(> .act:nth-child(6):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 /* 动作宫格：同族柔光小键，按下去内影加深（面被压进去），不靠位移 */
 .act { display: flex; flex-direction: column; align-items: center; gap: 3px; background: var(--panel); border: none;
+  min-width: 0;
   border-radius: 12px; padding: 8px 2px; color: var(--accent); font-size: var(--t-2xs); line-height: 1.25; text-align: center;
   box-shadow: inset 3px 3px 6px var(--neu-dark), inset -3px -3px 6px var(--panel), 0 0 0 1px var(--line);
   transition: box-shadow .25s cubic-bezier(.4, 0, .2, 1), transform .25s cubic-bezier(.4, 0, .2, 1); }
