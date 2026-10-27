@@ -491,6 +491,8 @@ export type AccountsResult = R<Account[]> & {
  */
 export function apiAs(acc: string) {
   return {
+    /** 看板合计：/v1/overview 只认一个账号，多账号只能各取一条在前端相加 */
+    overview: (range: string) => gwAs<Overview>(acc, "/v1/overview", { range }),
     zones: () => gwAs<R<any[]>>(acc, "/v1/zones"),
     workers: () => gwAs<R<any[]>>(acc, "/v1/workers"),
     pages: () => gwAs<R<any[]>>(acc, "/v1/pages"),

@@ -62,6 +62,42 @@ const currentZoneName = computed(() => {
   return z?.name || "";
 });
 
+/* ---------- 合并模式的站点筛选：切换器不消失，改成「跨账号站点清单」 ----------
+ * 合并视图没有"当前站点"，但把所有站点一把铺平会很难找；这里给「全部站点」+ 按账号分组的站点。
+ * 选中后只看那个账号的那个站点 —— 键里带账号 id，两个账号有同名站点也不会串。 */
+const aggZoneKey = ref(""); // "" = 全部；否则 acc|zoneId
+const aggZoneGroups = computed(() =>
+  aggData.value
+    .filter((b) => b.zones.length)
+    .map((b) => ({
+      acc: b.acc,
+      accName: b.accName,
+      zones: b.zones.map((z) => ({ id: z.id, name: String(z.zone?.name ?? ""), status: String(z.zone?.status ?? "") })),
+    })),
+);
+const aggZoneCount = computed(() => aggZoneGroups.value.reduce((n, g) => n + g.zones.length, 0));
+const aggZoneSel = computed(() => {
+  const k = aggZoneKey.value;
+  if (!k) return null;
+  const [acc, id] = k.split("|");
+  for (const g of aggZoneGroups.value) {
+    if (g.acc !== acc) continue;
+    const z = g.zones.find((x) => x.id === id);
+    if (z) return { acc, accName: g.accName, id, name: z.name, status: z.status };
+  }
+  return null;
+});
+/** 切换器上的那行字 / 状态点：单账号看当前站点，合并模式看筛选结果 */
+const selectorLabel = computed(() => {
+  if (!agg.on) return currentZone.value?.name || (zones.value.loading ? "加载中…" : "选择站点");
+  return aggZoneSel.value ? aggZoneSel.value.name : `全部站点（${aggZoneCount.value}）`;
+});
+const selectorStatus = computed(() => (agg.on ? aggZoneSel.value?.status || "unknown" : currentZone.value?.status || "unknown"));
+function pickAggZone(acc: string, id: string) {
+  aggZoneKey.value = acc + "|" + id;
+  zopen.value = false;
+}
+
 /** 面板开合：写侧三块（新增/编辑、清缓存、向导）默认收起，一屏不塞满 */
 const editorOpen = ref(false);
 const purgeOpen = ref(false);
@@ -252,10 +288,13 @@ const mergedRows = computed<HostRow[]>(() => {
   };
 
   if (agg.on) {
+    const sel = aggZoneSel.value;
     for (const b of aggData.value) {
-      const zNames = b.zones.map((z) => String(z.zone?.name ?? ""));
+      if (sel && sel.acc !== b.acc) continue; // 已筛到某个账号的某个站点：其它账号整份不参与
+      const zones = sel ? b.zones.filter((z) => z.id === sel.id) : b.zones;
+      const zNames = zones.map((z) => String(z.zone?.name ?? ""));
       const inAny = (h: string) => !zNames.length || zNames.some((z) => hostUnder(h, z));
-      for (const z of b.zones) {
+      for (const z of zones) {
         for (const r of z.records) {
           const name = String(r?.name ?? "").trim();
           if (name) get(b.acc, b.accName, name).records.push(r);
@@ -338,10 +377,14 @@ const filteredRows = computed(() => {
 /** 卡片头那行统计：单账号与合并模式各自的口径，不混着写 */
 const statsLine = computed(() => {
   if (agg.on) {
-    const zs = aggData.value.reduce((n, b) => n + b.zones.length, 0);
-    const dns = aggData.value.reduce((n, b) => n + b.zones.reduce((m, z) => m + z.records.length, 0), 0);
-    const rt = aggData.value.reduce((n, b) => n + b.zones.reduce((m, z) => m + z.routes.length, 0), 0);
-    return `${aggData.value.length} 个账号 · ${zs} 个站点 · ${mergedRows.value.length} 个域名 · ${dns} 条 DNS 记录 · ${rt} 条 Workers 路由`;
+    const sel = aggZoneSel.value;
+    const bundles = sel ? aggData.value.filter((b) => b.acc === sel.acc) : aggData.value;
+    const scoped = (b: AggBundle) => (sel ? b.zones.filter((z) => z.id === sel.id) : b.zones);
+    const zs = bundles.reduce((n, b) => n + scoped(b).length, 0);
+    const dns = bundles.reduce((n, b) => n + scoped(b).reduce((m, z) => m + z.records.length, 0), 0);
+    const rt = bundles.reduce((n, b) => n + scoped(b).reduce((m, z) => m + z.routes.length, 0), 0);
+    const head = sel ? `${sel.accName} · ${sel.name} · ` : `${aggData.value.length} 个账号 · `;
+    return `${head}${zs} 个站点 · ${mergedRows.value.length} 个域名 · ${dns} 条 DNS 记录 · ${rt} 条 Workers 路由`;
   }
   return `${mergedRows.value.length} 个域名 · ${records.value.data?.length ?? 0} 条 DNS 记录 · ${routes.value.data?.length ?? 0} 条 Workers 路由`;
 });
@@ -362,6 +405,7 @@ const listLoading = computed(() => (agg.on ? aggLoading.value : records.value.lo
 /** 退出合并视图：回到当前账号的单账号视图（顶栏下拉里也有同一个开关） */
 function exitAgg() {
   agg.on = false;
+  aggZoneKey.value = "";
   requestReload();
 }
 
@@ -508,30 +552,54 @@ async function confirmSheet() {
 
 <template>
   <div>
-    <div class="row" style="justify-content: space-between; margin-bottom: 10px; gap: 10px" v-if="!agg.on">
-      <!-- 站点切换器：折叠式下拉（跟旧版 select 一样收着），展开后带状态点与状态文字 -->
+    <div class="row" style="justify-content: space-between; margin-bottom: 10px; gap: 10px">
+      <!-- 站点切换器：折叠式下拉（跟旧版 select 一样收着），展开后带状态点与状态文字。
+           合并模式下它不消失，改成跨账号站点清单（全部站点 + 按账号分组），选中即筛选。 -->
       <div class="zdd" ref="zddEl">
         <button class="zbtn" :aria-expanded="zopen" aria-haspopup="listbox" @click.stop="zopen = !zopen">
-          <i class="zdot" :data-s="currentZone?.status || 'unknown'" />
-          <span class="zname">{{ currentZone?.name || (zones.loading ? "加载中…" : "选择站点") }}</span>
+          <i class="zdot" :data-s="selectorStatus" />
+          <span class="zname">{{ selectorLabel }}</span>
           <i class="chev" :class="{ up: zopen }">▾</i>
         </button>
         <div class="zpanel" v-if="zopen" role="listbox" aria-label="选择站点">
-          <button
-            v-for="z in zones.data || []" :key="z.id"
-            class="zopt" :class="{ on: String(z.id) === zoneId }"
-            role="option" :aria-selected="String(z.id) === zoneId"
-            @click="zoneId = String(z.id); zopen = false"
-          >
-            <i class="zdot" :data-s="z.status || 'unknown'" />
-            <span class="zopt-name">{{ z.name }}</span>
-            <span class="zopt-st">{{ z.status || "" }}</span>
-          </button>
+          <template v-if="agg.on">
+            <button class="zopt" :class="{ on: !aggZoneKey }" role="option" :aria-selected="!aggZoneKey" @click="aggZoneKey = ''; zopen = false">
+              <i class="zdot" />
+              <span class="zopt-name">全部站点</span>
+              <span class="zopt-st">{{ aggZoneCount }} 个</span>
+            </button>
+            <div v-for="g in aggZoneGroups" :key="'zg-' + g.acc" class="zgrp">
+              <div class="zgrp-h">{{ g.accName }}</div>
+              <button
+                v-for="z in g.zones" :key="g.acc + '|' + z.id"
+                class="zopt" :class="{ on: aggZoneKey === g.acc + '|' + z.id }"
+                role="option" :aria-selected="aggZoneKey === g.acc + '|' + z.id"
+                @click="pickAggZone(g.acc, z.id)"
+              >
+                <i class="zdot" :data-s="z.status" />
+                <span class="zopt-name">{{ z.name }}</span>
+                <span class="zopt-st">{{ z.status }}</span>
+              </button>
+            </div>
+            <div v-if="aggLoading && !aggZoneCount" class="small muted" style="padding: 8px 10px">正在读取站点…</div>
+          </template>
+          <template v-else>
+            <button
+              v-for="z in zones.data || []" :key="z.id"
+              class="zopt" :class="{ on: String(z.id) === zoneId }"
+              role="option" :aria-selected="String(z.id) === zoneId"
+              @click="zoneId = String(z.id); zopen = false"
+            >
+              <i class="zdot" :data-s="z.status || 'unknown'" />
+              <span class="zopt-name">{{ z.name }}</span>
+              <span class="zopt-st">{{ z.status || "" }}</span>
+            </button>
+          </template>
         </div>
       </div>
     </div>
 
-    <!-- 合并视图（只读）：没有"当前站点"这个概念，站点切换器换成这块状态条 -->
+    <!-- 合并视图（只读）：站点切换器仍在（跨账号清单），这里补账号数 / 进度 / 逐账号错误 -->
     <div v-if="agg.on" class="aggbar">
       <div class="aggtop">
         <span class="aggt">合并视图 · {{ aggAccounts().length }} 个账号 · 只读</span>
@@ -769,6 +837,9 @@ async function confirmSheet() {
   border-radius: 8px; background: none; color: inherit; font-size: 13px; cursor: pointer; text-align: left; }
 .zopt:hover { background: var(--panel-2); }
 .zopt.on { background: var(--panel-2); font-weight: 600; }
+/* 合并模式的站点清单按账号分组：组头是账号名，小一号、不抢站点名 */
+.zgrp { margin-top: 4px; }
+.zgrp-h { padding: 6px 10px 2px; font-size: 11px; color: var(--muted); letter-spacing: .03em; }
 .zopt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zopt-st { font-size: 11px; color: var(--muted); flex: none; }
 .zdot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }

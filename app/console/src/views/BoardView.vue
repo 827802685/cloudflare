@@ -8,7 +8,7 @@
  * 只读屏：这里不出现任何写请求。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { reloadTick } from "../lib/bus";
+import { reloadTick, requestReload } from "../lib/bus";
 import AsyncBlock from "../components/board/AsyncBlock.vue";
 import MetricTile, { type PrevState } from "../components/board/MetricTile.vue";
 import StatusDialog from "../components/board/StatusDialog.vue";
@@ -16,7 +16,9 @@ import WorldMap from "../components/board/WorldMap.vue";
 import BarList from "../components/BarList.vue";
 import ErrorNote from "../components/ErrorNote.vue";
 import LineChart from "../components/LineChart.vue";
-import { api, forceFreshWindow, gwMeta, GwError, type Overview } from "../lib/api";
+import { api, apiAs, forceFreshWindow, gwMeta, GwError, type Overview } from "../lib/api";
+import { agg, aggAccounts, aggSkipped, mapLimit } from "../lib/aggregate";
+import { labelOf } from "../lib/accounts";
 import { boardPrefs, CHARTS, RANGES, toggleSubTile, type ChartKey, type RangeKey } from "../lib/boardPrefs";
 import { countryName } from "../lib/country";
 import { bytes, compact, dt, hourLabel, num } from "../lib/fmt";
@@ -36,6 +38,156 @@ const axisLabel = computed(() => (range.value === "24h" ? "横轴按小时" : "�
 const ov = ref<Overview | null>(null);
 const err = ref<GwError | null>(null);
 const loading = ref(false);
+
+/* ---------------- 多账号合一（只读）：每个账号各取一条 overview，再按字段做加法 ----------------
+ * 网关 /v1/overview 一次只认一个账号，没有账户级聚合口，所以加法只能在客户端做。
+ * 失败口径与计算页/域名页一致：按账号独立失败 —— 一个账号令牌过期只在这里说明，
+ * 其余账号照常出数；合计只含成功的账号，这一点在顶部状态条里逐条写清，不假装是全量。 */
+type AccOv = { acc: string; accName: string; ov: Overview | null; err: GwError | null; pending: boolean };
+const aggData = ref<AccOv[]>([]);
+const aggLoading = ref(false);
+const aggDone = ref(0);
+/** 合并时哪些账号的哪一块没取到（数值仍是其余账号的真合计，只是缺了这一份） */
+const aggMiss = ref<Array<{ accName: string; label: string }>>([]);
+const asGw = (e: unknown): GwError => (e instanceof GwError ? e : new GwError("unknown", 0, null, String((e as Error)?.message || e)));
+const aggPending = computed(() => aggData.value.filter((b) => b.pending).map((b) => b.accName));
+const aggErrList = computed(() => aggData.value.filter((b) => !!b.err).map((b) => ({ accName: b.accName, err: b.err as GwError })));
+
+/**
+ * 把 N 份 overview 相加成一份。
+ *  · consoleTotals：按自然日对齐后逐日相加；v（滚动窗采样）也相加；
+ *  · series：按时间点对齐后相加（各账号同一时间窗的桶本来就对齐）；
+ *  · status / countries：按码 / 按国家相加。
+ * 某一块在某个账号上取不到时，不把它当 0 混进合计：记账到 miss，由顶部状态条如实说明。
+ */
+function mergeOverviews(list: Array<{ accName: string; ov: Overview }>): { ov: Overview & { prev?: PrevBlock }; miss: Array<{ accName: string; label: string }> } | null {
+  if (!list.length) return null;
+  const miss: Array<{ accName: string; label: string }> = [];
+  const dayMap = new Map<string, { dimensions: { date: string }; sum: any }>();
+  const seriesMap = new Map<string, { t: string; reqs: number; bytes: number }>();
+  const statusMap = new Map<string, number>();
+  const countryMap = new Map<string, number>();
+  let visits = 0, edgeBytes = 0, hasV = false;
+  let days = 0, rowsRead = 0, elapsed = 0;
+  const totalsMiss: string[] = [], seriesMiss: string[] = [], statusMiss: string[] = [], countryMiss: string[] = [];
+
+  for (const { accName, ov: one } of list) {
+    days = Math.max(days, Number(one.days) || 0);
+
+    const acc = one.consoleTotals?.value?.viewer?.accounts?.[0];
+    if (one.consoleTotals?.error || !acc) {
+      totalsMiss.push(accName);
+      miss.push({ accName, label: "总请求 / 带宽 / 威胁" });
+    } else {
+      if (!Array.isArray(acc.g)) miss.push({ accName, label: "总请求 / 带宽 / 威胁" });
+      else {
+        for (const g of acc.g) {
+          const d = String(g?.dimensions?.date ?? "");
+          if (!d) continue;
+          const cur = dayMap.get(d) ?? { dimensions: { date: d }, sum: { requests: 0, bytes: 0, encryptedRequests: 0, threats: 0 } };
+          cur.sum.requests += Number(g.sum?.requests || 0);
+          cur.sum.bytes += Number(g.sum?.bytes || 0);
+          cur.sum.encryptedRequests += Number(g.sum?.encryptedRequests || 0);
+          cur.sum.threats += Number(g.sum?.threats || 0);
+          dayMap.set(d, cur);
+        }
+      }
+      const v0 = acc.v?.[0]?.sum;
+      if (!v0) miss.push({ accName, label: "独立访客 / 滚动窗带宽" });
+      else { visits += Number(v0.visits || 0); edgeBytes += Number(v0.edgeResponseBytes || 0); hasV = true; }
+    }
+
+    const ser = one.series?.value;
+    if (one.series?.error || !ser) {
+      seriesMiss.push(accName);
+      miss.push({ accName, label: "曲线" });
+    } else {
+      for (const r of ser.rows ?? []) {
+        const t = String(r?.t ?? "");
+        if (!t) continue;
+        const cur = seriesMap.get(t) ?? { t, reqs: 0, bytes: 0 };
+        cur.reqs += Number(r.reqs || 0);
+        cur.bytes += Number(r.bytes || 0);
+        seriesMap.set(t, cur);
+      }
+      rowsRead += Number(ser.stats?.rows_read || 0);
+      elapsed = Math.max(elapsed, Number(ser.stats?.elapsed_ms || 0));
+    }
+
+    const st = one.status?.value;
+    if (one.status?.error || !st) {
+      statusMiss.push(accName);
+      miss.push({ accName, label: "状态码分布" });
+    } else for (const r of st.rows ?? []) {
+      const code = String(r?.code ?? "");
+      if (!code) continue;
+      statusMap.set(code, (statusMap.get(code) ?? 0) + Number(r.reqs || 0));
+    }
+
+    const co = one.countries?.value?.viewer?.accounts?.[0];
+    if (one.countries?.error || !co) {
+      countryMiss.push(accName);
+      miss.push({ accName, label: "国家分布" });
+    } else for (const c of co.a ?? []) {
+      const code = String(c?.dimensions?.clientCountryName ?? "");
+      if (!code) continue;
+      countryMap.set(code, (countryMap.get(code) ?? 0) + (Number(c.count) || 0));
+    }
+  }
+
+  const allMiss = (names: string[]) => names.length === list.length;
+  const merged: Overview & { prev?: PrevBlock } = {
+    range: list[0].ov.range,
+    days,
+    consoleTotals: {
+      value: {
+        viewer: {
+          accounts: [{
+            g: [...dayMap.values()].sort((a, b) => a.dimensions.date.localeCompare(b.dimensions.date)),
+            v: hasV ? [{ sum: { visits, edgeResponseBytes: edgeBytes } }] : [],
+          }],
+        },
+      } as any,
+      ...(allMiss(totalsMiss) ? { error: `所有 ${list.length} 个账号的总请求卡都没取到`, kind: "error" } : {}),
+    },
+    series: {
+      value: {
+        rows: [...seriesMap.values()].sort((a, b) => String(a.t).localeCompare(String(b.t))),
+        stats: { rows_read: rowsRead, elapsed_ms: elapsed },
+      },
+      ...(allMiss(seriesMiss) ? { error: `所有 ${list.length} 个账号的曲线都没取到`, kind: "error" } : {}),
+    },
+    status: {
+      value: { rows: [...statusMap.entries()].map(([code, reqs]) => ({ code: Number(code), reqs })) },
+      ...(allMiss(statusMiss) ? { error: `所有 ${list.length} 个账号的状态码分布都没取到`, kind: "error" } : {}),
+    },
+    countries: {
+      value: { viewer: { accounts: [{ a: [...countryMap.entries()].map(([code, count]) => ({ count, dimensions: { clientCountryName: code } })) }] } },
+      ...(allMiss(countryMiss) ? { error: `所有 ${list.length} 个账号的国家分布都没取到`, kind: "error" } : {}),
+    },
+  };
+
+  // 环比：只有每个账号都给了 prev 才合并（缺一份就没有全量的上一窗，宁可写"未提供"也不给半个环比）
+  const prevs = list.map(({ ov: one }) => (one as Overview & { prev?: PrevBlock }).prev);
+  if (prevs.every((p) => p && typeof p === "object")) {
+    const ps = prevs as PrevBlock[];
+    if (ps.some((p) => p.skipped)) {
+      merged.prev = { skipped: ps.map((p) => p.skipped).filter(Boolean)[0], range: ps[0].range };
+    } else {
+      const out: PrevBlock = { range: ps[0].range };
+      for (const k of ["reqs", "bytes", "visits", "threats"] as const) {
+        const vals = ps.map((p) => p[k]);
+        out[k] = vals.every((v) => typeof v === "number") ? vals.reduce((s, v) => s + Number(v), 0) : null;
+      }
+      const pe = ps.map((p) => p.error).filter(Boolean)[0];
+      if (pe) out.error = pe;
+      merged.prev = out;
+    }
+  }
+
+  return { ov: merged, miss };
+}
+
 /** 显示的是**数据在 CF 侧真正被取到的时刻**（网关用 x-gw-fetched-at 回传），不是"我刚点过刷新" */
 const updatedAt = computed(() => (gwMeta.fetchedAt ? dt(gwMeta.fetchedAt) : ""));
 /**
@@ -46,6 +198,11 @@ const now = ref(Date.now());
 const clock = setInterval(() => (now.value = Date.now()), 10_000);
 onUnmounted(() => clearInterval(clock));
 const sourceNote = computed(() => {
+  if (agg.on) {
+    const total = aggData.value.length;
+    const ok = aggData.value.filter((b) => !!b.ov).length;
+    return `合并视图：${total} 个账号各取一条 /v1/overview，数值相加${ok < total ? `（${total - ok} 个没取到，见上方说明）` : ""} · 只读`;
+  }
   const age = Math.max(0, Math.round((now.value - (gwMeta.fetchedAt || now.value)) / 1000));
   const ageTxt = age < 60 ? `${age} 秒前` : Math.round(age / 60) + " 分钟前";
   if (gwMeta.state === "local") return `本机内存里的数据（${ageTxt}取的）· 没发请求`;
@@ -61,11 +218,42 @@ async function load() {
   loading.value = true;
   err.value = null;
   try {
-    ov.value = await api.overview(range.value);
+    if (agg.on) {
+      const accs = aggAccounts();
+      aggDone.value = 0;
+      aggMiss.value = [];
+      aggData.value = accs.map((a) => ({ acc: a.id, accName: labelOf(a), ov: null, err: null, pending: true }));
+      if (!accs.length) {
+        ov.value = null;
+        err.value = new GwError("unknown", 0, null, "合并视图里没有可用的账号");
+        return;
+      }
+      aggLoading.value = true;
+      await mapLimit(accs, 2, async (a) => {
+        const b = aggData.value.find((x) => x.acc === a.id);
+        if (!b) return;
+        try { b.ov = await apiAs(a.id).overview(range.value); }
+        catch (e) { b.err = asGw(e); }
+        b.pending = false;
+        aggDone.value++;
+      });
+      const ok = aggData.value.filter((b): b is AccOv & { ov: Overview } => !!b.ov);
+      if (!ok.length) {
+        throw aggData.value[0]?.err ?? asGw(new Error("合并视图没有取到任何账号的数据"));
+      }
+      const m = mergeOverviews(ok.map((b) => ({ accName: b.accName, ov: b.ov })));
+      ov.value = m?.ov ?? null;
+      aggMiss.value = m?.miss ?? [];
+    } else {
+      aggData.value = [];
+      aggMiss.value = [];
+      ov.value = await api.overview(range.value);
+    }
   } catch (e) {
     err.value = e instanceof GwError ? e : new GwError("unknown", 0, null, String(e));
   } finally {
     loading.value = false;
+    aggLoading.value = false;
   }
 }
 /** 首屏正好一次：onMounted 里 load() 一次，watch 不带 immediate；换时间 chip 才再发一次（也仍是 1 条） */
@@ -76,6 +264,12 @@ watch(range, load);
 /** 顶栏「刷新当前屏」（lib/bus）：各屏不再自备右上角刷新键 */
 watch(reloadTick, () => { void refresh(); });
 function refresh() { forceFreshWindow(); load(); }
+
+/** 退出合并视图：回到当前账号的单账号读数（顶栏下拉里也有同一个开关） */
+function exitAgg() {
+  agg.on = false;
+  requestReload();
+}
 
 /**
  * 没有数据时，指标卡**不能显示 0**。
@@ -374,6 +568,22 @@ const notesOpen = ref(false);
 
 <template>
   <div>
+    <!-- 合并视图（只读）：每个账号各取一条 /v1/overview，这里做加法。
+         失败按账号独立说明，一个账号没取到不拖整页，合计里缺了谁会逐条写出。 -->
+    <div v-if="agg.on" class="aggbar">
+      <div class="aggtop">
+        <span class="aggt">合并视图 · {{ aggAccounts().length }} 个账号合计 · 只读</span>
+        <button class="ghost sm" @click="exitAgg">退出合并</button>
+      </div>
+      <div class="small muted" v-if="aggLoading">
+        正在取数：{{ aggDone }}/{{ aggAccounts().length }} 个账号已就绪{{ aggPending.length ? " · 等待 " + aggPending.join("、") : "" }}
+      </div>
+      <div class="small muted" v-else>每个账号各取一条概览，数值相加；曲线、状态码、国家分布按同一维度相加。</div>
+      <div class="small muted" v-if="aggSkipped().length">网页模式跳过 {{ aggSkipped().length }} 个 OAuth 账号（拿不到令牌）。</div>
+      <div v-for="(x, i) in aggErrList" :key="'ae-' + i" class="small agg-err">{{ x.accName }}：{{ x.err.hint }}</div>
+      <div v-for="(x, i) in aggMiss" :key="'am-' + i" class="small agg-err">{{ x.accName }} · {{ x.label }}没取到，合计未含这一份。</div>
+    </div>
+
     <!-- 工具栏：时间窗分段控制 + 数据年龄（刷新已收进顶栏，这里不再重复一个键） -->
     <div class="card toolbar">
       <div class="seg" role="tablist" aria-label="时间窗">
@@ -406,7 +616,7 @@ const notesOpen = ref(false);
       <div class="dial">
         <div class="dial-h">
           <h3>总请求</h3>
-          <span class="dial-at">{{ rangeLabel }}<template v-if="updatedAt"> · 至 {{ updatedAt }}</template></span>
+          <span class="dial-at"><template v-if="agg.on">全部账号合计 · </template>{{ rangeLabel }}<template v-if="updatedAt"> · 至 {{ updatedAt }}</template></span>
         </div>
         <div class="dial-v">
           <b class="dial-n">{{ mainTile?.value ?? "—" }}</b>
@@ -448,6 +658,10 @@ const notesOpen = ref(false);
         <span class="tw">{{ notesOpen ? "收起" : caliberNote ? "展开 · 卡片与曲线这次对不齐" : prevSkipped ? "展开 · 上一窗在 CF 保留期外" : prevAbsent ? "展开 · 环比：网关未提供" : "展开" }}</span>
       </button>
       <div class="notes-b" v-if="notesOpen">
+        <div class="n" v-if="agg.on">
+          合并视图发 {{ aggAccounts().length }} 条 /v1/overview（每账号一条），按自然日、时间点、状态码、国家分别相加。
+          某个账号没取到时合计只含其余账号，缺谁写在上方状态条里 —— 不把缺的那份当 0 混进来。
+        </div>
         <div class="n" v-if="caliberNote">{{ caliberNote }}</div>
         <div class="n">
           <template v-if="prevSkipped">
@@ -538,6 +752,13 @@ const notesOpen = ref(false);
 </template>
 
 <style scoped>
+/* 合并视图的状态条：账号数 + 进度 + 逐账号错误，都在首屏顶部说清 */
+.aggbar { border: 1px solid var(--accent-dim); border-radius: 12px; padding: 9px 11px;
+  margin-bottom: 10px; background: rgb(var(--accent-rgb) / .06); }
+.aggtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.aggt { font-size: 13px; font-weight: 650; color: var(--accent); }
+.agg-err { color: var(--bad); margin-top: 3px; }
+button.sm { padding: 4px 10px; font-size: 12px; }
 /* 工具栏：时间窗分段控制（一体式分段，选中实底）+ 数据年龄 + 刷新 */
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
