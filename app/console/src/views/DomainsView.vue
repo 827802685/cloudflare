@@ -124,6 +124,20 @@ watch(zoneId, () => { editorOpen.value = false; editorRecord.value = null; edito
 
 const zoneName = computed(() => (zones.value.data ?? []).find((z: any) => String(z.id) === zoneId.value)?.name ?? "");
 const currentZone = computed(() => (zones.value.data ?? []).find((z: any) => String(z.id) === zoneId.value) ?? null);
+/** 站点状态折叠条上的摘要：只放状态/套餐/NS 条数，不再重复站点名（切换器已经显示了） */
+const zoneSummary = computed(() => {
+  const z: any = currentZone.value;
+  if (!z) return "";
+  const ns = (Array.isArray(z.vanity_name_servers) && z.vanity_name_servers.length ? z.vanity_name_servers : z.name_servers) ?? [];
+  return `${z.status || "未知状态"} · ${z.plan?.name || z.plan?.legacy_id || "套餐未知"} · NS ${ns.length} 条`;
+});
+/** 域名资产计数 = Worker 自定义域名 + 各 Pages 项目域名 */
+const assetCount = computed(() => {
+  const pages = (pageDomains.value.data ?? []).reduce((n, g) => n + (g.domains?.length ?? 0), 0);
+  return (domains.value.data?.length ?? 0) + pages;
+});
+/** 首屏只显示一组内容：DNS 记录 / 域名资产 / Workers 路由，换 tab 而不是纵向堆三块 */
+const tab = ref<"records" | "assets" | "routes">("records");
 
 /** 三种"没有规则"的文案必须分开，这是实测出来的形状（docs/04 §8）：没配过 ≠ 没权限 ≠ 套餐不认 */
 const WAF_STATE: Record<string, { text: string; live: boolean }> = {
@@ -277,52 +291,64 @@ async function confirmSheet() {
 
     <ErrorNote :err="domains.err || zones.err" />
 
-    <!-- 站点状态 + nameserver（数据全在 /v1/zones 里，零新路由）。
-         本机写开关收进这一行的标题行：它原来在页面最上方独占一整条 —— 那是"闸门"不是"内容"，
-         而这一屏真正的内容是 DNS 记录。 -->
-    <div class="card" v-if="currentZone">
-      <div class="hd">
-        <h3 style="margin: 0">站点状态</h3>
-        <WriteGate v-model="writesOn" variant="inline" />
+    <!-- 站点状态折叠成一行摘要：站点名已经在上面的切换器里，这里不再重复；展开才铺 nameserver -->
+    <details class="grp" v-if="currentZone">
+      <summary>站点状态与 nameserver<span class="gs">{{ zoneSummary }}</span></summary>
+      <div class="card">
+        <ZoneStatusCard :zone="currentZone" />
       </div>
-      <ZoneStatusCard :zone="currentZone" />
-    </div>
+    </details>
 
-    <!-- DNS 记录：整行点=编辑，新增走表单 → 预览 → 确认 -->
+    <!-- DNS 记录 / 域名资产 / Workers 路由：同一张卡里换 tab。
+         以前是三块纵向堆叠，同一批域名在「DNS 记录」和「统一域名视图」里各出现一次，白占一屏。 -->
     <div class="card" v-if="zoneName">
       <div class="hd">
-        <h3>DNS 记录（{{ (records.data || []).length }} 条）· {{ zoneName }}</h3>
-        <button class="primary sm" :disabled="!zoneId" @click="openCreate">新增记录</button>
-      </div>
-      <ErrorNote :err="records.err" />
-
-      <div v-if="editorOpen" class="editor">
-        <h4>{{ editorRecord ? '编辑记录' : '新增记录' }}</h4>
-        <DnsRecordForm
-          :key="String(editorRecord?.id || editorPreset?.name || 'new')"
-          :zone-id="zoneId"
-          :zone-name="currentZoneName"
-          :record="editorRecord"
-          :preset="editorPreset"
-          @preview="onFormPreview"
-          @cancel="editorOpen = false"
-        />
+        <h3 style="margin: 0">域名与 DNS</h3>
+        <div class="row" style="gap: 10px; align-items: center; flex-wrap: wrap">
+          <WriteGate v-model="writesOn" variant="inline" />
+          <button v-if="tab === 'records'" class="primary sm" :disabled="!zoneId" @click="openCreate">新增记录</button>
+          <button v-else-if="tab === 'routes'" class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
+        </div>
       </div>
 
-      <DnsRecordList v-if="(records.data || []).length" :records="records.data!" @edit="openEdit" @del="onDelete" />
-      <div v-else-if="!records.err && !records.loading" class="empty">没有记录</div>
-      <div v-else-if="records.loading" class="empty">加载中…</div>
-      <div class="whyline" v-if="doneMsg">{{ doneMsg }}</div>
-      <!-- 交互说明（点行编辑 / 删除点名 / 501 原因）见 docs/14 §8 -->
-    </div>
+      <div class="tabs" role="tablist">
+        <button class="tab" :class="{ on: tab === 'records' }" role="tab" :aria-selected="tab === 'records'" @click="tab = 'records'">
+          DNS 记录 <span class="cnt">{{ records.data?.length ?? 0 }}</span>
+        </button>
+        <button class="tab" :class="{ on: tab === 'assets' }" role="tab" :aria-selected="tab === 'assets'" @click="tab = 'assets'">
+          域名资产 <span class="cnt">{{ assetCount }}</span>
+        </button>
+        <button class="tab" :class="{ on: tab === 'routes' }" role="tab" :aria-selected="tab === 'routes'" @click="tab = 'routes'">
+          Workers 路由 <span class="cnt">{{ routes.data?.length ?? 0 }}</span>
+        </button>
+      </div>
 
-    <!-- 站点资产（折叠）：统一域名视图 + Workers 路由。
-         首屏只留「站点 + DNS 记录」—— 这两块是"这个站点挂了哪些东西"的全景，属于查阅而非主任务。 -->
-    <details class="grp">
-      <summary>站点资产<span class="gs">域名 {{ (domains.data || []).length }} · 路由 {{ (routes.data || []).length }}</span></summary>
+      <!-- DNS 记录：整行点=编辑，新增走表单 → 预览 → 确认 -->
+      <div v-if="tab === 'records'" role="tabpanel">
+        <ErrorNote :err="records.err" />
 
-      <div class="card">
-        <h3>统一域名视图（Worker / Pages / R2）</h3>
+        <div v-if="editorOpen" class="editor">
+          <h4>{{ editorRecord ? '编辑记录' : '新增记录' }}</h4>
+          <DnsRecordForm
+            :key="String(editorRecord?.id || editorPreset?.name || 'new')"
+            :zone-id="zoneId"
+            :zone-name="currentZoneName"
+            :record="editorRecord"
+            :preset="editorPreset"
+            @preview="onFormPreview"
+            @cancel="editorOpen = false"
+          />
+        </div>
+
+        <DnsRecordList v-if="(records.data || []).length" :records="records.data!" @edit="openEdit" @del="onDelete" />
+        <div v-else-if="!records.err && !records.loading" class="empty">没有记录</div>
+        <div v-else-if="records.loading" class="empty">加载中…</div>
+        <div class="whyline" v-if="doneMsg">{{ doneMsg }}</div>
+        <!-- 交互说明（点行编辑 / 删除点名 / 501 原因）见 docs/14 §8 -->
+      </div>
+
+      <!-- 域名资产：Worker / Pages / R2 的自定义域名（与 DNS 记录分开看，避免同一域名两次出现） -->
+      <div v-else-if="tab === 'assets'" role="tabpanel">
         <ErrorNote :err="domains.err" />
         <UnifiedDomains
           :worker-domains="domains.data || []"
@@ -335,11 +361,8 @@ async function confirmSheet() {
         />
       </div>
 
-      <div class="card" v-if="zoneName">
-        <div class="hd">
-          <h3 style="margin: 0">{{ zoneName }} · Workers 路由（{{ (routes.data || []).length }}）</h3>
-          <button class="primary sm" :disabled="!zoneId || !writesOn" @click="openRouteCreate">新增路由</button>
-        </div>
+      <!-- Workers 路由：属于这个 zone 的 pattern → Worker 映射 -->
+      <div v-else role="tabpanel">
         <ErrorNote :err="routes.err" />
 
         <div v-if="routeOpen" class="editor">
@@ -373,9 +396,9 @@ async function confirmSheet() {
           </div>
         </div>
         <div v-else-if="!routes.err" class="empty">这个站点没有 Workers 路由</div>
-        <p class="small muted" style="margin-top: 8px" v-if="!writesOn">「站点状态」那行的本机写开关没打开，路由的增删改按钮是灰的。</p>
+        <p class="small muted" style="margin-top: 8px" v-if="!writesOn">标题行右侧的本机写开关没打开，路由的增删改按钮是灰的。</p>
       </div>
-    </details>
+    </div>
 
     <!-- 运维工具（折叠）：清缓存 + DNS 配置向导。两个都是低频操作，不该占首屏 -->
     <details class="grp">
@@ -470,4 +493,14 @@ button.sm { padding: 4px 10px; font-size: 12px; }
 button.danger { color: var(--bad); border-color: rgb(var(--bad-rgb) / .45); }
 .gen { flex-wrap: wrap; gap: 6px; }
 .gen .field { max-width: 280px; }
+/* DNS / 域名 / 路由 三选一：换 tab 而不是把三块内容纵向堆一屏 */
+.tabs { display: flex; gap: 4px; margin: 10px 0 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid transparent;
+  border-bottom: 0; border-radius: 9px 9px 0 0; background: none; color: var(--muted);
+  font: inherit; font-size: 13px; cursor: pointer; margin-bottom: -1px; }
+.tab:hover { color: var(--fg); background: var(--panel-2); }
+.tab.on { color: var(--fg); font-weight: 600; background: var(--panel-2); border-color: var(--line); }
+.tab .cnt { font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 0 6px; line-height: 16px; }
+.tab.on .cnt { color: var(--accent); border-color: rgb(var(--accent-rgb) / .4); }
 </style>
